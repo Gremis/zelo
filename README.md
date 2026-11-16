@@ -138,3 +138,5 @@ The planned permanent branches are `main` and `develop`; feature branches start 
 Remote database environments and deployment setup are pending. Database integration tests are not configured. Authentication and other business features are outside this foundation.
 
 The known full dependency audit issue is GHSA-g3hv-75wg-m249 through `@typescript-eslint/typescript-estree` to `minimatch@10.2.6`. The checked `typescript-eslint@8.72.2` still requires `^10.2.2`. The production-only audit is the blocking audit in this initial CI; it does not audit all development dependencies or establish that the complete dependency tree is free of vulnerabilities. No overrides or advisory suppression are configured.
+
+Temporary change to validate pull request checks. This PR will be closed without merging.
