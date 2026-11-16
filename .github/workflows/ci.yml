@@ -10,13 +10,12 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   quality:
     name: Quality
+    concurrency:
+      group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -65,6 +64,95 @@ jobs:
             playwright-report/
             test-results/
             !**/.env*
+            !**/.vercel/**
           if-no-files-found: ignore
           include-hidden-files: false
           retention-days: 3
+
+  deploy:
+    name: Deploy
+    needs: quality
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: ${{ github.ref == 'refs/heads/develop' && 'development' || 'production' }}
+    concurrency:
+      group: deployment-${{ github.ref == 'refs/heads/develop' && 'development' || 'production' }}
+      cancel-in-progress: false
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_TELEMETRY_DISABLED: "1"
+      SUPABASE_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out validated commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify current branch head
+        run: node scripts/check-deployment-head.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Validate environment identifiers
+        shell: bash
+        run: |
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull Vercel Production configuration
+        run: npx --no-install vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Vercel Production output
+        run: npx --no-install vercel build --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Verify current branch head before migrations
+        run: node scripts/check-deployment-head.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Preview versioned migrations through Session pooler
+        run: node scripts/deploy-migrations.mjs dry-run
+        env:
+          SUPABASE_PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Apply versioned migrations through Session pooler
+        run: node scripts/deploy-migrations.mjs apply
+        env:
+          SUPABASE_PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
+          SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Verify current branch head before publishing
+        run: node scripts/check-deployment-head.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Publish prepared Vercel Production build
+        run: npx --no-install vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Remove local deployment configuration
+        if: ${{ always() }}
+        shell: bash
+        run: rm -rf -- .vercel supabase/.temp
