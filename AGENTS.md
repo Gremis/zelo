@@ -18,8 +18,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Preserve application behavior. Do not add empty architectural layers, placeholder business code or business features during foundation setup.
 - Use Prettier for formatting and ESLint for code quality. Keep eslint-config-prettier after the Next.js presets.
 - Run npm run format, npm run format:check, npm run lint, npm run typecheck, npm run build and npm audit --omit=dev before handing off changes. Typecheck generates Next.js route types before running TypeScript.
-- Permanent branches will be main and develop. Create feature branches from develop. Branch setup is pending; do not initialize Git or create branches or commits during foundation setup.
-- Remote database environments and deployment setup are pending. CI is configured; remote execution remains unverified until publication.
+- Permanent branches main and develop already exist. Start each new task on a branch created from develop and submit changes through a pull request to develop. Promote releases from develop to main through a reviewed pull request.
+- CI and the deployment pipeline are configured. Remote execution must be verified through authorized GitHub runs; never claim it ran during local validation.
 
 ## Testing conventions
 
@@ -50,4 +50,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Pin official actions to verified full commit SHAs, use read-only contents permissions and disable persisted checkout credentials.
 - CI requires no database or Supabase credentials. Run test:e2e for the production build and browser tests without a separate build step.
 - The blocking audit covers production dependencies only. Do not suppress the known full-tree development advisory or hide required check failures.
-- Upload only Playwright reports and test results on failure, excluding environment files, with short retention. CI does not deploy or configure branch protection.
+- Upload only Playwright reports and test results on failure, excluding environment files, with short retention. Quality does not deploy; the dependent push-only Deploy job publishes to the matching environment. Branch protection is configured separately.
+
+## Deployment conventions
+
+- PRs and manual dispatch run Quality only without deployment credentials. Deploy only after Quality succeeds on pushes to develop/development/zelo-dev or main/production/zelo-prod; both Vercel projects use Production internally.
+- Use the exact locked Vercel and Supabase CLIs. Pull Vercel Production settings and build before linking or modifying a remote database. Build-time code must not query tables or columns introduced only by the pending migrations. Publish only the prepared output with --prebuilt --prod.
+- The deployment workflow may link only the selected environment's Supabase project and apply versioned migrations after a dry-run, using --linked --skip-vault. Never include remote reset, seed, roles or automatic history repair. Local scripts retain their local targets.
+- Serialize deployment jobs by environment without cancelling active jobs on newer pushes. Verify the branch HEAD before build, migrations and publication; never publish an obsolete rerun. Keep Quality cancellation separate from deployment concurrency.
+- Keep provider secrets scoped to necessary steps. Never print credentials, upload .env or .vercel artifacts, or configure public variables with privileged credentials.
+- Keep Vercel Git auto-deployments disabled with git.deploymentEnabled=false and follow the documented transition before activating this pipeline. Do not run parallel publication paths.
+- Use backward-compatible migrations. If migration succeeds but publication fails, inspect state and fix forward; Vercel rollback does not undo schema changes. No remote operations are authorized merely to validate repository changes locally.
