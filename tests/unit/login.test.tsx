@@ -33,9 +33,10 @@ test("renders the login screen", () => {
     "current-password",
   );
   expect(screen.getByLabelText("Manter conectado")).toBeChecked();
-  expect(
-    screen.queryByRole("link", { name: "Criar conta" }),
-  ).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Criar conta" })).toHaveAttribute(
+    "href",
+    "/criar-conta",
+  );
 });
 
 test("shows validation errors linked to the fields", () => {

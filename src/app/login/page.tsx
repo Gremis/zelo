@@ -176,6 +176,12 @@ export default function LoginPage() {
           {isSubmitting ? "Entrando..." : "Entrar"}
         </button>
       </form>
+      <p className="mt-5 text-center text-sm text-zinc-300">
+        Ainda não tem conta?{" "}
+        <Link href="/criar-conta" className={linkClasses}>
+          Criar conta
+        </Link>
+      </p>
     </AuthCard>
   );
 }
