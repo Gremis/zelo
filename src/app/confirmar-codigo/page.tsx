@@ -12,6 +12,18 @@ import {
 const CODE_LENGTH = 6;
 const RESEND_SECONDS = 30;
 
+function validateCode(code: string): string | null {
+  if (code === "") {
+    return "Informe o código recebido.";
+  }
+
+  if (code.length !== CODE_LENGTH) {
+    return `O código deve ter ${CODE_LENGTH} dígitos.`;
+  }
+
+  return null;
+}
+
 const inputClasses =
   "w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-center text-base tracking-[0.4em] text-zinc-50 transition-colors placeholder:text-zinc-500 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
 
@@ -46,12 +58,7 @@ export default function ConfirmationCodePage() {
       return;
     }
 
-    const nextCodeError =
-      code === ""
-        ? "Informe o código recebido."
-        : code.length === CODE_LENGTH
-          ? null
-          : `O código deve ter ${CODE_LENGTH} dígitos.`;
+    const nextCodeError = validateCode(code);
 
     setCodeError(nextCodeError);
 
