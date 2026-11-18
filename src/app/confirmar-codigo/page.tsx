@@ -19,7 +19,7 @@ function validateCode(code: string): string | null {
   }
 
   if (code.length !== CODE_LENGTH) {
-    return `O código deve ter ${CODE_LENGTH} dígitos.`;
+    return `Digite o código de ${CODE_LENGTH} dígitos.`;
   }
 
   return null;
