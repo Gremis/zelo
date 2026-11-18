@@ -12,7 +12,6 @@ import {
 } from "@/lib/auth/submit";
 
 const CODE_LENGTH = 6;
-const RESEND_SECONDS = 30;
 
 function validateCode(code: string): string | null {
   if (code === "") {
