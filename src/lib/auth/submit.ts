@@ -15,5 +15,5 @@ export const submitPasswordRecovery: (
 export {
   submitConfirmationCode,
   submitResendConfirmationCode,
-} from "./registration-demo";
-export type { ProposedConfirmationResult as ConfirmationCodeResult } from "./registration-demo";
+} from "./registration";
+export type { ProposedConfirmationResult as ConfirmationCodeResult } from "./registration";

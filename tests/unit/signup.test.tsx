@@ -43,6 +43,7 @@ function fillValidForm() {
 
 test("shows accessible required errors and focuses the first invalid field", () => {
   renderSignup();
+  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   expect(screen.getByLabelText("Nome completo")).toHaveFocus();
   expect(screen.getAllByRole("alert")).toHaveLength(5);

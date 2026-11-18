@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import type { RegistrationDemoScenario } from "@/lib/auth/registration-demo";
 
 export type SignupDraft = {
   fullName: string;
@@ -15,8 +14,6 @@ const SignupFlowContext = createContext<{
   setDraft: Dispatch<SetStateAction<SignupDraft>>;
   registrationId: string | null;
   setRegistrationId: Dispatch<SetStateAction<string | null>>;
-  demoScenario: RegistrationDemoScenario;
-  setDemoScenario: Dispatch<SetStateAction<RegistrationDemoScenario>>;
 } | null>(null);
 
 export function SignupFlowProvider({ children }: { children: ReactNode }) {
@@ -26,8 +23,6 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
     phone: "",
   });
   const [registrationId, setRegistrationId] = useState<string | null>(null);
-  const [demoScenario, setDemoScenario] =
-    useState<RegistrationDemoScenario>("standard");
   return (
     <SignupFlowContext.Provider
       value={{
@@ -35,8 +30,6 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
         setDraft,
         registrationId,
         setRegistrationId,
-        demoScenario,
-        setDemoScenario,
       }}
     >
       {children}

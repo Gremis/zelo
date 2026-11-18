@@ -35,4 +35,4 @@ export function validateSignup(values: SignupFormValues) {
   return errors;
 }
 
-export { submitSignup } from "./registration-demo";
+export { submitSignup } from "./registration";

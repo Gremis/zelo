@@ -1,9 +1,9 @@
 "use client";
 
+import { signupStyles } from "@/components/signup-styles";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { RegistrationDemoNotice } from "@/components/registration-demo-notice";
-import { isRegistrationDemoEnabled } from "@/lib/auth/registration-demo";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -18,8 +18,7 @@ import type { SignupFormValues } from "@/lib/auth/signup";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { draft, setDraft, setRegistrationId, demoScenario } = useSignupFlow();
-  const demoEnabled = isRegistrationDemoEnabled();
+  const { draft, setDraft, setRegistrationId } = useSignupFlow();
   const id = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -72,14 +71,12 @@ export default function SignupPage() {
         phone: values.phone.replace(/\D/g, ""),
       };
       setRegistrationId(null);
-      const request = demoEnabled
-        ? submitSignup(payload, demoScenario)
-        : submitSignup(payload);
+      const request = submitSignup(payload);
       setPassword("");
       setShowPassword(false);
       const result = await request;
       if (version !== screenVersion.current) return;
-      if (result.ok && result.simulated && demoEnabled) {
+      if (result.ok) {
         setDraft({
           fullName: payload.fullName,
           email: result.email,
@@ -88,11 +85,7 @@ export default function SignupPage() {
         setRegistrationId(result.registrationId);
         router.push("/confirmar-codigo");
       } else {
-        setSubmitError(
-          demoEnabled
-            ? "Falha simulada no cadastro. Nenhuma conta real foi criada. Tente novamente."
-            : "O cadastro está temporariamente indisponível. Não foi possível criar sua conta. Tente novamente mais tarde.",
-        );
+        setSubmitError("Não foi possível criar sua conta. Tente novamente.");
       }
     } catch {
       if (version === screenVersion.current) {
@@ -114,15 +107,19 @@ export default function SignupPage() {
       title="Criar conta"
       description="Depois de confirmar o e-mail, você cadastra seus condomínios."
     >
-      <RegistrationDemoNotice />
       <form
         ref={formRef}
         noValidate
         onSubmit={handleSubmit}
-        className="signup-form"
+        data-slot="form"
+        className={signupStyles.form}
         aria-busy={isSubmitting}
       >
-        <fieldset disabled={isSubmitting} className="signup-fields">
+        <fieldset
+          disabled={isSubmitting}
+          data-slot="fields"
+          className={signupStyles.fields}
+        >
           {(
             [
               {
@@ -141,12 +138,20 @@ export default function SignupPage() {
               },
             ] as const
           ).map(({ name, label, ...input }) => (
-            <div key={name} className="signup-field">
-              <label htmlFor={`${id}-${name}`} className="signup-label">
+            <div key={name} data-slot="field" className={signupStyles.field}>
+              <label
+                htmlFor={`${id}-${name}`}
+                data-slot="label"
+                className={signupStyles.label}
+              >
                 {label}
               </label>
               {name === "email" && (
-                <p id={`${id}-email-hint`} className="signup-hint">
+                <p
+                  id={`${id}-email-hint`}
+                  data-slot="hint"
+                  className={signupStyles.hint}
+                >
                   Você vai usar para entrar
                 </p>
               )}
@@ -173,21 +178,27 @@ export default function SignupPage() {
                     .filter(Boolean)
                     .join(" ") || undefined
                 }
-                className="signup-input"
+                data-slot="input"
+                className={signupStyles.input}
               />
               {errors[name] && (
                 <p
                   id={`${id}-${name}-error`}
                   role="alert"
-                  className="signup-error"
+                  data-slot="error"
+                  className={signupStyles.error}
                 >
                   {errors[name]}
                 </p>
               )}
             </div>
           ))}
-          <div className="signup-field">
-            <label htmlFor={`${id}-phone`} className="signup-label">
+          <div data-slot="field" className={signupStyles.field}>
+            <label
+              htmlFor={`${id}-phone`}
+              data-slot="label"
+              className={signupStyles.label}
+            >
               Celular
             </label>
             <PhoneInput
@@ -203,19 +214,32 @@ export default function SignupPage() {
               }}
               aria-invalid={Boolean(errors.phone)}
               aria-describedby={errors.phone ? `${id}-phone-error` : undefined}
-              className="signup-input"
+              data-slot="input"
+              className={signupStyles.input}
             />
             {errors.phone && (
-              <p id={`${id}-phone-error`} role="alert" className="signup-error">
+              <p
+                id={`${id}-phone-error`}
+                role="alert"
+                data-slot="error"
+                className={signupStyles.error}
+              >
                 {errors.phone}
               </p>
             )}
           </div>
-          <div className="signup-field">
-            <label htmlFor={`${id}-password`} className="signup-label">
+          <div data-slot="field" className={signupStyles.field}>
+            <label
+              htmlFor={`${id}-password`}
+              data-slot="label"
+              className={signupStyles.label}
+            >
               Senha
             </label>
-            <div className="signup-password-wrap">
+            <div
+              data-slot="password-wrap"
+              className={signupStyles["password-wrap"]}
+            >
               <input
                 ref={passwordRef}
                 id={`${id}-password`}
@@ -231,13 +255,15 @@ export default function SignupPage() {
                 }}
                 aria-invalid={Boolean(errors.password)}
                 aria-describedby={`${id}-requirements${errors.password ? ` ${id}-password-error` : ""}`}
-                className="signup-input"
+                data-slot="input"
+                className={signupStyles["password-input"]}
               />
               <button
                 type="button"
                 aria-pressed={showPassword}
                 onClick={() => setShowPassword((current) => !current)}
-                className="signup-password-toggle"
+                data-slot="password-toggle"
+                className={signupStyles["password-toggle"]}
               >
                 {showPassword ? "Ocultar" : "Mostrar"}
               </button>
@@ -246,7 +272,8 @@ export default function SignupPage() {
               <p
                 id={`${id}-password-error`}
                 role="alert"
-                className="signup-error"
+                data-slot="error"
+                className={signupStyles.error}
               >
                 {errors.password}
               </p>
@@ -254,13 +281,16 @@ export default function SignupPage() {
             <ul
               id={`${id}-requirements`}
               aria-label="Requisitos da senha"
-              className="signup-requirements"
+              data-slot="requirements"
+              className={signupStyles.requirements}
             >
               {getPasswordRequirements(password).map(({ label, met }) => (
                 <li
                   key={label}
                   className={
-                    met ? "signup-requirement-met" : "signup-requirement"
+                    met
+                      ? signupStyles["requirement-met"]
+                      : signupStyles.requirement
                   }
                 >
                   <span className="sr-only">
@@ -271,8 +301,12 @@ export default function SignupPage() {
               ))}
             </ul>
           </div>
-          <div className="signup-field">
-            <label className="signup-consent" htmlFor={`${id}-acceptedTerms`}>
+          <div data-slot="field" className={signupStyles.field}>
+            <label
+              data-slot="consent"
+              className={signupStyles.consent}
+              htmlFor={`${id}-acceptedTerms`}
+            >
               <input
                 id={`${id}-acceptedTerms`}
                 name="acceptedTerms"
@@ -290,7 +324,8 @@ export default function SignupPage() {
                 aria-describedby={
                   errors.acceptedTerms ? `${id}-acceptedTerms-error` : undefined
                 }
-                className="signup-checkbox"
+                data-slot="checkbox"
+                className={signupStyles.checkbox}
               />
               Li e aceito o termo de uso e a política de privacidade
             </label>
@@ -298,7 +333,8 @@ export default function SignupPage() {
               <p
                 id={`${id}-acceptedTerms-error`}
                 role="alert"
-                className="signup-error"
+                data-slot="error"
+                className={signupStyles.error}
               >
                 {errors.acceptedTerms}
               </p>
@@ -307,20 +343,21 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="signup-submit"
+            data-slot="submit"
+            className={signupStyles.submit}
           >
             {isSubmitting ? "Enviando..." : "Criar conta"}
           </button>
         </fieldset>
         {submitError && (
-          <p role="alert" className="signup-error">
+          <p role="alert" data-slot="error" className={signupStyles.error}>
             {submitError}
           </p>
         )}
       </form>
-      <p className="signup-footer">
+      <p data-slot="footer" className={signupStyles.footer}>
         Já tem conta?{" "}
-        <Link href="/login" className="signup-link">
+        <Link href="/login" data-slot="link" className={signupStyles.link}>
           Entrar
         </Link>
       </p>

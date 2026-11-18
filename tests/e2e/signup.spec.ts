@@ -51,6 +51,34 @@ for (const viewport of [
       path: testInfo.outputPath(`signup-${viewport.width}.png`),
       fullPage: true,
     });
+    await page
+      .getByRole("main")
+      .getByLabel("Senha", { exact: true })
+      .fill("Example123");
+    await page.getByRole("checkbox").check();
+    await page
+      .getByRole("button", { name: "Criar conta", exact: true })
+      .click();
+    const mocksEnabled =
+      ["local", "development"].includes(
+        process.env.NEXT_PUBLIC_APP_ENV ?? "",
+      ) && process.env.NEXT_PUBLIC_REGISTRATION_DEMO === "enabled";
+    if (mocksEnabled) {
+      await expect(page).toHaveURL("/confirmar-codigo");
+      await expect(
+        page.getByText("pessoa@example.invalid", { exact: true }),
+      ).toBeVisible();
+      await page.getByRole("link", { name: "Corrigir e-mail" }).click();
+    } else {
+      await expect(page.getByRole("main").getByRole("alert")).toContainText(
+        "O cadastro está temporariamente indisponível",
+      );
+      await expect(page).toHaveURL("/criar-conta");
+    }
+    await expect(
+      page.getByRole("main").getByLabel("Senha", { exact: true }),
+    ).toHaveValue("");
+    await page.getByRole("checkbox").uncheck();
     await page.getByLabel("Nome completo").clear();
     await page
       .getByRole("button", { name: "Criar conta", exact: true })

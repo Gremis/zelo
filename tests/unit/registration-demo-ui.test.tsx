@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({
 
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "local");
   vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", "enabled");
   vi.useFakeTimers();
 });
@@ -79,9 +80,7 @@ async function register() {
   await finishOperation();
 }
 function choose(value: string) {
-  fireEvent.change(screen.getByRole("combobox", { name: "Cenário simulado" }), {
-    target: { value },
-  });
+  vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO_SCENARIO", value);
 }
 async function confirm(code: string) {
   fireEvent.change(screen.getByLabelText("Código"), {
@@ -93,9 +92,8 @@ async function confirm(code: string) {
 
 test("reviews signup, correction and simulated success without a real session or queue", async () => {
   openFlow();
-  expect(
-    screen.getByRole("complementary", { name: "Modo de demonstração" }),
-  ).toHaveTextContent("Demonstração — dados e respostas simulados");
+  expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   fillSignup();
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   expect(screen.getByRole("button", { name: "Enviando..." })).toBeDisabled();
@@ -124,10 +122,9 @@ test("reviews signup, correction and simulated success without a real session or
   await finishOperation();
   expect(screen.getByText("corrigido@example.invalid")).toBeInTheDocument();
   await confirm("123456");
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Nenhuma conta, sessão ou acesso real foi criado",
-  );
-  expect(screen.getByRole("status")).toHaveFocus();
+  expect(
+    screen.getByRole("heading", { level: 1, name: "Conta criada." }),
+  ).toHaveFocus();
   expect(navigation.push).toHaveBeenCalledTimes(2);
   expect(navigation.push).toHaveBeenLastCalledWith("/confirmar-codigo");
   expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
@@ -149,7 +146,7 @@ test("reviews wrong and expired codes, the simulated attempt limit and resend re
   await confirm("000000");
   await confirm("000000");
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Limite de tentativas simulado",
+    "Limite de tentativas atingido",
   );
   expect(screen.getByLabelText("Código")).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Reenviar código" }));
@@ -158,14 +155,12 @@ test("reviews wrong and expired codes, the simulated attempt limit and resend re
     screen.getByRole("button", { name: "Confirmar e entrar" }),
   ).toBeDisabled();
   await finishOperation();
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Nenhum e-mail real foi enviado",
-  );
+  expect(screen.getByRole("status")).toHaveTextContent("Código reenviado");
   expect(screen.getByLabelText("Código")).toBeEnabled();
   await confirm("123456");
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Confirmação simulada concluída",
-  );
+  expect(
+    screen.getByRole("heading", { level: 1, name: "Conta criada." }),
+  ).toBeInTheDocument();
 });
 
 test("reviews signup, confirmation and resend failures without simulated success fallback", async () => {
@@ -173,7 +168,7 @@ test("reviews signup, confirmation and resend failures without simulated success
   choose("signup-failure");
   await register();
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Falha simulada no cadastro",
+    "Não foi possível criar sua conta",
   );
   expect(navigation.push).not.toHaveBeenCalled();
   choose("standard");
@@ -185,20 +180,20 @@ test("reviews signup, confirmation and resend failures without simulated success
   choose("confirmation-failure");
   await confirm("123456");
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Falha simulada na confirmação",
+    "Não foi possível confirmar o código",
   );
   expect(screen.getByLabelText("Código")).toHaveValue("123456");
   choose("resend-failure");
   fireEvent.click(screen.getByRole("button", { name: "Reenviar código" }));
   await finishOperation();
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Falha simulada no reenvio",
+    "Não foi possível reenviar o código",
   );
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   choose("attempt-limit");
   fireEvent.click(screen.getByRole("button", { name: "Reenviar código" }));
   await finishOperation();
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Limite de reenvios simulado",
+    "Limite de reenvios atingido",
   );
 });

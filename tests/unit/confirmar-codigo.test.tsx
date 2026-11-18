@@ -93,6 +93,11 @@ test("handles direct access and missing context without enabling confirmation", 
 test("shows the email in memory, filters code input and focuses linked validation", () => {
   renderConfirmation();
   expect(screen.getByText("pessoa@example.invalid")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
+    ),
+  ).toBeInTheDocument();
   const code = screen.getByLabelText("Código");
   expect(code).toHaveAttribute("inputmode", "numeric");
   expect(code).toHaveAttribute("autocomplete", "one-time-code");
@@ -130,19 +135,30 @@ test("reports unavailable confirmation and does not navigate", async () => {
   ).toBeInTheDocument();
 });
 
-test("does not announce account creation or navigate on a response without verified session", async () => {
-  vi.mocked(submitConfirmationCode).mockResolvedValue({
-    ok: true,
-    simulated: true,
-  });
+test("shows accepted confirmation without inventing a queue destination", async () => {
+  vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
   renderConfirmation();
   submitCode();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Não foi possível verificar sua sessão",
-  );
+  const heading = await screen.findByRole("heading", {
+    level: 1,
+    name: "Conta criada.",
+  });
+  expect(heading).toHaveFocus();
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(
-    screen.queryByText("E-mail confirmado. Conta criada."),
+    screen.queryByRole("heading", { name: "Confirme seu e-mail" }),
   ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Digite o código de 6 dígitos para confirmar/),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("pessoa@example.invalid")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Revisar cadastro" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
+  expect(screen.getByRole("main")).toHaveTextContent("Sindicondo");
+  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
+  expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
 });
 
 test("locks confirmation and resend during a pending request", async () => {

@@ -1,6 +1,6 @@
+import { signupStyles } from "@/components/signup-styles";
 import type { ReactNode } from "react";
 import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
-import "./signup.css";
 
 const signupUi = Inter({
   subsets: ["latin"],
@@ -32,6 +32,7 @@ type AuthCardProps = {
   description: ReactNode;
   children: ReactNode;
   variant?: "default" | "signup";
+  focusTitle?: boolean;
 };
 
 export function AuthCard({
@@ -39,16 +40,23 @@ export function AuthCard({
   description,
   children,
   variant = "default",
+  focusTitle = false,
 }: AuthCardProps) {
   if (variant === "signup") {
     return (
       <main
-        className={`signup-screen ${signupUi.variable} ${signupHeading.variable} ${signupCode.variable}`}
+        lang="pt-BR"
+        data-slot="screen"
+        className={`${signupStyles.screen} ${signupUi.variable} ${signupHeading.variable} ${signupCode.variable}`}
       >
-        <div className="signup-card">
-          <header className="signup-header">
-            <div className="signup-brand">
-              <span aria-hidden="true" className="signup-brand-mark">
+        <div data-slot="card" className={signupStyles.card}>
+          <header data-slot="header" className={signupStyles.header}>
+            <div data-slot="brand" className={signupStyles.brand}>
+              <span
+                aria-hidden="true"
+                data-slot="brand-mark"
+                className={signupStyles["brand-mark"]}
+              >
                 <svg viewBox="0 0 26 26" aria-hidden="true">
                   <rect width="26" height="26" rx="7" fill="#0F766E" />
                   <rect
@@ -80,8 +88,26 @@ export function AuthCard({
               </span>
               Sindicondo
             </div>
-            <h1 className="signup-title">{title}</h1>
-            <p className="signup-description">{description}</p>
+            <h1
+              data-slot="title"
+              className={signupStyles.title}
+              tabIndex={focusTitle ? -1 : undefined}
+              ref={
+                focusTitle
+                  ? (element) => {
+                      element?.focus();
+                    }
+                  : undefined
+              }
+              aria-live={focusTitle ? "polite" : undefined}
+            >
+              {title}
+            </h1>
+            {description != null && (
+              <p data-slot="description" className={signupStyles.description}>
+                {description}
+              </p>
+            )}
           </header>
           {children}
         </div>

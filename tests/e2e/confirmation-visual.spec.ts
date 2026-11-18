@@ -63,7 +63,7 @@ for (const width of [360, 390, 768, 1280]) {
     await page.goto("/confirmar-codigo", { waitUntil: "networkidle" });
     await page.evaluate(() => document.fonts.ready);
     await page.evaluate((html) => {
-      const actual = document.querySelector(".signup-screen")!;
+      const actual = document.querySelector('[data-slot~="screen"]')!;
       const fixture = document.createElement("div");
       fixture.innerHTML = html;
       const rendered = fixture.firstElementChild!;
@@ -82,24 +82,24 @@ for (const width of [360, 390, 768, 1280]) {
       page.getByRole("link", { name: "Corrigir e-mail" }),
     ).toBeVisible();
     await page.mouse.move(0, 0);
-    await page.locator(".signup-card").screenshot({
+    await page.locator('[data-slot~="card"]').screenshot({
       path: testInfo.outputPath(`confirmation-context-card-${width}.png`),
     });
-    await page.locator(".signup-form").screenshot({
+    await page.locator('[data-slot~="form"]').screenshot({
       path: testInfo.outputPath(`confirmation-context-form-${width}.png`),
     });
     const measurements = await page.evaluate(() => {
       const result: Record<string, unknown> = {};
       for (const selector of [
-        ".signup-card",
-        ".signup-form",
-        ".signup-brand",
-        ".signup-title",
-        ".signup-description",
-        ".signup-label",
-        ".signup-input",
-        ".signup-submit",
-        ".signup-actions",
+        '[data-slot~="card"]',
+        '[data-slot~="form"]',
+        '[data-slot~="brand"]',
+        '[data-slot~="title"]',
+        '[data-slot~="description"]',
+        '[data-slot~="label"]',
+        '[data-slot~="input"]',
+        '[data-slot~="submit"]',
+        '[data-slot~="actions"]',
       ]) {
         const element = document.querySelector(selector)!;
         const style = getComputedStyle(element);
