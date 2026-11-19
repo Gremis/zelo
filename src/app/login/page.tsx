@@ -8,6 +8,20 @@ import { submitLogin } from "@/lib/auth/submit";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function validateEmail(email: string): string | null {
+  const trimmedEmail = email.trim();
+
+  if (trimmedEmail === "") {
+    return "Informe seu e-mail.";
+  }
+
+  if (!EMAIL_PATTERN.test(trimmedEmail)) {
+    return "Informe um e-mail válido.";
+  }
+
+  return null;
+}
+
 const inputClasses =
   "w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-zinc-50 transition-colors placeholder:font-medium placeholder:text-zinc-300 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
 
@@ -37,12 +51,7 @@ export default function LoginPage() {
     }
 
     const trimmedEmail = email.trim();
-    const nextEmailError =
-      trimmedEmail === ""
-        ? "Informe seu e-mail."
-        : EMAIL_PATTERN.test(trimmedEmail)
-          ? null
-          : "Informe um e-mail válido.";
+    const nextEmailError = validateEmail(email);
     const nextPasswordError = password === "" ? "Informe sua senha." : null;
 
     setEmailError(nextEmailError);
