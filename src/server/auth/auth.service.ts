@@ -2,6 +2,7 @@ import type {
   AuthRepository,
   AuthUser,
   SignInErrorReason,
+  VerifyRecoveryErrorReason,
 } from "./auth.repository";
 import { type AuthError, type Result, failure, success } from "./auth.result";
 import {
@@ -27,6 +28,22 @@ const LOGIN_ERRORS: Record<SignInErrorReason, AuthError> = {
   unknown: {
     code: "unknown",
     message: "Não foi possível fazer login. Tente novamente mais tarde.",
+  },
+};
+
+const RECOVERY_CODE_ERRORS: Record<VerifyRecoveryErrorReason, AuthError> = {
+  invalid_code: {
+    code: "invalid_recovery_code",
+    message: "Código inválido ou expirado.",
+  },
+  rate_limited: {
+    code: "rate_limited",
+    message:
+      "Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.",
+  },
+  unknown: {
+    code: "unknown",
+    message: "Não foi possível validar o código. Tente novamente mais tarde.",
   },
 };
 
@@ -111,10 +128,7 @@ export function createAuthService(repository: AuthRepository): AuthService {
         code: validation.data.code,
       });
       if (verification.status === "error") {
-        return failure({
-          code: "invalid_recovery_code",
-          message: "Código inválido ou expirado.",
-        });
+        return failure(RECOVERY_CODE_ERRORS[verification.reason]);
       }
 
       const update = await repository.updatePassword(validation.data.password);
