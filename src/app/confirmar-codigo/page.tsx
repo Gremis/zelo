@@ -1,5 +1,6 @@
 "use client";
 
+import { useOnlineStatus } from "@/components/pwa-runtime";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -27,6 +28,7 @@ function validateCode(code: string): string | null {
 
 export default function ConfirmationCodePage() {
   const { draft, registrationId, setRegistrationId } = useSignupFlow();
+  const online = useOnlineStatus();
   const id = useId();
   const codeRef = useRef<HTMLInputElement>(null);
   const pending = useRef(false);
@@ -123,7 +125,7 @@ export default function ConfirmationCodePage() {
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext) {
+    if (pending.current || !hasContext || !navigator.onLine) {
       return;
     }
 
@@ -266,7 +268,7 @@ export default function ConfirmationCodePage() {
             </Link>
             <button
               type="button"
-              disabled={!hasContext || operation !== null}
+              disabled={!hasContext || operation !== null || !online}
               onClick={handleResend}
               data-slot="link"
               className={signupStyles.link}
