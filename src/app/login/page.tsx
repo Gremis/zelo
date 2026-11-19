@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
 import { submitLogin } from "@/lib/auth/submit";
@@ -21,12 +21,15 @@ export default function LoginPage() {
   const passwordErrorId = useId();
   const keepSignedInId = useId();
 
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [credentialsError, setCredentialsError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -47,8 +50,14 @@ export default function LoginPage() {
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
+    setCredentialsError(false);
 
     if (nextEmailError || nextPasswordError) {
+      if (nextEmailError) {
+        emailInputRef.current?.focus();
+      } else {
+        passwordInputRef.current?.focus();
+      }
       return;
     }
 
@@ -60,14 +69,25 @@ export default function LoginPage() {
         password,
         keepSignedIn,
       });
+    } catch {
+      setCredentialsError(true);
+      emailInputRef.current?.focus();
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <AuthCard title="Entrar" description="Acesse sua conta.">
+    <AuthCard title="Entrar" description="Painel do síndico profissional.">
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {credentialsError ? (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200"
+          >
+            E-mail ou senha incorretos. Confira os dados ou recupere a senha.
+          </p>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor={emailId}
@@ -76,6 +96,7 @@ export default function LoginPage() {
             E-mail
           </label>
           <input
+            ref={emailInputRef}
             id={emailId}
             name="email"
             type="email"
@@ -85,6 +106,7 @@ export default function LoginPage() {
             onChange={(event) => {
               setEmail(event.target.value);
               setEmailError(null);
+              setCredentialsError(false);
             }}
             aria-invalid={emailError ? true : undefined}
             aria-describedby={emailError ? emailErrorId : undefined}
@@ -106,6 +128,7 @@ export default function LoginPage() {
           </label>
           <div className="relative">
             <input
+              ref={passwordInputRef}
               id={passwordId}
               name="password"
               type={showPassword ? "text" : "password"}
@@ -114,6 +137,7 @@ export default function LoginPage() {
               onChange={(event) => {
                 setPassword(event.target.value);
                 setPasswordError(null);
+                setCredentialsError(false);
               }}
               aria-invalid={passwordError ? true : undefined}
               aria-describedby={passwordError ? passwordErrorId : undefined}
@@ -122,6 +146,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setShowPassword((visible) => !visible)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
               aria-pressed={showPassword}
               className="absolute inset-y-0 right-0 flex items-center rounded pr-3 text-xs font-medium text-teal-300 hover:text-teal-200 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:outline-none"
             >
