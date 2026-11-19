@@ -205,7 +205,7 @@ export default function SignupPage() {
               id={`${id}-phone`}
               name="phone"
               required
-              placeholder="(31) 9____-____"
+              placeholder="(00) 90000-0000"
               value={draft.phone}
               onValueChange={(phone) => {
                 setDraft((current) => ({ ...current, phone }));

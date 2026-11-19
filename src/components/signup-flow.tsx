@@ -12,6 +12,8 @@ export type SignupDraft = {
 const SignupFlowContext = createContext<{
   draft: SignupDraft;
   setDraft: Dispatch<SetStateAction<SignupDraft>>;
+  recoveryEmail: string;
+  setRecoveryEmail: Dispatch<SetStateAction<string>>;
   registrationId: string | null;
   setRegistrationId: Dispatch<SetStateAction<string | null>>;
 } | null>(null);
@@ -22,12 +24,15 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
     email: "",
     phone: "",
   });
+  const [recoveryEmail, setRecoveryEmail] = useState("");
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   return (
     <SignupFlowContext.Provider
       value={{
         draft,
         setDraft,
+        recoveryEmail,
+        setRecoveryEmail,
         registrationId,
         setRegistrationId,
       }}

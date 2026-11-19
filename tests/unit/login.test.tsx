@@ -22,6 +22,7 @@ test("renders the login screen", () => {
   expect(
     screen.getByRole("heading", { level: 1, name: "Entrar" }),
   ).toBeInTheDocument();
+  expect(screen.getByText("Sindicondo")).toBeInTheDocument();
   expect(screen.getByText("Acesse sua conta.")).toBeInTheDocument();
   expect(screen.getByLabelText("E-mail")).toHaveAttribute("type", "email");
   expect(screen.getByLabelText("E-mail")).toHaveAttribute(
