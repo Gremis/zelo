@@ -28,6 +28,20 @@ test("registration follows the explicit application environment in a production 
     await expect(page.getByRole("main").getByRole("status")).toContainText(
       "Código reenviado",
     );
+    await page.getByRole("button", { name: "Confirmar e entrar" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+      "Informe o código recebido.",
+    );
+    await expect(page.getByLabel("Código", { exact: true })).toBeFocused();
+    await page.getByLabel("Código", { exact: true }).fill("12345");
+    await page.getByRole("button", { name: "Confirmar e entrar" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+      "Digite o código de 6 dígitos.",
+    );
+    await expect(page.getByLabel("Código", { exact: true })).toHaveAttribute(
+      "maxlength",
+      "6",
+    );
     await page.getByLabel("Código", { exact: true }).fill("123456");
     await page.getByRole("button", { name: "Confirmar e entrar" }).click();
     await expect(

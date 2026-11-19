@@ -1,7 +1,6 @@
 "use client";
 
 import { signupStyles } from "@/components/signup-styles";
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
@@ -13,6 +12,20 @@ import {
   submitConfirmationCode,
   submitResendConfirmationCode,
 } from "@/lib/auth/submit";
+
+const CODE_LENGTH = 6;
+
+function validateCode(code: string): string | null {
+  if (code === "") {
+    return "Informe o código recebido.";
+  }
+
+  if (code.length !== CODE_LENGTH) {
+    return `Digite o código de ${CODE_LENGTH} dígitos.`;
+  }
+
+  return null;
+}
 
 export default function ConfirmationCodePage() {
   const router = useRouter();
@@ -49,18 +62,26 @@ export default function ConfirmationCodePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending.current || !hasContext || blocked) return;
+
+    if (pending.current || !hasContext || blocked) {
+      return;
+    }
+
     setMessage("");
     setResendStatus("");
-    if (!/^\d{6}$/.test(code)) {
-      setCodeError("Digite o código de 6 dígitos.");
+
+    const nextCodeError = validateCode(code);
+    setCodeError(nextCodeError ?? "");
+
+    if (nextCodeError) {
       codeRef.current?.focus();
       return;
     }
+
     pending.current = true;
     const version = screenVersion.current;
     setOperation("confirm");
-    setCodeError("");
+
     try {
       const input = {
         registrationId: registrationId ?? "",
@@ -68,7 +89,11 @@ export default function ConfirmationCodePage() {
         code,
       };
       const result = await submitConfirmationCode(input);
-      if (version !== screenVersion.current) return;
+
+      if (version !== screenVersion.current) {
+        return;
+      }
+
       if (result.ok) {
         setCode("");
         if (isRegistrationDemoEnabled()) {
@@ -109,20 +134,28 @@ export default function ConfirmationCodePage() {
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext) return;
+    if (pending.current || !hasContext) {
+      return;
+    }
+
     pending.current = true;
     const version = screenVersion.current;
     setOperation("resend");
     setMessage("");
     setCodeError("");
     setResendStatus("");
+
     try {
       const input = {
         registrationId: registrationId ?? "",
         email: draft.email.trim(),
       };
       const result = await submitResendConfirmationCode(input);
-      if (version !== screenVersion.current) return;
+
+      if (version !== screenVersion.current) {
+        return;
+      }
+
       if (result.ok) {
         setCode("");
         setBlocked(false);
@@ -194,11 +227,13 @@ export default function ConfirmationCodePage() {
               type="text"
               inputMode="numeric"
               autoComplete="one-time-code"
-              maxLength={6}
+              maxLength={CODE_LENGTH}
               disabled={!hasContext || blocked || operation !== null}
               value={code}
               onChange={(event) => {
-                setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                setCode(
+                  event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH),
+                );
                 setCodeError("");
                 setMessage("");
               }}
