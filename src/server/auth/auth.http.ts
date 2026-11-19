@@ -7,6 +7,7 @@ const STATUS_BY_CODE: Record<AuthErrorCode, number> = {
   invalid_body: 400,
   invalid_input: 400,
   invalid_credentials: 401,
+  rate_limited: 429,
   email_already_registered: 409,
   invalid_recovery_code: 401,
   update_failed: 400,

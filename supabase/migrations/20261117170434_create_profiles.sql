@@ -46,3 +46,19 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row
   execute function public.handle_new_user();
+
+create function public.handle_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create trigger profiles_set_updated_at
+  before update on public.profiles
+  for each row
+  execute function public.handle_updated_at();

@@ -2,6 +2,7 @@ export type AuthErrorCode =
   | "invalid_body"
   | "invalid_input"
   | "invalid_credentials"
+  | "rate_limited"
   | "email_already_registered"
   | "invalid_recovery_code"
   | "update_failed"

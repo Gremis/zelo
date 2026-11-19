@@ -1,5 +1,9 @@
-import type { AuthRepository, AuthUser } from "./auth.repository";
-import { type Result, failure, success } from "./auth.result";
+import type {
+  AuthRepository,
+  AuthUser,
+  SignInErrorReason,
+} from "./auth.repository";
+import { type AuthError, type Result, failure, success } from "./auth.result";
 import {
   validateEmailOnly,
   validateLogin,
@@ -9,6 +13,22 @@ import {
 
 const RECOVERY_MESSAGE =
   "Se o e-mail existir, enviamos as instruções de recuperação.";
+
+const LOGIN_ERRORS: Record<SignInErrorReason, AuthError> = {
+  invalid_credentials: {
+    code: "invalid_credentials",
+    message: "E-mail ou senha inválidos.",
+  },
+  rate_limited: {
+    code: "rate_limited",
+    message:
+      "Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.",
+  },
+  unknown: {
+    code: "unknown",
+    message: "Não foi possível fazer login. Tente novamente mais tarde.",
+  },
+};
 
 export type AuthService = {
   signUp(body: unknown): Promise<Result<{ user: AuthUser }>>;
@@ -51,10 +71,7 @@ export function createAuthService(repository: AuthRepository): AuthService {
 
       const outcome = await repository.signIn(validation.data);
       if (outcome.status === "error") {
-        return failure({
-          code: "invalid_credentials",
-          message: "E-mail ou senha inválidos.",
-        });
+        return failure(LOGIN_ERRORS[outcome.reason]);
       }
 
       return success({ user: outcome.user });

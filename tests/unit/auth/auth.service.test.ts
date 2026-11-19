@@ -81,9 +81,14 @@ describe("AuthService.login", () => {
     expect(result).toEqual({ ok: true, data: { user: USER } });
   });
 
-  it("maps a repository error to invalid credentials", async () => {
+  it("maps invalid credentials to a 401 error", async () => {
     const service = createAuthService(
-      createRepository({ signIn: async () => ({ status: "error" }) }),
+      createRepository({
+        signIn: async () => ({
+          status: "error",
+          reason: "invalid_credentials",
+        }),
+      }),
     );
 
     const result = await service.login({
@@ -95,6 +100,24 @@ describe("AuthService.login", () => {
       throw new Error("expected a failure");
     }
     expect(result.error.code).toBe("invalid_credentials");
+  });
+
+  it("maps a rate limit to its own error instead of invalid credentials", async () => {
+    const service = createAuthService(
+      createRepository({
+        signIn: async () => ({ status: "error", reason: "rate_limited" }),
+      }),
+    );
+
+    const result = await service.login({
+      email: "maria@example.com",
+      password: "codigo789",
+    });
+
+    if (result.ok) {
+      throw new Error("expected a failure");
+    }
+    expect(result.error.code).toBe("rate_limited");
   });
 });
 

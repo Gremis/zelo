@@ -1,4 +1,4 @@
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { AuthError, SupabaseClient, User } from "@supabase/supabase-js";
 
 export type AuthUser = { id: string | null; email: string | null };
 
@@ -15,8 +15,14 @@ export type SignUpOutcome =
   | { status: "duplicate" }
   | { status: "error" };
 
+export type SignInErrorReason =
+  | "invalid_credentials"
+  | "rate_limited"
+  | "unknown";
+
 export type SignInOutcome =
-  { status: "ok"; user: AuthUser } | { status: "error" };
+  | { status: "ok"; user: AuthUser }
+  | { status: "error"; reason: SignInErrorReason };
 
 export type SimpleOutcome = { status: "ok" } | { status: "error" };
 
@@ -42,6 +48,27 @@ function isDuplicateError(code: string | undefined, message: string): boolean {
     return true;
   }
   return message.toLowerCase().includes("already registered");
+}
+
+function isRateLimited(error: AuthError): boolean {
+  return error.status === 429 || (error.code ?? "").includes("rate_limit");
+}
+
+function isInvalidCredentials(error: AuthError): boolean {
+  return (
+    error.code === "invalid_credentials" ||
+    error.message.toLowerCase().includes("invalid login credentials")
+  );
+}
+
+function classifySignInError(error: AuthError): SignInErrorReason {
+  if (isRateLimited(error)) {
+    return "rate_limited";
+  }
+  if (isInvalidCredentials(error)) {
+    return "invalid_credentials";
+  }
+  return "unknown";
 }
 
 export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
@@ -78,7 +105,7 @@ export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
       });
 
       if (error) {
-        return { status: "error" };
+        return { status: "error", reason: classifySignInError(error) };
       }
 
       return { status: "ok", user: toAuthUser(data.user) };
