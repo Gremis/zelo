@@ -1,13 +1,14 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { MockConfirmationNotice } from "@/components/mock-confirmation-notice";
 import SignupPage from "@/app/criar-conta/page";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
 import { SignupFlowProvider } from "@/components/signup-flow";
 
-const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: navigation.push }),
+  useRouter: () => ({ push: navigation.push, replace: navigation.replace }),
 }));
 
 beforeEach(() => {
@@ -20,12 +21,14 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   navigation.push.mockReset();
+  navigation.replace.mockReset();
 });
 
 function ReviewFlow() {
   const [route, setRoute] = useState("/criar-conta");
   useEffect(() => {
     navigation.push.mockImplementation(setRoute);
+    navigation.replace.mockImplementation(setRoute);
   }, []);
   return (
     <div
@@ -37,6 +40,7 @@ function ReviewFlow() {
         }
       }}
     >
+      {route === "/fila" && <MockConfirmationNotice />}
       <Activity mode={route === "/criar-conta" ? "visible" : "hidden"}>
         <SignupPage />
       </Activity>
@@ -90,7 +94,7 @@ async function confirm(code: string) {
   await finishOperation();
 }
 
-test("reviews signup, correction and simulated success without a real session or queue", async () => {
+test("reviews signup, correction and simulated success and mock queue navigation without a real session", async () => {
   openFlow();
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
@@ -122,9 +126,11 @@ test("reviews signup, correction and simulated success without a real session or
   await finishOperation();
   expect(screen.getByText("corrigido@example.invalid")).toBeInTheDocument();
   await confirm("123456");
-  expect(
-    screen.getByRole("heading", { level: 1, name: "Conta criada." }),
-  ).toHaveFocus();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "E-mail confirmado. Conta criada.",
+  );
+  expect(screen.getByRole("status")).not.toHaveFocus();
+  expect(navigation.replace).toHaveBeenCalledWith("/fila");
   expect(navigation.push).toHaveBeenCalledTimes(2);
   expect(navigation.push).toHaveBeenLastCalledWith("/confirmar-codigo");
   expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
@@ -158,9 +164,7 @@ test("reviews wrong and expired codes, the simulated attempt limit and resend re
   expect(screen.getByRole("status")).toHaveTextContent("Código reenviado");
   expect(screen.getByLabelText("Código")).toBeEnabled();
   await confirm("123456");
-  expect(
-    screen.getByRole("heading", { level: 1, name: "Conta criada." }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("status")).toBeInTheDocument();
 });
 
 test("reviews signup, confirmation and resend failures without simulated success fallback", async () => {

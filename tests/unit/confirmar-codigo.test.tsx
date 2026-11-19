@@ -135,30 +135,16 @@ test("reports unavailable confirmation and does not navigate", async () => {
   ).toBeInTheDocument();
 });
 
-test("shows accepted confirmation without inventing a queue destination", async () => {
+test("does not redirect a confirmation without a valid session outside mock mode", async () => {
   vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
   renderConfirmation();
   submitCode();
-  const heading = await screen.findByRole("heading", {
-    level: 1,
-    name: "Conta criada.",
-  });
-  expect(heading).toHaveFocus();
-  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível iniciar sua sessão",
+  );
   expect(
-    screen.queryByRole("heading", { name: "Confirme seu e-mail" }),
+    screen.queryByRole("heading", { name: "Conta criada." }),
   ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Digite o código de 6 dígitos para confirmar/),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText("pessoa@example.invalid")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("link", { name: "Revisar cadastro" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
-  expect(screen.getByRole("main")).toHaveTextContent("Sindicondo");
-  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
-  expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
 });
 
 test("locks confirmation and resend during a pending request", async () => {

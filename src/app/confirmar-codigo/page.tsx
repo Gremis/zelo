@@ -3,6 +3,8 @@
 import { signupStyles } from "@/components/signup-styles";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -13,7 +15,13 @@ import {
 } from "@/lib/auth/submit";
 
 export default function ConfirmationCodePage() {
-  const { draft, registrationId, setRegistrationId } = useSignupFlow();
+  const router = useRouter();
+  const {
+    draft,
+    registrationId,
+    setRegistrationId,
+    setMockConfirmationComplete,
+  } = useSignupFlow();
   const id = useId();
   const codeRef = useRef<HTMLInputElement>(null);
   const pending = useRef(false);
@@ -22,7 +30,6 @@ export default function ConfirmationCodePage() {
   const [codeError, setCodeError] = useState("");
   const [message, setMessage] = useState("");
   const [operation, setOperation] = useState<"confirm" | "resend" | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
   const [resendStatus, setResendStatus] = useState("");
   const [blocked, setBlocked] = useState(false);
   const hasContext = Boolean(draft.email.trim());
@@ -33,7 +40,6 @@ export default function ConfirmationCodePage() {
       setCode("");
       setCodeError("");
       setMessage("");
-      setConfirmed(false);
       setResendStatus("");
       setBlocked(false);
       if (codeRef.current) codeRef.current.value = "";
@@ -65,7 +71,12 @@ export default function ConfirmationCodePage() {
       if (version !== screenVersion.current) return;
       if (result.ok) {
         setCode("");
-        setConfirmed(true);
+        if (isRegistrationDemoEnabled()) {
+          setMockConfirmationComplete(true);
+          router.replace("/fila");
+        } else {
+          setMessage("Não foi possível iniciar sua sessão. Tente novamente.");
+        }
       } else if (
         result.error === "invalid-code" ||
         result.error === "expired-code"
@@ -141,10 +152,9 @@ export default function ConfirmationCodePage() {
   return (
     <AuthCard
       variant="signup"
-      title={confirmed ? "Conta criada." : "Confirme seu e-mail"}
-      focusTitle={confirmed}
+      title="Confirme seu e-mail"
       description={
-        confirmed ? null : hasContext ? (
+        hasContext ? (
           <>
             Digite o código de 6 dígitos para confirmar o e-mail{" "}
             <strong>{draft.email.trim()}</strong>.
@@ -154,107 +164,103 @@ export default function ConfirmationCodePage() {
         )
       }
     >
-      {!confirmed && (
-        <>
-          {!hasContext && (
-            <p role="status" data-slot="status" className={signupStyles.status}>
-              Não encontramos os dados do seu cadastro nesta sessão. Volte para
-              criar sua conta. Se você recarregou a página, será necessário
-              informar os dados novamente.
-            </p>
-          )}
-          <form
-            noValidate
-            onSubmit={handleSubmit}
-            data-slot="form"
-            className={signupStyles.form}
-            aria-busy={operation !== null}
-          >
-            <div data-slot="field" className={signupStyles.field}>
-              <label
-                htmlFor={`${id}-code`}
-                data-slot="label"
-                className={signupStyles.label}
-              >
-                Código
-              </label>
-              <input
-                ref={codeRef}
-                id={`${id}-code`}
-                name="code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                disabled={!hasContext || blocked || operation !== null}
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
-                  setCodeError("");
-                  setMessage("");
-                }}
-                aria-invalid={Boolean(codeError)}
-                aria-describedby={codeError ? `${id}-code-error` : undefined}
-                data-slot="input code"
-                className={signupStyles.code}
-              />
-              {codeError && (
-                <p
-                  id={`${id}-code-error`}
-                  role="alert"
-                  data-slot="error"
-                  className={signupStyles.error}
-                >
-                  {codeError}
-                </p>
-              )}
-            </div>
-            <button
-              type="submit"
-              disabled={!hasContext || blocked || operation !== null}
-              data-slot="submit"
-              className={signupStyles.submit}
-            >
-              {operation === "confirm"
-                ? "Confirmando..."
-                : "Confirmar e entrar"}
-            </button>
-          </form>
-          <div data-slot="actions" className={signupStyles.actions}>
-            <Link
-              href="/criar-conta"
-              data-slot="link"
-              className={signupStyles.link}
-              onClick={() => setRegistrationId(null)}
-            >
-              {hasContext ? "Corrigir e-mail" : "Criar conta"}
-            </Link>
-            <button
-              type="button"
-              disabled={!hasContext || operation !== null}
-              onClick={handleResend}
-              data-slot="link"
-              className={signupStyles.link}
-            >
-              {operation === "resend" ? "Reenviando..." : "Reenviar código"}
-            </button>
-          </div>
-          <p data-slot="help" className={signupStyles.help}>
-            Não chegou? Confira a caixa de spam. A conta só é liberada depois da
-            confirmação.
+      <>
+        {!hasContext && (
+          <p role="status" data-slot="status" className={signupStyles.status}>
+            Não encontramos os dados do seu cadastro nesta sessão. Volte para
+            criar sua conta. Se você recarregou a página, será necessário
+            informar os dados novamente.
           </p>
-          {message && (
-            <p role="alert" data-slot="error" className={signupStyles.error}>
-              {message}
-            </p>
-          )}
-          {resendStatus && (
-            <p role="status" data-slot="status" className={signupStyles.status}>
-              {resendStatus}
-            </p>
-          )}
-        </>
-      )}
+        )}
+        <form
+          noValidate
+          onSubmit={handleSubmit}
+          data-slot="form"
+          className={signupStyles.form}
+          aria-busy={operation !== null}
+        >
+          <div data-slot="field" className={signupStyles.field}>
+            <label
+              htmlFor={`${id}-code`}
+              data-slot="label"
+              className={signupStyles.label}
+            >
+              Código
+            </label>
+            <input
+              ref={codeRef}
+              id={`${id}-code`}
+              name="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              disabled={!hasContext || blocked || operation !== null}
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                setCodeError("");
+                setMessage("");
+              }}
+              aria-invalid={Boolean(codeError)}
+              aria-describedby={codeError ? `${id}-code-error` : undefined}
+              data-slot="input code"
+              className={signupStyles.code}
+            />
+            {codeError && (
+              <p
+                id={`${id}-code-error`}
+                role="alert"
+                data-slot="error"
+                className={signupStyles.error}
+              >
+                {codeError}
+              </p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={!hasContext || blocked || operation !== null}
+            data-slot="submit"
+            className={signupStyles.submit}
+          >
+            {operation === "confirm" ? "Confirmando..." : "Confirmar e entrar"}
+          </button>
+        </form>
+        <div data-slot="actions" className={signupStyles.actions}>
+          <Link
+            href="/criar-conta"
+            data-slot="link"
+            className={signupStyles.link}
+            onClick={() => setRegistrationId(null)}
+          >
+            {hasContext ? "Corrigir e-mail" : "Criar conta"}
+          </Link>
+          <button
+            type="button"
+            disabled={!hasContext || operation !== null}
+            onClick={handleResend}
+            data-slot="link"
+            className={signupStyles.link}
+          >
+            {operation === "resend" ? "Reenviando..." : "Reenviar código"}
+          </button>
+        </div>
+        <p data-slot="help" className={signupStyles.help}>
+          Não chegou? Confira a caixa de spam. A conta só é liberada depois da
+          confirmação.
+        </p>
+        {message && (
+          <p role="alert" data-slot="error" className={signupStyles.error}>
+            {message}
+          </p>
+        )}
+        {resendStatus && (
+          <p role="status" data-slot="status" className={signupStyles.status}>
+            {resendStatus}
+          </p>
+        )}
+      </>
     </AuthCard>
   );
 }
