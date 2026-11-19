@@ -1,7 +1,6 @@
 "use client";
 
 import { signupStyles } from "@/components/signup-styles";
-
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
@@ -14,6 +13,19 @@ import {
 } from "@/lib/auth/submit";
 
 const RECOVERY_CODE_VALIDITY_MINUTES = 15;
+const CODE_LENGTH = 6;
+
+function validateCode(code: string): string | null {
+  if (code === "") {
+    return "Informe o código recebido.";
+  }
+
+  if (code.length !== CODE_LENGTH) {
+    return `Digite o código de ${CODE_LENGTH} dígitos.`;
+  }
+
+  return null;
+}
 
 export function ConfirmationCodeScreen({
   flow = "signup",
@@ -52,24 +64,33 @@ export function ConfirmationCodeScreen({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending.current || !hasContext || blocked) return;
+
+    if (pending.current || !hasContext || blocked) {
+      return;
+    }
+
     setMessage("");
     setResendStatus("");
-    if (!/^\d{6}$/.test(code)) {
-      setCodeError("Digite o código de 6 dígitos.");
+
+    const nextCodeError = validateCode(code);
+    setCodeError(nextCodeError ?? "");
+
+    if (nextCodeError) {
       codeRef.current?.focus();
       return;
     }
+
     if (flow === "recovery") {
       setMessage(
         "Não foi possível validar o código agora. Tente novamente mais tarde.",
       );
       return;
     }
+
     pending.current = true;
     const version = screenVersion.current;
     setOperation("confirm");
-    setCodeError("");
+
     try {
       const input = {
         registrationId: registrationId ?? "",
@@ -77,7 +98,11 @@ export function ConfirmationCodeScreen({
         code,
       };
       const result = await submitConfirmationCode(input);
-      if (version !== screenVersion.current) return;
+
+      if (version !== screenVersion.current) {
+        return;
+      }
+
       if (result.ok) {
         setCode("");
         setConfirmed(true);
@@ -113,13 +138,17 @@ export function ConfirmationCodeScreen({
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext) return;
+    if (pending.current || !hasContext) {
+      return;
+    }
+
     pending.current = true;
     const version = screenVersion.current;
     setOperation("resend");
     setMessage("");
     setCodeError("");
     setResendStatus("");
+
     try {
       const input = {
         registrationId: registrationId ?? "",
@@ -127,8 +156,15 @@ export function ConfirmationCodeScreen({
       };
       const result =
         flow === "recovery" ? null : await submitResendConfirmationCode(input);
-      if (flow === "recovery") await submitPasswordRecovery(email);
-      if (version !== screenVersion.current) return;
+
+      if (flow === "recovery") {
+        await submitPasswordRecovery(email);
+      }
+
+      if (version !== screenVersion.current) {
+        return;
+      }
+
       if (flow === "recovery" || result?.ok) {
         setCode("");
         setBlocked(false);
@@ -218,11 +254,13 @@ export function ConfirmationCodeScreen({
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={6}
+                maxLength={CODE_LENGTH}
                 disabled={!hasContext || blocked || operation !== null}
                 value={code}
                 onChange={(event) => {
-                  setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                  setCode(
+                    event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH),
+                  );
                   setCodeError("");
                   setMessage("");
                 }}
