@@ -1,14 +1,12 @@
-import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import Home from "@/app/page";
 
-test("renders the homepage main heading", () => {
-  render(<Home />);
+const { redirect } = vi.hoisted(() => ({ redirect: vi.fn() }));
 
-  expect(
-    screen.getByRole("heading", {
-      level: 1,
-      name: "To get started, edit the page.tsx file.",
-    }),
-  ).toBeInTheDocument();
+vi.mock("next/navigation", () => ({ redirect }));
+
+test("redirects the homepage to login", () => {
+  Home();
+
+  expect(redirect).toHaveBeenCalledWith("/login");
 });
