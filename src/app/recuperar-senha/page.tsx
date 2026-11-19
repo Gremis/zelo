@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
+import { useSignupFlow } from "@/components/signup-flow";
 import { submitPasswordRecovery } from "@/lib/auth/submit";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -15,10 +16,11 @@ const linkClasses =
   "rounded text-sm font-medium text-teal-300 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
 
 export default function PasswordRecoveryPage() {
+  const { recoveryEmail, setRecoveryEmail } = useSignupFlow();
   const emailId = useId();
   const emailErrorId = useId();
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(recoveryEmail);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -44,6 +46,7 @@ export default function PasswordRecoveryPage() {
       return;
     }
 
+    setRecoveryEmail(trimmedEmail);
     setIsSubmitting(true);
 
     try {
@@ -87,6 +90,7 @@ export default function PasswordRecoveryPage() {
                 value={email}
                 onChange={(event) => {
                   setEmail(event.target.value);
+                  setRecoveryEmail(event.target.value);
                   setEmailError(null);
                 }}
                 aria-invalid={emailError ? true : undefined}
