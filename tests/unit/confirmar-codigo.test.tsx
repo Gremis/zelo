@@ -410,3 +410,25 @@ test("ignores a pending confirmation result after navigating to correct the emai
     screen.getByRole("button", { name: "Confirmar e entrar" }),
   ).toBeEnabled();
 });
+
+test("does not resend while offline and restores the existing action after reconnection", () => {
+  let online = false;
+  const connection = vi
+    .spyOn(navigator, "onLine", "get")
+    .mockImplementation(() => online);
+  try {
+    renderConfirmation();
+    const resend = screen.getByRole("button", { name: "Reenviar código" });
+    expect(resend).toBeDisabled();
+    fireEvent.click(resend);
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+    act(() => {
+      online = true;
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(resend).toBeEnabled();
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+  } finally {
+    connection.mockRestore();
+  }
+});

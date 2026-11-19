@@ -1,5 +1,6 @@
 "use client";
 
+import { useOnlineStatus } from "@/components/pwa-runtime";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -35,6 +36,7 @@ export function ConfirmationCodeScreen({
   const { draft, recoveryEmail, registrationId, setRegistrationId } =
     useSignupFlow();
   const email = flow === "recovery" ? recoveryEmail.trim() : draft.email.trim();
+  const online = useOnlineStatus();
   const id = useId();
   const codeRef = useRef<HTMLInputElement>(null);
   const pending = useRef(false);
@@ -138,7 +140,7 @@ export function ConfirmationCodeScreen({
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext) {
+    if (pending.current || !hasContext || !navigator.onLine) {
       return;
     }
 
@@ -312,7 +314,7 @@ export function ConfirmationCodeScreen({
             </Link>
             <button
               type="button"
-              disabled={!hasContext || operation !== null}
+              disabled={!hasContext || operation !== null || !online}
               onClick={handleResend}
               data-slot="link"
               className={signupStyles.link}
