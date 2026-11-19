@@ -42,6 +42,102 @@ export type Database = {
           },
         ];
       };
+      funcionarios: {
+        Row: {
+          ativo: boolean;
+          celular: string;
+          celular_normalizado: string;
+          condominio_id: string;
+          created_at: string;
+          funcao_id: string;
+          horario_trabalho: string | null;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ativo?: boolean;
+          celular: string;
+          condominio_id: string;
+          created_at?: string;
+          funcao_id: string;
+          horario_trabalho?: string | null;
+          id?: string;
+          nome: string;
+          sindico_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          ativo?: boolean;
+          celular?: string;
+          condominio_id?: string;
+          created_at?: string;
+          funcao_id?: string;
+          horario_trabalho?: string | null;
+          id?: string;
+          nome?: string;
+          sindico_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "funcionarios_condominio_id_fkey";
+            columns: ["condominio_id"];
+            isOneToOne: false;
+            referencedRelation: "condominiums";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "funcionarios_funcao_id_fkey";
+            columns: ["funcao_id"];
+            isOneToOne: false;
+            referencedRelation: "funcoes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "funcionarios_sindico_id_fkey";
+            columns: ["sindico_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      funcoes: {
+        Row: {
+          created_at: string;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          id?: string;
+          nome: string;
+          sindico_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          nome?: string;
+          sindico_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "funcoes_sindico_id_fkey";
+            columns: ["sindico_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profiles: {
         Row: {
           created_at: string;
