@@ -16,9 +16,7 @@ export type SignUpOutcome =
   | { status: "error" };
 
 export type SignInErrorReason =
-  | "invalid_credentials"
-  | "rate_limited"
-  | "unknown";
+  "invalid_credentials" | "rate_limited" | "unknown";
 
 export type SignInOutcome =
   | { status: "ok"; user: AuthUser }
