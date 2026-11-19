@@ -9,6 +9,39 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      condominiums: {
+        Row: {
+          address: string;
+          id: string;
+          manager_id: string;
+          name: string;
+          slug: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          address: string;
+          id?: string;
+          manager_id: string;
+          name: string;
+          slug: string;
+        };
+        Update: {
+          address?: string;
+          id?: string;
+          manager_id?: string;
+          name?: string;
+          slug?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "condominiums_manager_id_fkey";
+            columns: ["manager_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profiles: {
         Row: {
           created_at: string;

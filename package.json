@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "SUPABASE_TELEMETRY_DISABLED=1 supabase test db --local --network-id zelo-local-loopback supabase/tests/database",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:ui": "npm run build && playwright test --ui",
     "db:start": "node scripts/db-start.mjs",
