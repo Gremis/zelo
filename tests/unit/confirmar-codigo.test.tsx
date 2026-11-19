@@ -95,7 +95,7 @@ test("shows the email in memory, filters code input and focuses linked validatio
   expect(screen.getByText("pessoa@example.invalid")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
+      "O código vale por 15 minutos. Aguarde 60 segundos para reenviar. Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
     ),
   ).toBeInTheDocument();
   const code = screen.getByLabelText("Código");
@@ -141,7 +141,7 @@ test("shows accepted confirmation without inventing a queue destination", async 
   submitCode();
   const heading = await screen.findByRole("heading", {
     level: 1,
-    name: "Conta criada.",
+    name: "E-mail confirmado.",
   });
   expect(heading).toHaveFocus();
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
@@ -193,7 +193,7 @@ test("reports resend failure without an invented countdown or success", async ()
   );
   expect(submitResendConfirmationCode).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "Reenviar código" })).toBeEnabled();
-  expect(screen.queryByText(/30s|15 minutos/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/30s/)).not.toBeInTheDocument();
 });
 
 test("preserves only non-secret draft fields between screens and loses them on reload", () => {

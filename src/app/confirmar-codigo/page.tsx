@@ -1,5 +1,6 @@
 "use client";
 
+import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -38,6 +39,7 @@ export default function ConfirmationCodePage() {
   const [confirmed, setConfirmed] = useState(false);
   const [resendStatus, setResendStatus] = useState("");
   const [blocked, setBlocked] = useState(false);
+  const mockMode = isRegistrationDemoEnabled();
   const hasContext = Boolean(draft.email.trim());
 
   useLayoutEffect(
@@ -91,6 +93,7 @@ export default function ConfirmationCodePage() {
       if (result.ok) {
         setCode("");
         setConfirmed(true);
+        if (!mockMode) setRegistrationId(null);
       } else if (
         result.error === "invalid-code" ||
         result.error === "expired-code"
@@ -101,7 +104,13 @@ export default function ConfirmationCodePage() {
         setCode("");
         setBlocked(true);
         setMessage(
-          "Limite de tentativas atingido. Reenvie o código ou revise o cadastro.",
+          mockMode
+            ? "Limite de tentativas atingido. Reenvie o código ou revise o cadastro."
+            : "Limite de tentativas atingido. Aguarde 15 minutos e solicite outro código.",
+        );
+      } else if (result.error === "rate-limited") {
+        setMessage(
+          "Aguarde antes de tentar novamente. O intervalo de reenvio é de 60 segundos.",
         );
       } else {
         setMessage(
@@ -148,10 +157,16 @@ export default function ConfirmationCodePage() {
       if (result.ok) {
         setCode("");
         setBlocked(false);
-        setResendStatus("Código reenviado. Confira seu e-mail.");
+        setResendStatus(
+          mockMode
+            ? "Código reenviado. Confira seu e-mail."
+            : "Se houver cadastro pendente, o código será enviado. Confira sua caixa de entrada e o spam.",
+        );
       } else if (!result.ok && result.error === "attempt-limit") {
         setBlocked(true);
         setMessage("Limite de reenvios atingido. Tente novamente mais tarde.");
+      } else if (result.error === "rate-limited") {
+        setMessage("Aguarde 60 segundos entre solicitações de código.");
       } else {
         setMessage(
           !result.ok && result.error === "missing-registration"
@@ -174,7 +189,13 @@ export default function ConfirmationCodePage() {
   return (
     <AuthCard
       variant="signup"
-      title={confirmed ? "Conta criada." : "Confirme seu e-mail"}
+      title={
+        confirmed
+          ? mockMode
+            ? "Conta criada."
+            : "E-mail confirmado."
+          : "Confirme seu e-mail"
+      }
       focusTitle={confirmed}
       description={
         confirmed ? null : hasContext ? (
@@ -187,6 +208,16 @@ export default function ConfirmationCodePage() {
         )
       }
     >
+      {confirmed && !mockMode && (
+        <>
+          <p role="status" className={signupStyles.status}>
+            E-mail confirmado. Conta criada.
+          </p>
+          <Link href="/login" className={signupStyles.link}>
+            Ir para o login
+          </Link>
+        </>
+      )}
       {!confirmed && (
         <>
           {!hasContext && (
@@ -274,8 +305,16 @@ export default function ConfirmationCodePage() {
               {operation === "resend" ? "Reenviando..." : "Reenviar código"}
             </button>
           </div>
+          {!mockMode && hasContext && (
+            <p className={signupStyles.help}>
+              Se já existir um cadastro para este e-mail, a senha e os dados
+              anteriores são preservados. Para alterá-los, use a recuperação de
+              senha. Corrigir o e-mail não exclui o cadastro anterior.
+            </p>
+          )}
           <p data-slot="help" className={signupStyles.help}>
-            Não chegou? Confira a caixa de spam. A conta só é liberada depois da
+            O código vale por 15 minutos. Aguarde 60 segundos para reenviar. Não
+            chegou? Confira a caixa de spam. A conta só é liberada depois da
             confirmação.
           </p>
           {message && (

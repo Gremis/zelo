@@ -1,7 +1,5 @@
-import { getAuthService } from "@/server/auth/auth.factory";
-import { toResponse } from "@/server/auth/auth.http";
+import { authRequest } from "@/server/auth/auth.http";
 
-export async function POST() {
-  const service = await getAuthService();
-  return toResponse(await service.logout());
+export async function POST(request: Request) {
+  return authRequest(request, (service) => service.logout(), 200, false);
 }

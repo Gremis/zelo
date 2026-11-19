@@ -85,7 +85,15 @@ export default function SignupPage() {
         setRegistrationId(result.registrationId);
         router.push("/confirmar-codigo");
       } else {
-        setSubmitError("Não foi possível criar sua conta. Tente novamente.");
+        setSubmitError(
+          result.error === "already-registered"
+            ? "Este e-mail já está cadastrado. Entre ou recupere sua senha."
+            : result.error === "rate-limited"
+              ? "Aguarde 60 segundos antes de solicitar outro código."
+              : result.error === "attempt-limit"
+                ? "Limite de tentativas atingido. Aguarde 15 minutos e solicite outro código."
+                : "O cadastro está temporariamente indisponível. Não foi possível criar sua conta. Tente novamente mais tarde.",
+        );
       }
     } catch {
       if (version === screenVersion.current) {

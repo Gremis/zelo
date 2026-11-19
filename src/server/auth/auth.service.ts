@@ -1,3 +1,4 @@
+import type { ConfirmationGuard, GuardStatus } from "./confirmation-guard";
 import type {
   AuthRepository,
   AuthUser,
@@ -6,6 +7,8 @@ import type {
 import { type AuthError, type Result, failure, success } from "./auth.result";
 import {
   validateEmailOnly,
+  validateConfirmation,
+  validatePendingRegistration,
   validateLogin,
   validateResetPassword,
   validateSignUp,
@@ -31,14 +34,39 @@ const LOGIN_ERRORS: Record<SignInErrorReason, AuthError> = {
 };
 
 export type AuthService = {
-  signUp(body: unknown): Promise<Result<{ user: AuthUser }>>;
+  signUp(
+    body: unknown,
+  ): Promise<Result<{ user: AuthUser; registrationId: string; email: string }>>;
+  confirmSignup(body: unknown): Promise<Result<{ success: boolean }>>;
+  resendSignup(body: unknown): Promise<Result<{ success: boolean }>>;
+  confirmedIdentity(): Promise<Result<{ user: AuthUser }>>;
   login(body: unknown): Promise<Result<{ user: AuthUser }>>;
   logout(): Promise<Result<{ success: boolean }>>;
   requestPasswordRecovery(body: unknown): Promise<Result<{ message: string }>>;
   resetPassword(body: unknown): Promise<Result<{ success: boolean }>>;
 };
 
-export function createAuthService(repository: AuthRepository): AuthService {
+function guardFailure(status: GuardStatus) {
+  return failure({
+    code:
+      status === "blocked"
+        ? "confirmation_blocked"
+        : status === "rate_limited"
+          ? "rate_limited"
+          : "confirmation_expired",
+    message:
+      status === "blocked"
+        ? "Muitas tentativas. Aguarde 15 minutos e solicite outro código."
+        : status === "rate_limited"
+          ? "Aguarde antes de tentar novamente. O intervalo de reenvio é de 60 segundos."
+          : "Cadastro ou código expirado. Solicite outro código.",
+  });
+}
+
+export function createAuthService(
+  repository: AuthRepository,
+  guard: ConfirmationGuard,
+): AuthService {
   return {
     async signUp(body) {
       const validation = validateSignUp(body);
@@ -46,21 +74,132 @@ export function createAuthService(repository: AuthRepository): AuthService {
         return validation;
       }
 
-      const outcome = await repository.signUp(validation.data);
-      if (outcome.status === "created") {
-        return success({ user: outcome.user });
-      }
-      if (outcome.status === "duplicate") {
-        return failure({
-          code: "email_already_registered",
-          message: "Este e-mail já está cadastrado.",
+      const email = validation.data.email;
+      const reservation = await guard({ operation: "send", email });
+      if (reservation.status !== "ok") return guardFailure(reservation.status);
+      if (!reservation.id || !reservation.lease)
+        throw new Error("Missing send reservation.");
+      let accepted = false;
+      let user: AuthUser | undefined;
+      try {
+        const outcome = await repository.signUp(validation.data);
+        accepted = outcome.status === "created";
+        if (outcome.status === "duplicate")
+          return failure({
+            code: "email_already_registered",
+            message: "Este e-mail já está cadastrado.",
+          });
+        if (outcome.status === "created") user = outcome.user;
+        if (outcome.status === "error")
+          return outcome.reason === "rate_limited"
+            ? guardFailure("rate_limited")
+            : failure({
+                code: "unknown",
+                message: "Não foi possível concluir o cadastro.",
+              });
+      } finally {
+        await guard({
+          operation: "sent",
+          email,
+          registrationId: reservation.id,
+          lease: reservation.lease,
+          outcome: accepted ? "ok" : "error",
         });
       }
+      if (!user) throw new Error("Missing signup user.");
+      return success({ user, registrationId: reservation.id, email });
+    },
 
-      return failure({
-        code: "unknown",
-        message: "Não foi possível concluir o cadastro.",
+    async confirmSignup(body) {
+      const validation = validateConfirmation(body);
+      if (!validation.ok) return validation;
+      const { email, registrationId, code } = validation.data;
+      const reservation = await guard({
+        operation: "reserve",
+        email,
+        registrationId,
       });
+      if (reservation.status !== "ok") return guardFailure(reservation.status);
+      if (!reservation.lease)
+        throw new Error("Missing verification reservation.");
+      let outcome: "ok" | "invalid" | "error" = "error";
+      let reason: "invalid_code" | "rate_limited" | "unknown" = "unknown";
+      let settled;
+      try {
+        const result = await repository.confirmSignup({ email, code });
+        if (result.status === "ok") outcome = "ok";
+        else {
+          reason = result.reason;
+          outcome = reason === "invalid_code" ? "invalid" : "error";
+        }
+      } finally {
+        try {
+          settled = await guard({
+            operation: "settle",
+            email,
+            registrationId,
+            lease: reservation.lease,
+            outcome,
+          });
+        } catch {
+          if (outcome === "ok") await repository.signOut("local");
+          throw new Error("Unable to finalize confirmation.");
+        }
+      }
+      if (settled.status !== "ok") {
+        if (outcome === "ok") await repository.signOut("local");
+        return guardFailure(settled.status);
+      }
+      if (outcome === "ok") return success({ success: true });
+      if (reason === "rate_limited") return guardFailure("rate_limited");
+      return failure({
+        code:
+          reason === "invalid_code" ? "invalid_confirmation_code" : "unknown",
+        message:
+          reason === "invalid_code"
+            ? "Código incorreto ou expirado."
+            : "Não foi possível confirmar o código. Tente novamente.",
+      });
+    },
+
+    async resendSignup(body) {
+      const validation = validatePendingRegistration(body);
+      if (!validation.ok) return validation;
+      const { email, registrationId } = validation.data;
+      const reservation = await guard({ operation: "send", email });
+      if (reservation.status !== "ok") return guardFailure(reservation.status);
+      let accepted = false;
+      try {
+        if (reservation.id !== registrationId) return guardFailure("missing");
+        const outcome = await repository.resendSignup(email);
+        accepted = outcome.status === "ok";
+        if (outcome.status === "error")
+          return outcome.reason === "rate_limited"
+            ? guardFailure("rate_limited")
+            : failure({
+                code: "unknown",
+                message: "Não foi possível reenviar o código.",
+              });
+      } finally {
+        await guard({
+          operation: "sent",
+          email,
+          registrationId: reservation.id,
+          lease: reservation.lease,
+          outcome: accepted ? "ok" : "error",
+        });
+      }
+      return success({ success: true });
+    },
+
+    async confirmedIdentity() {
+      const user = await repository.getConfirmedUser();
+      return user
+        ? success({ user })
+        : failure({
+            code: "unauthorized",
+            message: "Entre com uma conta com e-mail confirmado.",
+          });
     },
 
     async login(body) {

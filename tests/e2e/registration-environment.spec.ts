@@ -7,6 +7,17 @@ test("registration follows the explicit application environment in a production 
   const mocksEnabled =
     ["local", "development"].includes(process.env.NEXT_PUBLIC_APP_ENV ?? "") &&
     process.env.NEXT_PUBLIC_REGISTRATION_DEMO === "enabled";
+  const mockMode =
+    ["local", "development"].includes(process.env.NEXT_PUBLIC_APP_ENV ?? "") &&
+    process.env.NEXT_PUBLIC_REGISTRATION_DEMO === "enabled";
+  if (!mockMode)
+    await page.route("**/api/auth/signup", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Unavailable" }),
+      }),
+    );
   await page.goto("/criar-conta");
   await page.getByLabel("Nome completo").fill("Pessoa Exemplo");
   await page
