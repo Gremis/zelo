@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/brand-mark";
 import { signupStyles } from "@/components/signup-styles";
 import type { ReactNode } from "react";
 import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
@@ -76,7 +77,7 @@ export function AuthCard({
                 data-slot="brand-mark"
                 className={signupStyles["brand-mark"]}
               >
-                <SindicondoMark />
+                <BrandMark />
               </span>
               Sindicondo
             </div>

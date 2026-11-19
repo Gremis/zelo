@@ -18,7 +18,8 @@ import type { SignupFormValues } from "@/lib/auth/signup";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { draft, setDraft, setRegistrationId } = useSignupFlow();
+  const { draft, setDraft, setRegistrationId, setMockConfirmationComplete } =
+    useSignupFlow();
   const id = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -71,6 +72,7 @@ export default function SignupPage() {
         phone: values.phone.replace(/\D/g, ""),
       };
       setRegistrationId(null);
+      setMockConfirmationComplete(false);
       const request = submitSignup(payload);
       setPassword("");
       setShowPassword(false);
