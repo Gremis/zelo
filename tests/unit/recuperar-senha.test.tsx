@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import PasswordRecoveryPage from "@/app/recuperar-senha/page";
+import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
 import { submitPasswordRecovery } from "@/lib/auth/submit";
 
 vi.mock("@/lib/auth/submit", () => ({
@@ -16,8 +18,34 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function renderRecovery() {
+  return render(
+    <SignupFlowProvider>
+      <PasswordRecoveryPage />
+    </SignupFlowProvider>,
+  );
+}
+
+function PrefilledRecoveryPage() {
+  const { setRecoveryEmail } = useSignupFlow();
+  const [ready, setReady] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => {
+          setRecoveryEmail("pessoa@example.invalid");
+          setReady(true);
+        }}
+      >
+        Return to recovery
+      </button>
+      {ready ? <PasswordRecoveryPage /> : null}
+    </>
+  );
+}
+
 test("renders the recovery screen", () => {
-  render(<PasswordRecoveryPage />);
+  renderRecovery();
 
   expect(
     screen.getByRole("heading", { level: 1, name: "Recuperar senha" }),
@@ -34,7 +62,7 @@ test("renders the recovery screen", () => {
 });
 
 test("shows a validation error linked to the e-mail field", () => {
-  render(<PasswordRecoveryPage />);
+  renderRecovery();
 
   fireEvent.click(screen.getByRole("button", { name: "Enviar link" }));
 
@@ -48,7 +76,7 @@ test("shows a validation error linked to the e-mail field", () => {
 });
 
 test("rejects an invalid e-mail", () => {
-  render(<PasswordRecoveryPage />);
+  renderRecovery();
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "not-an-email" },
@@ -64,7 +92,7 @@ test("disables the submit button while the request is pending", () => {
     () => new Promise(() => {}),
   );
 
-  render(<PasswordRecoveryPage />);
+  renderRecovery();
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "morador@email.com" },
@@ -83,7 +111,7 @@ test("disables the submit button while the request is pending", () => {
 });
 
 test("replaces the form with a confirmation message on success", async () => {
-  render(<PasswordRecoveryPage />);
+  renderRecovery();
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "morador@email.com" },
@@ -102,4 +130,15 @@ test("replaces the form with a confirmation message on success", async () => {
   expect(
     screen.getByRole("link", { name: "Voltar para o login" }),
   ).toBeInTheDocument();
+});
+
+test("prefills the e-mail retained in the flow context", () => {
+  render(
+    <SignupFlowProvider>
+      <PrefilledRecoveryPage />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Return to recovery" }));
+
+  expect(screen.getByLabelText("E-mail")).toHaveValue("pessoa@example.invalid");
 });

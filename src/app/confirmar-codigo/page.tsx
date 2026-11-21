@@ -1,6 +1,7 @@
 "use client";
 
 import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
+import { useOnlineStatus } from "@/components/pwa-runtime";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
@@ -10,8 +11,10 @@ import { useSignupFlow } from "@/components/signup-flow";
 import {
   submitConfirmationCode,
   submitResendConfirmationCode,
+  submitPasswordRecovery,
 } from "@/lib/auth/submit";
 
+const RECOVERY_CODE_VALIDITY_MINUTES = 15;
 const CODE_LENGTH = 6;
 
 function validateCode(code: string): string | null {
@@ -26,8 +29,15 @@ function validateCode(code: string): string | null {
   return null;
 }
 
-export default function ConfirmationCodePage() {
-  const { draft, registrationId, setRegistrationId } = useSignupFlow();
+export function ConfirmationCodeScreen({
+  flow = "signup",
+}: {
+  flow?: "signup" | "recovery";
+}) {
+  const { draft, recoveryEmail, registrationId, setRegistrationId } =
+    useSignupFlow();
+  const email = flow === "recovery" ? recoveryEmail.trim() : draft.email.trim();
+  const online = useOnlineStatus();
   const id = useId();
   const codeRef = useRef<HTMLInputElement>(null);
   const pending = useRef(false);
@@ -40,7 +50,7 @@ export default function ConfirmationCodePage() {
   const [resendStatus, setResendStatus] = useState("");
   const [blocked, setBlocked] = useState(false);
   const mockMode = isRegistrationDemoEnabled();
-  const hasContext = Boolean(draft.email.trim());
+  const hasContext = Boolean(email);
 
   useLayoutEffect(
     () => () => {
@@ -74,6 +84,13 @@ export default function ConfirmationCodePage() {
       return;
     }
 
+    if (flow === "recovery") {
+      setMessage(
+        "Não foi possível validar o código agora. Tente novamente mais tarde.",
+      );
+      return;
+    }
+
     pending.current = true;
     const version = screenVersion.current;
     setOperation("confirm");
@@ -81,7 +98,7 @@ export default function ConfirmationCodePage() {
     try {
       const input = {
         registrationId: registrationId ?? "",
-        email: draft.email.trim(),
+        email,
         code,
       };
       const result = await submitConfirmationCode(input);
@@ -132,7 +149,7 @@ export default function ConfirmationCodePage() {
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext) {
+    if (pending.current || !hasContext || !navigator.onLine) {
       return;
     }
 
@@ -146,30 +163,35 @@ export default function ConfirmationCodePage() {
     try {
       const input = {
         registrationId: registrationId ?? "",
-        email: draft.email.trim(),
+        email,
       };
-      const result = await submitResendConfirmationCode(input);
+      const result =
+        flow === "recovery" ? null : await submitResendConfirmationCode(input);
+
+      if (flow === "recovery") {
+        await submitPasswordRecovery(email);
+      }
 
       if (version !== screenVersion.current) {
         return;
       }
 
-      if (result.ok) {
+      if (flow === "recovery" || result?.ok) {
         setCode("");
         setBlocked(false);
         setResendStatus(
-          mockMode
+          flow === "recovery" || mockMode
             ? "Código reenviado. Confira seu e-mail."
             : "Se houver cadastro pendente, o código será enviado. Confira sua caixa de entrada e o spam.",
         );
-      } else if (!result.ok && result.error === "attempt-limit") {
+      } else if (result && !result.ok && result.error === "attempt-limit") {
         setBlocked(true);
         setMessage("Limite de reenvios atingido. Tente novamente mais tarde.");
-      } else if (result.error === "rate-limited") {
+      } else if (result && !result.ok && result.error === "rate-limited") {
         setMessage("Aguarde 60 segundos entre solicitações de código.");
       } else {
         setMessage(
-          !result.ok && result.error === "missing-registration"
+          result && !result.ok && result.error === "missing-registration"
             ? "Não encontramos seu cadastro. Volte para criar sua conta."
             : "Não foi possível reenviar o código. Tente novamente.",
         );
@@ -190,25 +212,37 @@ export default function ConfirmationCodePage() {
     <AuthCard
       variant="signup"
       title={
-        confirmed
-          ? mockMode
-            ? "Conta criada."
-            : "E-mail confirmado."
-          : "Confirme seu e-mail"
+        flow === "recovery"
+          ? "Digite o código"
+          : confirmed
+            ? mockMode
+              ? "Conta criada."
+              : "E-mail confirmado."
+            : "Confirme seu e-mail"
       }
-      focusTitle={confirmed}
+      focusTitle={flow === "signup" && confirmed}
       description={
-        confirmed ? null : hasContext ? (
+        flow === "recovery" ? (
+          hasContext ? (
+            <>
+              Se houver uma conta com <strong>{email}</strong>, enviamos um
+              código de 6 dígitos. Ele vale por {RECOVERY_CODE_VALIDITY_MINUTES}{" "}
+              minutos.
+            </>
+          ) : (
+            "Informe o e-mail da sua conta para receber um código de recuperação."
+          )
+        ) : confirmed ? null : hasContext ? (
           <>
             Digite o código de 6 dígitos para confirmar o e-mail{" "}
-            <strong>{draft.email.trim()}</strong>.
+            <strong>{email}</strong>.
           </>
         ) : (
           "Confirme o e-mail informado no cadastro para continuar."
         )
       }
     >
-      {confirmed && !mockMode && (
+      {flow === "signup" && confirmed && !mockMode && (
         <>
           <p role="status" className={signupStyles.status}>
             E-mail confirmado. Conta criada.
@@ -218,13 +252,13 @@ export default function ConfirmationCodePage() {
           </Link>
         </>
       )}
-      {!confirmed && (
+      {!(flow === "signup" && confirmed) && (
         <>
           {!hasContext && (
             <p role="status" data-slot="status" className={signupStyles.status}>
-              Não encontramos os dados do seu cadastro nesta sessão. Volte para
-              criar sua conta. Se você recarregou a página, será necessário
-              informar os dados novamente.
+              {flow === "recovery"
+                ? "Informe o e-mail da sua conta para abrir a tela de código."
+                : "Não encontramos os dados do seu cadastro nesta sessão. Volte para criar sua conta. Se você recarregou a página, será necessário informar os dados novamente."}
             </p>
           )}
           <form
@@ -282,22 +316,32 @@ export default function ConfirmationCodePage() {
               className={signupStyles.submit}
             >
               {operation === "confirm"
-                ? "Confirmando..."
-                : "Confirmar e entrar"}
+                ? flow === "recovery"
+                  ? "Continuando..."
+                  : "Confirmando..."
+                : flow === "recovery"
+                  ? "Continuar"
+                  : "Confirmar e entrar"}
             </button>
           </form>
           <div data-slot="actions" className={signupStyles.actions}>
             <Link
-              href="/criar-conta"
+              href={flow === "recovery" ? "/recuperar-senha" : "/criar-conta"}
               data-slot="link"
               className={signupStyles.link}
-              onClick={() => setRegistrationId(null)}
+              onClick={
+                flow === "signup" ? () => setRegistrationId(null) : undefined
+              }
             >
-              {hasContext ? "Corrigir e-mail" : "Criar conta"}
+              {flow === "recovery"
+                ? "Trocar e-mail"
+                : hasContext
+                  ? "Corrigir e-mail"
+                  : "Criar conta"}
             </Link>
             <button
               type="button"
-              disabled={!hasContext || operation !== null}
+              disabled={!hasContext || operation !== null || !online}
               onClick={handleResend}
               data-slot="link"
               className={signupStyles.link}
@@ -305,18 +349,20 @@ export default function ConfirmationCodePage() {
               {operation === "resend" ? "Reenviando..." : "Reenviar código"}
             </button>
           </div>
-          {!mockMode && hasContext && (
+          {flow === "signup" && !mockMode && hasContext && (
             <p className={signupStyles.help}>
               Se já existir um cadastro para este e-mail, a senha e os dados
               anteriores são preservados. Para alterá-los, use a recuperação de
               senha. Corrigir o e-mail não exclui o cadastro anterior.
             </p>
           )}
-          <p data-slot="help" className={signupStyles.help}>
-            O código vale por 15 minutos. Aguarde 60 segundos para reenviar. Não
-            chegou? Confira a caixa de spam. A conta só é liberada depois da
-            confirmação.
-          </p>
+          {flow === "signup" && (
+            <p data-slot="help" className={signupStyles.help}>
+              O código vale por 15 minutos. Aguarde 60 segundos para reenviar.
+              Não chegou? Confira a caixa de spam. A conta só é liberada depois
+              da confirmação.
+            </p>
+          )}
           {message && (
             <p role="alert" data-slot="error" className={signupStyles.error}>
               {message}
@@ -331,4 +377,8 @@ export default function ConfirmationCodePage() {
       )}
     </AuthCard>
   );
+}
+
+export default function ConfirmationCodePage() {
+  return <ConfirmationCodeScreen />;
 }
