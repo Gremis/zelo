@@ -21,7 +21,7 @@ const navigation = [
   {
     group: "Cadastros",
     items: [
-      { title: "Condomínios", href: null },
+      { title: "Condomínios", href: "/condominios" },
       { title: "Funcionários", href: null },
     ],
   },
@@ -102,6 +102,12 @@ export function PanelShell({
       active = false;
     };
   }, [service, attempt]);
+
+  useEffect(() => {
+    const refresh = () => setAttempt((value) => value + 1);
+    window.addEventListener("condominiums-changed", refresh);
+    return () => window.removeEventListener("condominiums-changed", refresh);
+  }, []);
 
   useEffect(() => {
     if (!open) return;

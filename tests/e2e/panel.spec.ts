@@ -26,11 +26,7 @@ for (const width of [360, 1440]) {
     await expect(
       menu.getByRole("link", { name: "Fila de ocorrências" }),
     ).toHaveAttribute("aria-current", "page");
-    for (const name of [
-      "Histórico de ocorrências",
-      "Condomínios",
-      "Funcionários",
-    ]) {
+    for (const name of ["Histórico de ocorrências", "Funcionários"]) {
       const item = menu.getByRole("button", { name, exact: true });
       await expect(item).toBeDisabled();
       await expect(item).toHaveCSS("cursor", "not-allowed");
