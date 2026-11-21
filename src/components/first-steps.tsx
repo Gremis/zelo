@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSignupFlow } from "@/components/signup-flow";
 import { useEffect, useState } from "react";
 import type {
@@ -52,6 +53,12 @@ export function FirstSteps({
       active = false;
     };
   }, [service, attempt]);
+
+  useEffect(() => {
+    const refresh = () => setAttempt((value) => value + 1);
+    window.addEventListener("condominiums-changed", refresh);
+    return () => window.removeEventListener("condominiums-changed", refresh);
+  }, []);
 
   async function dismiss() {
     setSaving(true);
@@ -142,15 +149,24 @@ export function FirstSteps({
                         : ""
                     }
                   >
-                    <button
-                      type="button"
-                      disabled
-                      aria-describedby="first-steps-availability"
-                      title="Disponível quando o cadastro e o formulário estiverem integrados."
-                      className={`align-top text-left text-sm leading-[1.45] font-semibold underline underline-offset-[3px] disabled:cursor-not-allowed ${data.completed.includes(step.id) ? "text-[#6b7280]" : "text-[#0b5e58]"}`}
-                    >
-                      {step.title}
-                    </button>
+                    {step.id === "condominium" ? (
+                      <Link
+                        href="/condominios?novo=1"
+                        className="font-semibold text-[#0b5e58] underline"
+                      >
+                        {step.title}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        aria-describedby="first-steps-availability"
+                        title="Disponível quando o cadastro e o formulário estiverem integrados."
+                        className={`align-top text-left text-sm leading-[1.45] font-semibold underline underline-offset-[3px] disabled:cursor-not-allowed ${data.completed.includes(step.id) ? "text-[#6b7280]" : "text-[#0b5e58]"}`}
+                      >
+                        {step.title}
+                      </button>
+                    )}
                     {data.completed.includes(step.id) && (
                       <span className="sr-only"> — Concluído</span>
                     )}

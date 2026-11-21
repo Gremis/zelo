@@ -35,13 +35,14 @@ test("loads observed progress and never completes steps through a click", async 
     screen.getByText("Cadastre seu primeiro condomínio").closest("li"),
   ).toHaveClass("line-through");
   for (const name of [
-    "Cadastre seu primeiro condomínio",
     "Cadastre zelador e porteiro de cada prédio",
     "Copie o link do formulário e envie aos moradores",
   ]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
-  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Cadastre seu primeiro condomínio" }),
+  ).toHaveAttribute("href", "/condominios?novo=1");
 });
 
 test("retries loading after a rejected request", async () => {
