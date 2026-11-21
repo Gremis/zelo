@@ -68,6 +68,14 @@ it("requires the server-validated email confirmation instead of profile metadata
     error: null,
   });
   expect(await repository.getConfirmedUser()).toBeNull();
+  vi.spyOn(client, "rpc").mockResolvedValue({
+    data: true,
+    success: true,
+    error: null,
+    count: null,
+    status: 200,
+    statusText: "OK",
+  });
   getUser.mockResolvedValue({ data: { user }, error: null });
   expect(await repository.getConfirmedUser()).toEqual({
     id: user.id,

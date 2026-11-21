@@ -78,7 +78,20 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      email_confirmation_guard: {
+        Args: {
+          email_address: string;
+          lease_id?: string;
+          operation: string;
+          outcome?: string;
+          registration_id?: string;
+        };
+        Returns: Json;
+      };
+      has_active_session: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

@@ -34,6 +34,21 @@ async function ProtectedQueue() {
     identity = null;
   }
   if (!identity) redirect("/login");
+  const { data: profile, error } = await identity.supabase
+    .from("profiles")
+    .select("is_sindico")
+    .eq("id", identity.user.id)
+    .single();
+  if (error || !profile?.is_sindico)
+    return (
+      <main className="m-auto max-w-md p-8 text-center">
+        <h1 className="text-2xl font-semibold">Acesso não autorizado</h1>
+        <p className="mt-4">Esta área está disponível apenas para síndicos.</p>
+        <a className="mt-6 inline-block underline" href="/login">
+          Voltar para o login
+        </a>
+      </main>
+    );
   return (
     <div
       lang="pt-BR"
