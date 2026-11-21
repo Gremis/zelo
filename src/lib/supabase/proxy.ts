@@ -16,6 +16,7 @@ export async function updateSession(request: NextRequest) {
   const authHeaders = new Headers();
   if (
     request.nextUrl.pathname === "/fila" ||
+    request.nextUrl.pathname === "/condominios" ||
     request.nextUrl.pathname.startsWith("/api/")
   ) {
     authHeaders.set("Cache-Control", "private, no-store, max-age=0");
