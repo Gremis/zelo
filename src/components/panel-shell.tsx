@@ -70,26 +70,29 @@ export function PanelShell({
   const [user, setUser] = useState<PanelUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const logoutPending = useRef(false);
 
   useEffect(() => {
     let active = true;
     async function load() {
       setLoading(true);
-      setError(null);
+      setLoadError(null);
       try {
         const result = await service.loadUser();
         if (active) {
           if (result.ok) setUser(result.data);
-          else setError("Não foi possível carregar os dados do painel.");
+          else setLoadError("Não foi possível carregar os dados do painel.");
         }
       } catch {
-        if (active) setError("Não foi possível carregar os dados do painel.");
+        if (active)
+          setLoadError("Não foi possível carregar os dados do painel.");
       } finally {
         if (active) setLoading(false);
       }
@@ -116,6 +119,8 @@ export function PanelShell({
   }, [open]);
 
   async function logout() {
+    if (logoutPending.current) return;
+    logoutPending.current = true;
     setLeaving(true);
     setError(null);
     try {
@@ -134,6 +139,7 @@ export function PanelShell({
     } catch {
       setError("Não foi possível sair. Tente novamente.");
     } finally {
+      logoutPending.current = false;
       setLeaving(false);
     }
   }
@@ -245,19 +251,22 @@ export function PanelShell({
             )}
           </div>
         </div>
-        {error && (
+        {loadError && (
           <div role="alert" className="px-2.5 text-xs text-[#b42318]">
-            <p>{error}</p>
-            {!user && (
-              <button
-                type="button"
-                onClick={() => setAttempt((value) => value + 1)}
-                className={`${button} mt-2`}
-              >
-                Tentar novamente
-              </button>
-            )}
+            <p>{loadError}</p>
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+              className={`${button} mt-2`}
+            >
+              Tentar novamente
+            </button>
           </div>
+        )}
+        {error && (
+          <p role="alert" className="px-2.5 text-xs text-[#b42318]">
+            {error}
+          </p>
         )}
         <nav aria-label="Menu principal">
           {navigation.map((group) => (
@@ -299,7 +308,7 @@ export function PanelShell({
         </p>
         <button
           type="button"
-          disabled={!user || leaving}
+          disabled={leaving}
           onClick={logout}
           className="mt-auto flex min-h-10 w-full cursor-pointer items-center rounded-lg p-2.5 text-left font-medium text-[#b42318] hover:bg-[#f6f7f9] active:bg-[#fee4e2] disabled:cursor-not-allowed disabled:opacity-60"
         >
