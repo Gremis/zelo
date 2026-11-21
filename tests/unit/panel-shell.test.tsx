@@ -4,7 +4,7 @@ import { SignupFlowProvider } from "@/components/signup-flow";
 import { PanelShell } from "@/components/panel-shell";
 import type { PanelOperations } from "@/lib/panel/contract";
 
-const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 test("retries rejected user loading without inventing a user", async () => {

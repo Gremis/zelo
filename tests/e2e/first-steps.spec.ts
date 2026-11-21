@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./local-auth";
+
+test.use({ trace: "off", video: "off", screenshot: "off" });
 
 for (const width of [360, 1440]) {
   test(`first steps at ${width}px`, async ({ page }) => {
@@ -10,19 +12,6 @@ for (const width of [360, 1440]) {
     await expect(
       page.getByRole("heading", { name: "Nenhuma ocorrência por enquanto" }),
     ).toBeVisible();
-    const mocksEnabled =
-      ["local", "development"].includes(
-        process.env.NEXT_PUBLIC_APP_ENV ?? "",
-      ) && process.env.NEXT_PUBLIC_FIRST_STEPS_MOCK === "enabled";
-    if (!mocksEnabled) {
-      await expect(page.locator("main").getByRole("alert")).toContainText(
-        "Não foi possível carregar",
-      );
-      await expect(
-        page.getByRole("button", { name: "Tentar novamente" }),
-      ).toBeVisible();
-      return;
-    }
     await expect(page.getByRole("button", { name: "Dispensar" })).toBeVisible();
     await expect(
       page.getByRole("button", {

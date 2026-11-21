@@ -9,7 +9,7 @@ export type SignupFormValues = {
 export function getPasswordRequirements(password: string) {
   return [
     { label: "Pelo menos 8 caracteres", met: Array.from(password).length >= 8 },
-    { label: "Pelo menos uma letra", met: /\p{L}/u.test(password) },
+    { label: "Pelo menos uma letra de A a Z", met: /[a-z]/i.test(password) },
     { label: "Pelo menos um número", met: /[0-9]/.test(password) },
   ];
 }

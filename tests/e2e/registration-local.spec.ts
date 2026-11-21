@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { expect, test, type APIRequestContext } from "@playwright/test";
@@ -88,6 +89,31 @@ async function capturedCode(
 }
 
 test.beforeAll(() => {
+  if (existsSync("supabase/.smtp-manual/active"))
+    throw new Error(
+      "Restore Mailpit with npm run db:smtp:restore before automated Auth tests.",
+    );
+  let smtpHost;
+  try {
+    smtpHost = execFileSync(
+      "docker",
+      [
+        "inspect",
+        "--format",
+        '{{range .Config.Env}}{{if eq (index (split . "=") 0) "GOTRUE_SMTP_HOST"}}{{.}}{{end}}{{end}}',
+        "supabase_auth_zelo-local",
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    throw new Error(
+      "Unable to verify local Mailpit routing. No email tests were started.",
+    );
+  }
+  if (smtpHost !== "GOTRUE_SMTP_HOST=supabase_inbucket_zelo-local")
+    throw new Error(
+      "Automated Auth tests require local Mailpit. Restore the default profile before testing.",
+    );
   expect(
     process.env.NEXT_PUBLIC_SUPABASE_URL === "http://127.0.0.1:54321",
   ).toBe(true);
@@ -109,6 +135,7 @@ test("real local signup, email code, confirmed session, logout and password reco
   await page.getByRole("button", { name: "Criar conta", exact: true }).click();
   await expect(page).toHaveURL("/confirmar-codigo");
   expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+  expect((await page.request.get("/api/panel")).status()).toBe(401);
   expect(
     localSql(
       `select count(*) from public.profiles p join auth.users u on u.id = p.id where u.email = '${email}' and p.full_name = 'Pessoa Sintética' and p.phone = '21999990000' and u.email_confirmed_at is null`,
@@ -128,6 +155,10 @@ test("real local signup, email code, confirmed session, logout and password reco
       })
     ).status(),
   ).toBe(403);
+  const blockedPage = await page.context().newPage();
+  await blockedPage.goto("/fila");
+  await expect(blockedPage).toHaveURL("/login");
+  await blockedPage.close();
   const message = await capturedCode(request, email);
   const body = await page.request.post("/api/auth/resend-signup", {
     data: {
@@ -144,14 +175,43 @@ test("real local signup, email code, confirmed session, logout and password reco
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "Código incorreto ou expirado",
   );
+  let confirmations = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/auth/confirm-signup")
+      confirmations += 1;
+  });
+  await page.route(
+    "**/api/auth/session",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Unavailable" }),
+      }),
+    { times: 1 },
+  );
   await page.getByLabel("Código", { exact: true }).fill(message.code);
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
-  await expect(
-    page.getByRole("heading", { name: "E-mail confirmado." }),
-  ).toBeFocused();
-  await expect(page.getByRole("status")).toHaveText(
-    "E-mail confirmado. Conta criada.",
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Seu e-mail foi confirmado. Não foi possível verificar sua sessão.",
   );
+  await expect(page.getByLabel("Código", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Verificar sessão novamente" })
+    .click();
+  await expect(page).toHaveURL("/fila");
+  expect(confirmations).toBe(1);
+  await expect(
+    page.getByRole("heading", { name: "Fila de ocorrências" }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Primeiros passos" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Fila de ocorrências" }),
+  ).toBeVisible();
+  expect((await page.request.get("/api/panel")).status()).toBe(200);
   expect((await page.request.get("/api/auth/session")).status()).toBe(200);
   expect(
     await page.evaluate(() => [localStorage.length, sessionStorage.length]),
@@ -167,9 +227,18 @@ test("real local signup, email code, confirmed session, logout and password reco
       })
     ).status(),
   ).toBe(400);
-  const logout = await page.request.post("/api/auth/logout");
-  expect(logout.status()).toBe(200);
+  await page.getByRole("button", { name: "Abrir menu" }).click();
+  await page.getByRole("button", { name: "Sair", exact: true }).click();
+  await expect(page).toHaveURL("/login");
+  expect((await page.request.get("/api/panel")).status()).toBe(401);
+  await page.goto("/fila");
+  await expect(page).toHaveURL("/login");
   expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+  await page.getByLabel("E-mail", { exact: true }).fill(email);
+  await page.getByLabel("Senha", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL("/fila");
+  expect((await page.request.get("/api/panel")).status()).toBe(200);
   const login = await page.request.post("/api/auth/login", {
     data: { email, password },
   });
@@ -267,6 +336,14 @@ test("real resend replaces the code and keeps the original pending credentials",
     ).status(),
   ).toBe(200);
   const third = await capturedCode(request, email, [first.id, second.id]);
+  expect(third.code === second.code).toBe(false);
+  expect(
+    (
+      await request.post("/api/auth/confirm-signup", {
+        data: { email, registrationId, code: second.code },
+      })
+    ).status(),
+  ).toBe(400);
   localSql(
     `update auth.users set confirmation_sent_at = now() - interval '16 minutes' where email = '${email}'`,
   );

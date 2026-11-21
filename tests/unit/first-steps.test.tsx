@@ -100,6 +100,10 @@ test.each(["production", "preview", "", "local", "development"])(
     );
     vi.stubEnv("NEXT_PUBLIC_FIRST_STEPS_MOCK", "");
     expect(isFirstStepsMockEnabled()).toBe(false);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    );
     expect(await createFirstStepsOperations().load()).toEqual({
       ok: false,
       error: "unavailable",

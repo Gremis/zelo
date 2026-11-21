@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { MockConfirmationNotice } from "@/components/mock-confirmation-notice";
+import { ConfirmationNotice } from "@/components/confirmation-notice";
 import SignupPage from "@/app/criar-conta/page";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
 import { SignupFlowProvider } from "@/components/signup-flow";
@@ -40,7 +40,7 @@ function ReviewFlow() {
         }
       }}
     >
-      {route === "/fila" && <MockConfirmationNotice />}
+      {route === "/fila" && <ConfirmationNotice />}
       <Activity mode={route === "/criar-conta" ? "visible" : "hidden"}>
         <SignupPage />
       </Activity>

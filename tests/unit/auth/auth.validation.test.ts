@@ -115,7 +115,7 @@ describe("validateResetPassword", () => {
       throw new Error("expected a validation failure");
     }
     expect(result.error.details?.code).toBe("Informe o código.");
-    expect(result.error.details?.password).toContain("pelo menos 6");
+    expect(result.error.details?.password).toContain("pelo menos 8");
   });
 });
 
@@ -136,5 +136,18 @@ it.each([false, undefined, "true"])(
         details: { acceptedTerms: expect.any(String) },
       },
     });
+  },
+);
+
+it.each(["abcdefgh", "12345678", "ááááááá1"])(
+  "rejects recovery passwords outside the signup/provider policy",
+  (password) => {
+    expect(
+      validateResetPassword({
+        email: "person@example.invalid",
+        code: "123456",
+        password,
+      }).ok,
+    ).toBe(false);
   },
 );

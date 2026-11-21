@@ -1,7 +1,10 @@
-import { validateSignup } from "@/lib/auth/signup-validation";
+import {
+  getPasswordRequirements,
+  validateSignup,
+} from "@/lib/auth/signup-validation";
 import { type Result, failure, success } from "./auth.result";
 
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 8;
 
 export type SignUpInput = {
   fullName: string;
@@ -44,6 +47,9 @@ function passwordError(password: string): string | null {
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+  }
+  if (getPasswordRequirements(password).some(({ met }) => !met)) {
+    return "A senha deve incluir uma letra de A a Z e um número.";
   }
   return null;
 }

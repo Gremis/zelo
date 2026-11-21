@@ -1,11 +1,25 @@
-import { isFirstStepsMockEnabled } from "@/lib/first-steps/operations";
 import type { PanelOperations } from "./contract";
-import { createPanelMock } from "./mock";
+import { loadPanel } from "./request";
 
 export function createPanelOperations(): PanelOperations {
-  if (isFirstStepsMockEnabled()) return createPanelMock();
   return {
-    loadUser: async () => ({ ok: false, error: "unavailable" }),
-    logout: async () => ({ ok: false, error: "unavailable" }),
+    loadUser: async () => {
+      const result = await loadPanel();
+      return result.ok ? { ok: true, data: result.data.user } : result;
+    },
+    logout: async () => {
+      try {
+        const response = await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        return response.ok
+          ? { ok: true, data: null }
+          : { ok: false, error: "unavailable" };
+      } catch {
+        return { ok: false, error: "network" };
+      }
+    },
   };
 }
