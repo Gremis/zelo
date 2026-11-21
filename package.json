@@ -19,7 +19,11 @@
     "db:stop": "supabase stop --project-id zelo-local",
     "db:status": "supabase status",
     "db:reset": "supabase db reset --local",
-    "db:types": "node scripts/db-types.mjs"
+    "db:types": "node scripts/db-types.mjs",
+    "db:smtp:prepare": "node scripts/db-smtp.mjs prepare",
+    "db:smtp:check": "node scripts/db-smtp.mjs check",
+    "db:smtp:start": "node scripts/db-smtp.mjs start",
+    "db:smtp:restore": "node scripts/db-smtp.mjs restore"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

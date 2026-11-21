@@ -56,3 +56,5 @@ next-env.d.ts
 /supabase/signing_keys.json
 /supabase/.data/
 /supabase/.snapshots/
+
+/supabase/.smtp-manual/
