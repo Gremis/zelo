@@ -698,3 +698,170 @@ until those dependencies are integrated. The target environment needs the new
 `20261121120000_require_active_sessions.sql` migration, after the inherited
 migrations, before serving the updated private operations. No shared database
 migration is performed as part of publishing this branch or opening its PR.
+
+### Condominium integration
+
+`/condominios` reuses ORI-88 confirmed active sessions, manager permissions and
+RLS. Its API accepts only name and address, derives ownership from the validated
+identity, and returns private responses without caching. Creation uses an invoker
+RPC and the existing unique constraint, with eight bounded collision retries.
+New slugs remove leading category words and accents, limit the stem to forty
+characters, and append four cryptographically random lowercase alphanumeric
+characters. Existing identifiers remain unchanged, including legacy UUID suffixes.
+The short suffix is a public identifier, never an administrative credential.
+
+Set server-only `PUBLIC_APP_ORIGIN` to the application's absolute public origin
+(for example `http://127.0.0.1:3100` locally). This must be an HTTP(S) origin
+without a path, credentials, query or fragment. Generated links use this value;
+request headers do not determine their destination. Configure it independently
+for each environment before enabling the flow. After the inherited migrations,
+apply these reviewed migrations in order without resetting existing data:
+
+1. `20261121200000_condominium_links.sql`: MVP slug generation, bounded creation
+   retries and restricted public link resolution.
+2. `20261121201000_refine_condominium_prefixes.sql`: complete leading-word removal
+   and preservation of the existing immutability error contracts.
+
+Both migrations are necessary. The second was added after the first had already
+been applied locally; applied migrations were not edited. Existing identifiers
+are retained. Generate database types from the running local stack with
+`npm run db:types`. Applying migrations to a shared environment is a separate,
+reviewed deployment action and is not part of publishing this PR.
+
+`/c/[slug]` resolves only the current name and address through an exact-slug RPC.
+Anonymous table access remains denied. Unknown identifiers show “Link não
+encontrado”. The occurrence form does not exist in this branch: the valid-link
+page explicitly reports that registration is unavailable. Copying a link does
+not establish that occurrences can already be submitted.
+
+The condominium browser suite uses two synthetic local managers and never calls
+signup, recovery or resend endpoints. It covers persisted creation, duplicate
+names, concurrent requests, validation, cancellation, stable editing, successful
+and failed clipboard writes, tenant isolation, rejected identity payloads, public
+resolution, mobile overflow, navigation and logout. Run it with the existing local
+environment and `ORI47_LOCAL_AUTH_TESTS=enabled`:
+
+```bash
+npm run test:e2e -- --grep "real condominium flow"
+```
+
+Database tests exercise deterministic collisions, bounded exhaustion and slug
+normalization inside rolled-back transactions. Run `npm run test:db`. For a
+broader browser regression without email generation, exclude
+`registration-local.spec.ts`; those older tests explicitly exercise local mail.
+
+Manual review: log in as a manager, open Condomínios from the menu, create a
+record, copy its absolute link, reload and edit both fields. Confirm the URL stays
+the same and the menu count changes. Open the link signed out and check that only
+current name/address and the form dependency appear. Repeat with a second manager
+to confirm isolation. Check empty values, cancellation, clipboard denial and a
+360px viewport. Local credentials and generated reports remain ignored.
+
+### Condominium prototype measurements
+
+The public [navigable prototype](https://sindicondo.netlify.app/#sprint2/sindico)
+was inspected in Chromium with `getComputedStyle` at 1728 × 742 CSS pixels and
+360 × 900 CSS pixels, with device scale factor 1 and no zoom or scaling. The
+prototype's demonstration toolbar is separate from the product shell.
+
+| Element      | Measured typography                                                                    |
+| ------------ | -------------------------------------------------------------------------------------- |
+| Body         | Inter, 14px, weight 400, line height 20.3px                                            |
+| Page title   | Space Grotesk, 24px, weight 700, line height 34.8px                                    |
+| Card title   | Space Grotesk, 16px, weight 700, line height 23.2px                                    |
+| Address      | Inter, 13px, weight 400, line height 18.85px                                           |
+| Link         | JetBrains Mono, 12.5px, CSS weight 400 using the loaded 500 face, line height 18.125px |
+| Small button | Inter, 13px, weight 600, 5px vertical and 10px horizontal padding                      |
+
+Content is limited to 1080px; four desktop columns are 261px each with 12px gaps.
+Cards use 16px padding, a 1px `#e5e7eb` border and a 10px radius. Link panels use
+10px padding, 6px gaps, a 10px top margin and an 8px radius. These measurements
+are applied only to Condomínios, reusing existing font families and Tailwind.
+Controls retain 44px minimum height on mobile and coarse pointers. Full absolute
+URLs remain visible with wrapping and are copied unchanged.
+
+The visual browser fixture uses the real components and compiled font styles,
+with synthetic API responses and no database writes. It checks measured styles,
+responsive columns, forms, long content and the complete clipboard value. Run
+`npm run test:e2e -- tests/e2e/condominiums-visual.spec.ts`.
+
+The administrative API canonicalizes submitted names with Unicode NFC before
+persistence so decomposed Portuguese accents produce the same slug stem as their
+precomposed equivalents. Existing slugs and previously distributed links are not
+regenerated. The database unique constraint and immutable-slug trigger remain in
+place; no schema change is needed for this input normalization.
+
+For publication, set `PUBLIC_APP_ORIGIN` to the official product origin in the
+Production environment of the corresponding Vercel project. Both deployment
+projects use Vercel Production settings, pulled before building. Local development
+keeps its functional loopback origin. Changing this setting changes the origin
+used to present links, not their persisted slug; maintain routing for any
+previously distributed domain when changing product domains. No remote setting
+is changed by the visual refinement or its tests.
+
+### Condominium acceptance and delivery
+
+On 2026-11-21, the product owner manually accepted the Condomínios interface and
+functional flow, including navigation in both directions through the menu. This
+records acceptance of condominium management and its transitions; it does not
+establish that residents can register occurrences. That form is still a separate
+dependency, explicitly reported by the valid public-link page.
+
+The pending-access state came from the route-level Suspense fallback inheriting
+the global dark body background. Both private pages now keep a light presentation
+container around authorization and use a public shell skeleton. No profile or
+condominium data is rendered by that skeleton. Server identity, confirmed active
+session, role checks, cookie renewal, RLS and redirects remain in place. Slow
+navigation keeps the prior authorized shell while the next response is pending;
+access without a session still redirects to login. Success notices expire after
+five seconds with timer cleanup; validation and server errors remain visible.
+
+Final review also added same-origin/JSON checks for administrative writes and
+preserved locally saved records when an older initial-list response arrives late.
+The origin check follows the existing authentication convention for Next.js
+internal hostnames. It does not determine the public link destination.
+
+Final local validation used Node 24.22.3 and the existing CLI-managed loopback
+Supabase stack: 275 unit/component tests, 132 transactional database assertions
+and 54 browser tests passed, with one demo-only browser case skipped. Formatting,
+ESLint, route-aware TypeScript checks, production build and the production-only
+audit passed; the latter found zero vulnerabilities. Browser checks covered
+persistent creation/reload, repeated names, concurrent requests, edit/cancel,
+complete clipboard values and denial, immutable/legacy slugs, two-manager
+isolation through API and user-scoped database access, rejected ownership/slug
+payloads, restricted public resolution, measured typography, timer behavior,
+long content, 360px layouts and slow dark-mode navigation/direct entry. Synthetic
+local accounts and records were cleaned up by their fixtures. No reset, shared
+migration, deployment or provider configuration change was performed.
+
+The three inherited `registration-local.spec.ts` scenarios that generate local
+mail were explicitly excluded from this final local regression. No signup,
+recovery or resend email was requested during delivery validation. Credential-free
+CI runs the ordinary full suite; local Auth/database scenarios remain opt-in.
+Remote Quality results must be read from the authorized GitHub run, not inferred
+from these local results.
+
+The task starts at ORI-88 commit `921cdad`. On 2026-11-21, `develop` does not yet
+contain its 16 inherited commits. The existing schema (#16) and PWA (#17) are
+merged. The required integration chain #15 → #19 → #20 → #21 (ORI-88) remains
+open against `develop`, with Quality passing on each as verified through GitHub.
+This delivery follows #21 and targets `develop`; integration of that chain must
+be coordinated before merging. Existing PRs and branches are not modified.
+Inherited work includes first steps/navigation, signup/confirmation, login and
+recovery, SMTP readiness, session persistence and active-session authorization.
+The new work is condominium CRUD/link integration, public resolution, scoped
+visual refinement, light access transitions and their tests/documentation.
+Review the task-specific diff against `921cdad` until those dependencies land.
+No dedicated GitHub issue was identified; ORI-88 is a prerequisite, not an
+invented identifier for this task. Application dependency versions, lockfile and
+CI/deployment workflows are unchanged by this task.
+
+A separate informational full-tree `npm audit` on this delivery exited with
+failure and reported 44 development-chain findings: 22 moderate, 21 high and one
+critical. The critical finding is `tar` through the Vercel CLI dependency chain
+(`GHSA-23hp-3jrh-7fpw`). The lockfile is byte-for-byte identical to the ORI-88 base;
+these findings were not introduced by condominium dependencies. The earlier
+minimatch advisory remains part of the inherited tooling risk. No audit finding
+was suppressed, no override was added, and the complete tree is not claimed to be
+vulnerability-free. Tooling remediation requires a separate reviewed dependency
+update; the configured blocking gate remains the production-only audit.
