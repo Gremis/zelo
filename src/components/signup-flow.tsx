@@ -14,6 +14,8 @@ const SignupFlowContext = createContext<{
   setMockConfirmationComplete: Dispatch<SetStateAction<boolean>>;
   draft: SignupDraft;
   setDraft: Dispatch<SetStateAction<SignupDraft>>;
+  recoveryEmail: string;
+  setRecoveryEmail: Dispatch<SetStateAction<string>>;
   registrationId: string | null;
   setRegistrationId: Dispatch<SetStateAction<string | null>>;
 } | null>(null);
@@ -26,6 +28,7 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
   });
   const [mockConfirmationComplete, setMockConfirmationComplete] =
     useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   return (
     <SignupFlowContext.Provider
@@ -34,6 +37,8 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
         setMockConfirmationComplete,
         draft,
         setDraft,
+        recoveryEmail,
+        setRecoveryEmail,
         registrationId,
         setRegistrationId,
       }}
