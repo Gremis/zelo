@@ -1,5 +1,5 @@
-import { ConfirmationCodeScreen } from "@/app/confirmar-codigo/page";
+import { PasswordRecovery } from "@/components/password-recovery";
 
 export default function RecoveryCodePage() {
-  return <ConfirmationCodeScreen flow="recovery" />;
+  return <PasswordRecovery initialStep="code" />;
 }

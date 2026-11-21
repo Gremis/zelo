@@ -66,6 +66,7 @@ function guardFailure(status: GuardStatus) {
 export function createAuthService(
   repository: AuthRepository,
   guard: ConfirmationGuard,
+  recoveryRepository: AuthRepository = repository,
 ): AuthService {
   return {
     async signUp(body) {
@@ -234,7 +235,17 @@ export function createAuthService(
         return validation;
       }
 
-      await repository.sendRecoveryEmail(validation.data.email);
+      const outcome = await recoveryRepository.sendRecoveryEmail(
+        validation.data.email,
+      );
+      if (outcome.status === "error")
+        return failure({
+          code: outcome.reason === "rate_limited" ? "rate_limited" : "unknown",
+          message:
+            outcome.reason === "rate_limited"
+              ? "Aguarde antes de solicitar outro código."
+              : "Não foi possível solicitar o código. Tente novamente.",
+        });
 
       return success({ message: RECOVERY_MESSAGE });
     },
@@ -245,26 +256,51 @@ export function createAuthService(
         return validation;
       }
 
-      const verification = await repository.verifyRecoveryCode({
-        email: validation.data.email,
-        code: validation.data.code,
-      });
-      if (verification.status === "error") {
-        return failure({
-          code: "invalid_recovery_code",
-          message: "Código inválido ou expirado.",
+      let verified = false;
+      try {
+        const verification = await recoveryRepository.verifyRecoveryCode({
+          email: validation.data.email,
+          code: validation.data.code,
         });
-      }
-
-      const update = await repository.updatePassword(validation.data.password);
-      if (update.status === "error") {
+        if (verification.status === "error") {
+          const reason = verification.reason ?? "invalid_code";
+          return failure({
+            code:
+              reason === "rate_limited"
+                ? "rate_limited"
+                : reason === "unknown"
+                  ? "unknown"
+                  : "invalid_recovery_code",
+            message:
+              reason === "rate_limited"
+                ? "Muitas tentativas. Aguarde antes de tentar novamente."
+                : reason === "unknown"
+                  ? "Não foi possível conferir o código. Solicite um novo código."
+                  : "Código incorreto, expirado ou já utilizado. Solicite outro código.",
+          });
+        }
+        verified = true;
+        const update = await recoveryRepository.updatePassword(
+          validation.data.password,
+        );
+        if (update.status === "error")
+          return failure({
+            code: "update_failed",
+            message:
+              "O código foi utilizado, mas não foi possível confirmar a alteração da senha. Solicite um novo código.",
+          });
+        return success({ success: true });
+      } catch {
         return failure({
-          code: "update_failed",
-          message: "Não foi possível atualizar a senha.",
+          code: verified ? "update_failed" : "unknown",
+          message:
+            "Não foi possível confirmar a alteração da senha. Solicite um novo código antes de tentar novamente.",
         });
+      } finally {
+        try {
+          await recoveryRepository.signOut("local");
+        } catch {}
       }
-
-      return success({ success: true });
     },
   };
 }

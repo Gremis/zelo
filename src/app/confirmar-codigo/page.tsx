@@ -12,10 +12,8 @@ import { useSignupFlow } from "@/components/signup-flow";
 import {
   submitConfirmationCode,
   submitResendConfirmationCode,
-  submitPasswordRecovery,
 } from "@/lib/auth/submit";
 
-const RECOVERY_CODE_VALIDITY_MINUTES = 15;
 const CODE_LENGTH = 6;
 
 function validateCode(code: string): string | null {
@@ -30,20 +28,16 @@ function validateCode(code: string): string | null {
   return null;
 }
 
-export function ConfirmationCodeScreen({
-  flow = "signup",
-}: {
-  flow?: "signup" | "recovery";
-}) {
+export function ConfirmationCodeScreen() {
   const router = useRouter();
   const {
     draft,
-    recoveryEmail,
     registrationId,
     setRegistrationId,
     setConfirmationComplete,
+    setShowFirstSteps,
   } = useSignupFlow();
-  const email = flow === "recovery" ? recoveryEmail.trim() : draft.email.trim();
+  const email = draft.email.trim();
   const online = useOnlineStatus();
   const id = useId();
   const codeRef = useRef<HTMLInputElement>(null);
@@ -60,8 +54,7 @@ export function ConfirmationCodeScreen({
   const mockMode = isRegistrationDemoEnabled();
   const hasContext = Boolean(email);
   const [confirmedEmail, setConfirmedEmail] = useState<string | null>(null);
-  const awaitingSession =
-    flow === "signup" && confirmedEmail === email && registrationId === null;
+  const awaitingSession = confirmedEmail === email && registrationId === null;
 
   async function checkSession(version: number) {
     try {
@@ -97,6 +90,7 @@ export function ConfirmationCodeScreen({
         return;
       }
       setConfirmationComplete(true);
+      setShowFirstSteps(true);
       router.replace("/fila");
       router.refresh();
     } catch {
@@ -152,13 +146,6 @@ export function ConfirmationCodeScreen({
       return;
     }
 
-    if (flow === "recovery") {
-      setMessage(
-        "Não foi possível validar o código agora. Tente novamente mais tarde.",
-      );
-      return;
-    }
-
     pending.current = true;
     const version = screenVersion.current;
     setOperation("confirm");
@@ -179,6 +166,7 @@ export function ConfirmationCodeScreen({
         setCode("");
         if (mockMode) {
           setConfirmationComplete(true);
+          setShowFirstSteps(true);
           router.replace("/fila");
         } else {
           setConfirmedEmail(email);
@@ -245,22 +233,17 @@ export function ConfirmationCodeScreen({
         registrationId: registrationId ?? "",
         email,
       };
-      const result =
-        flow === "recovery" ? null : await submitResendConfirmationCode(input);
-
-      if (flow === "recovery") {
-        await submitPasswordRecovery(email);
-      }
+      const result = await submitResendConfirmationCode(input);
 
       if (version !== screenVersion.current) {
         return;
       }
 
-      if (flow === "recovery" || result?.ok) {
+      if (result.ok) {
         setCode("");
         setBlocked(false);
         setResendStatus(
-          flow === "recovery" || mockMode
+          mockMode
             ? "Código reenviado. Confira seu e-mail."
             : "Se houver cadastro pendente, o código será enviado. Confira sua caixa de entrada e o spam.",
         );
@@ -291,26 +274,11 @@ export function ConfirmationCodeScreen({
   return (
     <AuthCard
       variant="signup"
-      title={
-        awaitingSession
-          ? "E-mail confirmado"
-          : flow === "recovery"
-            ? "Digite o código"
-            : "Confirme seu e-mail"
-      }
+      verticalAlign="center"
+      title={awaitingSession ? "E-mail confirmado" : "Confirme seu e-mail"}
       description={
         awaitingSession ? (
           "Seu código já foi validado. Verifique sua sessão para continuar."
-        ) : flow === "recovery" ? (
-          hasContext ? (
-            <>
-              Se houver uma conta com <strong>{email}</strong>, enviamos um
-              código de 6 dígitos. Ele vale por {RECOVERY_CODE_VALIDITY_MINUTES}{" "}
-              minutos.
-            </>
-          ) : (
-            "Informe o e-mail da sua conta para receber um código de recuperação."
-          )
         ) : hasContext ? (
           <>
             Digite o código de 6 dígitos para confirmar o e-mail{" "}
@@ -324,9 +292,9 @@ export function ConfirmationCodeScreen({
       <>
         {!hasContext && (
           <p role="status" data-slot="status" className={signupStyles.status}>
-            {flow === "recovery"
-              ? "Informe o e-mail da sua conta para abrir a tela de código."
-              : "Não encontramos os dados do seu cadastro nesta sessão. Volte para criar sua conta. Se você recarregou a página, será necessário informar os dados novamente."}
+            Não encontramos os dados do seu cadastro nesta sessão. Volte para
+            criar sua conta. Se você recarregou a página, será necessário
+            informar os dados novamente.
           </p>
         )}
         {awaitingSession ? (
@@ -404,28 +372,18 @@ export function ConfirmationCodeScreen({
                 className={signupStyles.submit}
               >
                 {operation === "confirm"
-                  ? flow === "recovery"
-                    ? "Continuando..."
-                    : "Confirmando..."
-                  : flow === "recovery"
-                    ? "Continuar"
-                    : "Confirmar e entrar"}
+                  ? "Confirmando..."
+                  : "Confirmar e entrar"}
               </button>
             </form>
             <div data-slot="actions" className={signupStyles.actions}>
               <Link
-                href={flow === "recovery" ? "/recuperar-senha" : "/criar-conta"}
+                href="/criar-conta"
                 data-slot="link"
                 className={signupStyles.link}
-                onClick={
-                  flow === "signup" ? () => setRegistrationId(null) : undefined
-                }
+                onClick={() => setRegistrationId(null)}
               >
-                {flow === "recovery"
-                  ? "Trocar e-mail"
-                  : hasContext
-                    ? "Corrigir e-mail"
-                    : "Criar conta"}
+                {hasContext ? "Corrigir e-mail" : "Criar conta"}
               </Link>
               <button
                 type="button"
@@ -437,20 +395,18 @@ export function ConfirmationCodeScreen({
                 {operation === "resend" ? "Reenviando..." : "Reenviar código"}
               </button>
             </div>
-            {flow === "signup" && !mockMode && hasContext && (
+            {!mockMode && hasContext && (
               <p className={signupStyles.help}>
                 Se já existir um cadastro para este e-mail, a senha e os dados
                 anteriores são preservados. Para alterá-los, use a recuperação
                 de senha. Corrigir o e-mail não exclui o cadastro anterior.
               </p>
             )}
-            {flow === "signup" && (
-              <p data-slot="help" className={signupStyles.help}>
-                O código vale por 15 minutos. Aguarde 60 segundos para reenviar.
-                Não chegou? Confira a caixa de spam. A conta só é liberada
-                depois da confirmação.
-              </p>
-            )}
+            <p data-slot="help" className={signupStyles.help}>
+              O código vale por 15 minutos. Aguarde 60 segundos para reenviar.
+              Não chegou? Confira a caixa de spam. A conta só é liberada depois
+              da confirmação.
+            </p>
           </>
         )}
         {message && (

@@ -83,3 +83,40 @@ it("uses signup resend without calling recovery or passwordless signup", async (
   expect(await repository.resendSignup(user.email!)).toEqual({ status: "ok" });
   expect(resend).toHaveBeenCalledWith({ type: "signup", email: user.email });
 });
+
+it("uses the recovery purpose and rejects a missing provider session", async () => {
+  const { client, user, repository } = setup();
+  const verify = vi
+    .spyOn(client.auth, "verifyOtp")
+    .mockResolvedValue({ data: { user, session: null }, error: null });
+  expect(
+    await repository.verifyRecoveryCode({ email: user.email!, code: "123456" }),
+  ).toEqual({ status: "error", reason: "unknown" });
+  expect(verify).toHaveBeenCalledWith({
+    email: user.email,
+    token: "123456",
+    type: "recovery",
+  });
+});
+
+it("rejects recovery when the validated identity belongs to another email", async () => {
+  const { client, user, repository } = setup();
+  const session = {
+    access_token: "synthetic",
+    refresh_token: "synthetic",
+    expires_in: 3600,
+    token_type: "bearer" as const,
+    user,
+  };
+  vi.spyOn(client.auth, "verifyOtp").mockResolvedValue({
+    data: { user, session },
+    error: null,
+  });
+  vi.spyOn(client.auth, "getUser").mockResolvedValue({
+    data: { user: { ...user, email: "other@example.invalid" } },
+    error: null,
+  });
+  expect(
+    await repository.verifyRecoveryCode({ email: user.email!, code: "123456" }),
+  ).toEqual({ status: "error", reason: "unknown" });
+});

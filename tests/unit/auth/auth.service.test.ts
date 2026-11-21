@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AuthRepository } from "@/server/auth/auth.repository";
 import { createAuthService as createService } from "@/server/auth/auth.service";
 
@@ -154,7 +154,7 @@ describe("AuthService.logout", () => {
 });
 
 describe("AuthService.requestPasswordRecovery", () => {
-  it("returns a generic message even when the provider fails", async () => {
+  it("reports provider failure without pretending the code was sent", async () => {
     const service = createAuthService(
       createRepository({
         sendRecoveryEmail: async () => ({ status: "error" }),
@@ -165,12 +165,7 @@ describe("AuthService.requestPasswordRecovery", () => {
       email: "maria@example.com",
     });
 
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        message: "Se o e-mail existir, enviamos as instruções de recuperação.",
-      },
-    });
+    expect(result).toMatchObject({ ok: false, error: { code: "unknown" } });
   });
 });
 
@@ -224,4 +219,63 @@ describe("AuthService.resetPassword", () => {
 
     expect(result).toEqual({ ok: true, data: { success: true } });
   });
+});
+
+it.each(["invalid_code", "rate_limited", "unknown"] as const)(
+  "preserves recovery provider reason %s",
+  async (reason) => {
+    const result = await createAuthService(
+      createRepository({
+        verifyRecoveryCode: async () => ({ status: "error", reason }),
+      }),
+    ).resetPassword({
+      email: USER.email,
+      code: "123456",
+      password: "Example123",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code:
+          reason === "invalid_code"
+            ? "invalid_recovery_code"
+            : reason === "rate_limited"
+              ? "rate_limited"
+              : "unknown",
+      },
+    });
+  },
+);
+it.each([false, true])(
+  "always closes the isolated recovery session after update failure (throw: %s)",
+  async (throws) => {
+    const signOut = vi.fn(async () => ({ status: "ok" as const }));
+    const updatePassword = vi.fn(async () => {
+      if (throws) throw new Error("Unavailable");
+      return { status: "error" as const };
+    });
+    const normal = createRepository();
+    const normalSignOut = vi.spyOn(normal, "signOut");
+    const recovery = createRepository({ signOut, updatePassword });
+    const result = await createService(normal, guard, recovery).resetPassword({
+      email: USER.email,
+      code: "123456",
+      password: "Example123",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "update_failed" },
+    });
+    expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
+    expect(normalSignOut).not.toHaveBeenCalled();
+  },
+);
+it("closes the recovery session after success", async () => {
+  const signOut = vi.fn(async () => ({ status: "ok" as const }));
+  await createAuthService(createRepository({ signOut })).resetPassword({
+    email: USER.email,
+    code: "123456",
+    password: "Example123",
+  });
+  expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
 });

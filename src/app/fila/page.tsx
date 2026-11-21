@@ -7,7 +7,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import { PanelPageTitle } from "@/components/panel-page-title";
 import { PanelShell } from "@/components/panel-shell";
 import { ConfirmationNotice } from "@/components/confirmation-notice";
-import { FirstSteps } from "@/components/first-steps";
+import { SignupFirstSteps } from "@/components/first-steps";
 
 const ui = Inter({
   subsets: ["latin"],
@@ -41,7 +41,7 @@ async function ProtectedQueue() {
     >
       <PanelShell title="Fila de ocorrências" currentPath="/fila">
         <ConfirmationNotice />
-        <FirstSteps />
+        <SignupFirstSteps />
         <PanelPageTitle
           className={`${heading.className} mt-[18px] text-2xl font-bold tracking-[-0.01em]`}
         >

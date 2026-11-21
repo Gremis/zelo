@@ -127,10 +127,19 @@ test("real local signup, email code, confirmed session, logout and password reco
   const email = syntheticEmail();
   const password = `Local${randomUUID()}9`;
   await page.goto("/criar-conta");
-  await page.getByLabel("Nome completo").fill("Pessoa Sintética");
-  await page.getByLabel("E-mail", { exact: true }).fill(email);
-  await page.getByLabel("Celular").fill("21999990000");
-  await page.getByLabel("Senha", { exact: true }).fill(password);
+  await page
+    .getByRole("main")
+    .getByLabel("Nome completo")
+    .fill("Pessoa Sintética");
+  await page
+    .getByRole("main")
+    .getByLabel("E-mail", { exact: true })
+    .fill(email);
+  await page.getByRole("main").getByLabel("Celular").fill("21999990000");
+  await page
+    .getByRole("main")
+    .getByLabel("Senha", { exact: true })
+    .fill(password);
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Criar conta", exact: true }).click();
   await expect(page).toHaveURL("/confirmar-codigo");
@@ -170,7 +179,10 @@ test("real local signup, email code, confirmed session, logout and password reco
   });
   expect(body.status()).toBe(429);
   const wrong = message.code === "000000" ? "999999" : "000000";
-  await page.getByLabel("Código", { exact: true }).fill(wrong);
+  await page
+    .getByRole("main")
+    .getByLabel("Código", { exact: true })
+    .fill(wrong);
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "Código incorreto ou expirado",
@@ -190,12 +202,17 @@ test("real local signup, email code, confirmed session, logout and password reco
       }),
     { times: 1 },
   );
-  await page.getByLabel("Código", { exact: true }).fill(message.code);
+  await page
+    .getByRole("main")
+    .getByLabel("Código", { exact: true })
+    .fill(message.code);
   await page.getByRole("button", { name: "Confirmar e entrar" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "Seu e-mail foi confirmado. Não foi possível verificar sua sessão.",
   );
-  await expect(page.getByLabel("Código", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("main").getByLabel("Código", { exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Verificar sessão novamente" })
     .click();
@@ -234,10 +251,19 @@ test("real local signup, email code, confirmed session, logout and password reco
   await page.goto("/fila");
   await expect(page).toHaveURL("/login");
   expect((await page.request.get("/api/auth/session")).status()).toBe(401);
-  await page.getByLabel("E-mail", { exact: true }).fill(email);
-  await page.getByLabel("Senha", { exact: true }).fill(password);
+  await page
+    .getByRole("main")
+    .getByLabel("E-mail", { exact: true })
+    .fill(email);
+  await page
+    .getByRole("main")
+    .getByLabel("Senha", { exact: true })
+    .fill(password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL("/fila");
+  await expect(
+    page.getByRole("heading", { name: "Primeiros passos" }),
+  ).toHaveCount(0);
   expect((await page.request.get("/api/panel")).status()).toBe(200);
   const login = await page.request.post("/api/auth/login", {
     data: { email, password },
@@ -247,33 +273,174 @@ test("real local signup, email code, confirmed session, logout and password reco
   expect(login.headers()["pragma"]).toBe("no-cache");
   expect(login.headers()["expires"]).toBe("0");
   await page.request.post("/api/auth/logout");
-  expect(
-    (
-      await request.post("/api/auth/forgot-password", { data: { email } })
-    ).status(),
-  ).toBe(200);
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Esqueci minha senha" }).click();
+  await expect(page).toHaveURL("/recuperar-senha");
+  await page
+    .getByRole("main")
+    .getByLabel("E-mail", { exact: true })
+    .fill(email);
+  await page.getByRole("button", { name: "Enviar código" }).click();
+  await expect(page).toHaveURL("/confirmar-codigo/recuperacao");
   const recovery = await capturedCode(request, email, message.id);
   const newPassword = `Changed${randomUUID()}8`;
+  async function submitRecoveryCode(code: string, nextPassword = newPassword) {
+    await page
+      .getByRole("main")
+      .getByLabel("Código", { exact: true })
+      .fill(code);
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Crie uma nova senha" }),
+    ).toBeFocused();
+    await page
+      .getByRole("main")
+      .getByLabel("Nova senha", { exact: true })
+      .fill(nextPassword);
+    await page.getByRole("button", { name: "Salvar nova senha" }).click();
+  }
+  await submitRecoveryCode(recovery.code === "000000" ? "999999" : "000000");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Código incorreto, expirado ou já utilizado",
+  );
+  expect((await page.request.get("/api/auth/session")).status()).toBe(401);
+  localSql(
+    `update auth.users set recovery_sent_at = now() - interval '16 minutes' where email = '${email}'`,
+  );
+  await submitRecoveryCode(recovery.code);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Código incorreto, expirado ou já utilizado",
+  );
+  await page.getByRole("button", { name: "Reenviar código" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "enviamos outro código",
+  );
+  const replacement = await capturedCode(request, email, [
+    message.id,
+    recovery.id,
+  ]);
+  expect(replacement.code === recovery.code).toBe(false);
+  await submitRecoveryCode(recovery.code);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Código incorreto, expirado ou já utilizado",
+  );
+  await submitRecoveryCode(replacement.code, password);
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "O código foi utilizado",
+  );
+  await expect(page.getByRole("button", { name: "Continuar" })).toBeDisabled();
+  expect((await page.request.get("/api/auth/session")).status()).toBe(401);
   expect(
     (
       await request.post("/api/auth/reset-password", {
-        data: { email, code: recovery.code, password: newPassword },
+        data: { email, code: replacement.code, password: newPassword },
       })
-    ).status(),
-  ).toBe(200);
-  await request.post("/api/auth/logout");
-  expect(
-    (
-      await request.post("/api/auth/login", { data: { email, password } })
     ).status(),
   ).toBe(401);
+  localSql(
+    `update auth.users set recovery_sent_at = now() - interval '61 seconds' where email = '${email}'`,
+  );
+  await page.getByRole("button", { name: "Reenviar código" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "enviamos outro código",
+  );
+  const finalCode = await capturedCode(request, email, [
+    message.id,
+    recovery.id,
+    replacement.id,
+  ]);
+  await submitRecoveryCode(finalCode.code);
+  await expect(page).toHaveURL("/login");
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "Senha alterada. Entre com a nova senha.",
+  );
+  expect((await page.request.get("/api/auth/session")).status()).toBe(401);
   expect(
     (
-      await request.post("/api/auth/login", {
-        data: { email, password: newPassword },
+      await request.post("/api/auth/reset-password", {
+        data: { email, code: replacement.code, password: newPassword },
       })
     ).status(),
-  ).toBe(200);
+  ).toBe(401);
+  await page
+    .getByRole("main")
+    .getByLabel("Senha", { exact: true })
+    .fill(password);
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "E-mail ou senha incorretos",
+  );
+  await page
+    .getByRole("main")
+    .getByLabel("Senha", { exact: true })
+    .fill(newPassword);
+  await page.getByRole("main").getByLabel("Manter conectado").uncheck();
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL("/fila");
+  let authCookies = (await page.context().cookies()).filter(({ name }) =>
+    /^sb-.*-auth-token/.test(name),
+  );
+  expect(authCookies.length).toBeGreaterThan(0);
+  expect(authCookies.every(({ expires }) => expires === -1)).toBe(true);
+  const storedCookie = authCookies.map(({ value }) => value).join("");
+  if (!storedCookie.startsWith("base64-"))
+    throw new Error("Unexpected local cookie format.");
+  const storedSession = JSON.parse(
+    Buffer.from(storedCookie.slice(7), "base64url").toString("utf8"),
+  );
+  const previousRefresh = storedSession.refresh_token;
+  storedSession.expires_at = Math.floor(Date.now() / 1000) - 10;
+  const expiredCookie = `base64-${Buffer.from(JSON.stringify(storedSession)).toString("base64url")}`;
+  let cookieOffset = 0;
+  await page.context().addCookies(
+    authCookies.map((cookie, index) => {
+      const value =
+        index === authCookies.length - 1
+          ? expiredCookie.slice(cookieOffset)
+          : expiredCookie.slice(
+              cookieOffset,
+              cookieOffset + cookie.value.length,
+            );
+      cookieOffset += cookie.value.length;
+      return { ...cookie, value };
+    }),
+  );
+  await page.reload();
+  expect((await page.request.get("/api/auth/session")).status()).toBe(200);
+  const renewedCookie = (await page.context().cookies())
+    .filter(({ name }) => /^sb-.*-auth-token/.test(name))
+    .map(({ value }) => value)
+    .join("");
+  const renewedSession = JSON.parse(
+    Buffer.from(renewedCookie.slice(7), "base64url").toString("utf8"),
+  );
+  expect(renewedSession.refresh_token !== previousRefresh).toBe(true);
+  authCookies = (await page.context().cookies()).filter(({ name }) =>
+    /^sb-.*-auth-token/.test(name),
+  );
+  expect(authCookies.every(({ expires }) => expires === -1)).toBe(true);
+  await page.getByRole("button", { name: "Abrir menu" }).click();
+  await page.getByRole("button", { name: "Sair", exact: true }).click();
+  await expect(page).toHaveURL("/login");
+  await page
+    .getByRole("main")
+    .getByLabel("E-mail", { exact: true })
+    .fill(email);
+  await page
+    .getByRole("main")
+    .getByLabel("Senha", { exact: true })
+    .fill(newPassword);
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL("/fila");
+  authCookies = (await page.context().cookies()).filter(({ name }) =>
+    /^sb-.*-auth-token/.test(name),
+  );
+  expect(authCookies.every(({ expires }) => expires > Date.now() / 1000)).toBe(
+    true,
+  );
+  expect(
+    await page.evaluate(() => [localStorage.length, sessionStorage.length]),
+  ).toEqual([0, 0]);
 });
 
 test("real resend replaces the code and keeps the original pending credentials", async ({

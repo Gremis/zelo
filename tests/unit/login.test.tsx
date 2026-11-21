@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
 import LoginPage from "@/app/login/page";
+import { AuthRequestError } from "@/lib/auth/request";
 import { submitLogin } from "@/lib/auth/submit";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
@@ -20,7 +22,11 @@ afterEach(() => {
 });
 
 test("renders the login screen", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   expect(
     screen.getByRole("heading", { level: 1, name: "Entrar" }),
@@ -46,7 +52,11 @@ test("renders the login screen", () => {
 });
 
 test("shows validation errors linked to the fields", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
 
@@ -68,7 +78,11 @@ test("shows validation errors linked to the fields", () => {
 });
 
 test("rejects an invalid e-mail", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "not-an-email" },
@@ -85,7 +99,11 @@ test("rejects an invalid e-mail", () => {
 });
 
 test("focuses the password when it is the first invalid field", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "person@example.com" },
@@ -97,7 +115,11 @@ test("focuses the password when it is the first invalid field", () => {
 });
 
 test("toggles the password visibility", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   const passwordField = screen.getByLabelText("Senha");
   const toggle = screen.getByRole("button", { name: "Mostrar senha" });
@@ -119,7 +141,11 @@ test("toggles the password visibility", () => {
 });
 
 test("links to the password recovery screen", () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   expect(
     screen.getByRole("link", { name: "Esqueci minha senha" }),
@@ -127,9 +153,18 @@ test("links to the password recovery screen", () => {
 });
 
 test("shows a generic credential error and keeps focus on e-mail after rejection", async () => {
-  vi.mocked(submitLogin).mockRejectedValue(new Error("Invalid credentials"));
+  vi.mocked(submitLogin).mockRejectedValue(
+    new AuthRequestError(
+      "invalid_credentials",
+      "E-mail ou senha incorretos. Confira os dados ou recupere a senha.",
+    ),
+  );
 
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   const email = screen.getByLabelText("E-mail");
   fireEvent.change(email, { target: { value: "person@example.com" } });
@@ -148,7 +183,11 @@ test("shows a generic credential error and keeps focus on e-mail after rejection
 test("submits the credentials once while the request is pending", () => {
   vi.mocked(submitLogin).mockImplementation(() => new Promise(() => {}));
 
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
 
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "morador@email.com" },
@@ -174,7 +213,11 @@ test("submits the credentials once while the request is pending", () => {
 });
 
 test("navigates to the protected queue after the real login contract succeeds", async () => {
-  render(<LoginPage />);
+  render(
+    <SignupFlowProvider>
+      <LoginPage />
+    </SignupFlowProvider>,
+  );
   fireEvent.change(screen.getByLabelText("E-mail"), {
     target: { value: "person@example.invalid" },
   });
@@ -186,4 +229,43 @@ test("navigates to the protected queue after the real login contract succeeds", 
     expect(navigation.replace).toHaveBeenCalledWith("/fila"),
   );
   expect(navigation.refresh).toHaveBeenCalled();
+});
+
+function LoginEntryFixture() {
+  const { showFirstSteps, setShowFirstSteps } = useSignupFlow();
+  return (
+    <>
+      <button onClick={() => setShowFirstSteps(true)}>
+        Enable signup steps
+      </button>
+      <span data-testid="first-steps-enabled">{String(showFirstSteps)}</span>
+      <LoginPage />
+    </>
+  );
+}
+
+test("clears post-signup first steps only after successful login", async () => {
+  render(
+    <SignupFlowProvider>
+      <LoginEntryFixture />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByText("Enable signup steps"));
+  expect(screen.getByTestId("first-steps-enabled")).toHaveTextContent("true");
+  fireEvent.change(screen.getByLabelText("E-mail"), {
+    target: { value: "person@example.invalid" },
+  });
+  fireEvent.change(screen.getByLabelText("Senha"), {
+    target: { value: "Synthetic123" },
+  });
+  vi.mocked(submitLogin).mockRejectedValueOnce(new Error("Unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+  await screen.findByRole("alert");
+  expect(screen.getByTestId("first-steps-enabled")).toHaveTextContent("true");
+  fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+  await vi.waitFor(() =>
+    expect(screen.getByTestId("first-steps-enabled")).toHaveTextContent(
+      "false",
+    ),
+  );
 });

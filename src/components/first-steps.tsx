@@ -1,5 +1,6 @@
 "use client";
 
+import { useSignupFlow } from "@/components/signup-flow";
 import { useEffect, useState } from "react";
 import type {
   FirstSteps as FirstStepsState,
@@ -165,4 +166,13 @@ export function FirstSteps({
       )}
     </section>
   );
+}
+
+export function SignupFirstSteps({
+  operations,
+}: {
+  operations?: FirstStepsOperations;
+}) {
+  const { showFirstSteps } = useSignupFlow();
+  return showFirstSteps ? <FirstSteps operations={operations} /> : null;
 }

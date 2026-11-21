@@ -23,6 +23,10 @@ export type SignInOutcome =
   | { status: "ok"; user: AuthUser }
   | { status: "error"; reason: SignInErrorReason };
 
+export type RecoveryOutcome =
+  | { status: "ok" }
+  | { status: "error"; reason?: "invalid_code" | "rate_limited" | "unknown" };
+
 export type SimpleOutcome = { status: "ok" } | { status: "error" };
 
 export type ConfirmationOutcome =
@@ -36,8 +40,8 @@ export type AuthRepository = {
   signUp(params: SignUpParams): Promise<SignUpOutcome>;
   signIn(params: SignInParams): Promise<SignInOutcome>;
   signOut(scope?: "local" | "global"): Promise<SimpleOutcome>;
-  sendRecoveryEmail(email: string): Promise<SimpleOutcome>;
-  verifyRecoveryCode(params: EmailCodeParams): Promise<SimpleOutcome>;
+  sendRecoveryEmail(email: string): Promise<RecoveryOutcome>;
+  verifyRecoveryCode(params: EmailCodeParams): Promise<RecoveryOutcome>;
   updatePassword(password: string): Promise<SimpleOutcome>;
 };
 
@@ -184,16 +188,39 @@ export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
 
     async sendRecoveryEmail(email) {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
-      return error ? { status: "error" } : { status: "ok" };
+      return error
+        ? {
+            status: "error",
+            reason: isRateLimited(error) ? "rate_limited" : "unknown",
+          }
+        : { status: "ok" };
     },
 
     async verifyRecoveryCode({ email, code }) {
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: "recovery",
       });
-      return error ? { status: "error" } : { status: "ok" };
+      if (error)
+        return {
+          status: "error",
+          reason: isRateLimited(error)
+            ? "rate_limited"
+            : error.code === "otp_expired"
+              ? "invalid_code"
+              : "unknown",
+        };
+      if (!data.session) return { status: "error", reason: "unknown" };
+      const { data: identity, error: identityError } =
+        await supabase.auth.getUser();
+      if (
+        identityError ||
+        !identity.user?.email_confirmed_at ||
+        identity.user.email?.toLowerCase() !== email.toLowerCase()
+      )
+        return { status: "error", reason: "unknown" };
+      return { status: "ok" };
     },
 
     async updatePassword(password) {

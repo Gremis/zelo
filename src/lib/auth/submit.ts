@@ -1,25 +1,21 @@
+import { authPost } from "./request";
 export type LoginPayload = {
   email: string;
   password: string;
   keepSignedIn: boolean;
 };
 
-export const submitLogin: (payload: LoginPayload) => Promise<void> = async (
-  payload,
-) => {
-  const response = await fetch("/api/auth/login", {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error("Login failed.");
-};
+export const submitLogin = (payload: LoginPayload) =>
+  authPost("/api/auth/login", payload);
 
-export const submitPasswordRecovery: (
-  email: string,
-) => Promise<void> = async () => {};
+export const submitPasswordRecovery = (email: string) =>
+  authPost("/api/auth/forgot-password", { email });
+
+export const submitNewPassword = (payload: {
+  email: string;
+  code: string;
+  password: string;
+}) => authPost("/api/auth/reset-password", payload);
 
 export {
   submitConfirmationCode,
