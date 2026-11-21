@@ -73,7 +73,7 @@ PostgreSQL, the Data API, Auth, Storage, Studio and local email testing are enab
 
 ### Migrations and types
 
-`supabase/migrations` starts empty, and `supabase/seed.sql` is intentionally empty. No domain schema or synthetic migration is included. Create future reviewed schema changes with:
+`supabase/migrations` contains the reviewed profile, condominium and confirmation-guard migrations. `supabase/seed.sql` is intentionally empty. Create future reviewed schema changes with:
 
 ```bash
 npx --no-install supabase migration new describe_change
@@ -89,7 +89,7 @@ Run `npm run db:types` only after the local database is running and after schema
 
 Import `createClient` from `@/lib/supabase/client` for browser code or from `@/lib/supabase/server` for server code. The server factory is asynchronous, request-scoped and protected by `server-only`. Configuration is validated when a factory is called, not during module import. The existing homepage does not call either factory.
 
-The server factory follows the SSR `getAll`/`setAll` cookie adapter and tolerates read-only Server Component cookie writes. No proxy, login flow, authorization or session-refresh integration is implemented. Do not rely on these factories alone for authenticated sessions; implement refresh handling and response cache headers with authentication later. No privileged admin client exists.
+The server factory follows the SSR `getAll`/`setAll` cookie adapter and tolerates read-only Server Component cookie writes. The proxy refreshes sessions and preserves cookie/cache headers. Private pages and APIs must also verify the identity on the server; the factory and proxy alone do not grant access. The confirmation guard uses a server-only privileged RPC request as described below; no privileged browser or admin application client exists.
 
 Local Docker volumes and credentials are independent from any future hosted environments. Local commands do not link remote projects. Only the reviewed deployment job described below may connect to an environment-specific Session pooler and apply versioned migrations. Never use remote reset, remote seed or automatic migration repair.
 
@@ -184,6 +184,188 @@ The permanent branches `main` and `develop` already exist. Start new task branch
 
 ## Pending setup and known limitations
 
-The deployment pipeline is configured but remote execution and recovery procedures require operational verification. Database integration tests are not configured. Authentication and other business features are outside this foundation.
+The deployment pipeline is configured but remote execution and recovery procedures require operational verification. The general Quality job requires no database credentials. Optional local Auth integration and SQL checks are described below; hosted SMTP delivery and provider-wide enforcement remain pending.
 
 The known full dependency audit issue is GHSA-g3hv-75wg-m249 through `@typescript-eslint/typescript-estree` to `minimatch@10.2.6`. The checked `typescript-eslint@8.72.2` still requires `^10.2.2`. The production-only audit is the blocking audit in this initial CI; it does not audit all development dependencies or establish that the complete dependency tree is free of vulnerabilities. No overrides or advisory suppression are configured.
+
+## Signup confirmation integration (ORI-47)
+
+The real flow calls `/api/auth/signup`, `/api/auth/confirm-signup` and
+`/api/auth/resend-signup`. Supabase verifies the signup OTP and establishes the
+SSR cookie session. The browser checks `/api/auth/session` before navigating to
+`/fila`. After successful code verification, temporary session-check failures
+can be retried without submitting the consumed code again. The verified session
+must match the registration email; an inactive or mismatched session offers login
+instead of granting access. Queue access also validates the confirmed identity on the server;
+`/api/panel` additionally requires the account's protected `is_sindico` profile
+and filters condominium counts by the current identity. Logout uses the real
+Supabase session endpoint and refreshes client navigation state. The login form
+uses the existing login API and returns to the protected queue. The existing
+keep-connected checkbox does not yet select a distinct server session lifetime.
+
+Panel identity and first steps use the protected API even when development mock
+flags are present. Component mocks remain available as explicit test fixtures.
+A simulated signup is not an authenticated session and cannot unlock `/fila`.
+First-step dismissal affects only the current rendered panel; per-account
+persistence belongs to ORI-48. Only the condominium step can be derived from the
+existing database. Employee registration, resident-link delivery, occurrence
+history and their navigation destinations remain unavailable.
+
+The implemented confirmation policy is a six-digit, single-use code valid
+for 15 minutes, five incorrect application verification attempts followed by a
+15-minute block, and at least 60 seconds between sends. A resend must invalidate the previous provider code. The
+local Auth configuration requires eight password characters containing an ASCII letter
+and a digit. Check the same policy in the hosted project's Auth settings;
+repository configuration does not automatically update hosted Auth.
+
+The application guard calls only the `email_confirmation_guard` RPC using a
+server-only service-role credential. It does not create an admin browser client
+or expose privileged credentials in public variables. Its two existing migrations
+must be present before real signup. This key has broader provider privileges than
+the RPC needs; keep its use isolated and consider a dedicated restricted backend
+credential before expanding this integration. The guard does not prevent direct
+calls to Supabase Auth with the public key. Application attempt limits therefore
+do not establish global provider enforcement; configure and verify provider rate
+limits separately. Do not claim a global five-attempt guarantee.
+
+### Hosted development email setup
+
+In the intended development Supabase project, open Authentication, Email, SMTP
+Settings and configure custom SMTP directly in the dashboard:
+
+- Host: `smtp.gmail.com`.
+- Port: `465` with implicit TLS, or the provider-supported STARTTLS configuration.
+- Username: the full Google account address.
+- Password: the Google application password, entered only in the dashboard.
+- Sender address: the authorized sending account or verified alias.
+- Sender name: `Sindicondo`.
+
+Creating a Google application password does not configure SMTP. Enable email
+confirmation and review OTP expiry, password policy and Auth rate limits. Set
+Site URL and allowed redirect URLs for the matching application environment.
+Use the versioned confirmation template with `{{ .Token }}` for the code flow;
+review the recovery template independently. Local templates are not automatically
+published to hosted Auth. Keep SMTP passwords out of application environment
+variables and repository files.
+
+Application environment names are `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and server-only `SUPABASE_SERVICE_ROLE_KEY`.
+Use matching local or development project values. Disable
+`NEXT_PUBLIC_REGISTRATION_DEMO` for real signup. Vercel public values require a
+rebuild; the development project uses the Production scope in this repository's
+deployment pipeline. Do not change hosted settings or deploy without explicit
+authorization.
+
+Local end-to-end tests require the CLI-managed `zelo-local` stack, the confirmation
+migrations, disabled registration mocks and `ORI47_LOCAL_AUTH_TESTS=enabled`.
+They use synthetic accounts and capture codes in local Mailpit. Only that local
+suite is allowed to manipulate test records. Do not record credentials, codes or
+tokens in screenshots, traces or logs. Captured local mail proves local Auth
+integration, not delivery to an external inbox. Hosted delivery acceptance needs
+an explicitly authorized test recipient, actual receipt and full confirmation;
+a successful signup API response alone is insufficient.
+
+### Validation record
+
+On 2026-11-21, manual validation reported a successful signup using the local
+Supabase stack with the temporary Gmail SMTP profile. The confirmation code
+arrived in an external inbox, and entering it successfully confirmed the account
+and allowed the real flow to continue. This is a manual validation record,
+not an automated test result. No recipient address, password, code or token is
+recorded here.
+
+This establishes external delivery and successful signup confirmation only.
+Incorrect or expired codes, code reuse, resend invalidation, attempt limits,
+session persistence after reload, logout and password recovery were not reported
+as tested with external SMTP. Their existing local automated coverage must not
+be presented as external SMTP acceptance. Automated Auth integration tests use
+Mailpit; captured local mail is a separate form of evidence. No hosted Supabase
+SMTP configuration or hosted-environment acceptance was established by this test.
+
+After restoration, read-only inspection confirmed that local Auth
+routes email to Mailpit, the manual-profile marker and operation lock are absent,
+the canonical config has no custom SMTP section, and published local service
+ports remain on loopback. No credentials were inspected and no services were
+changed during this verification.
+
+### Temporary local Gmail profile
+
+The standard `supabase/config.toml` continues to route Auth mail to Mailpit.
+The installed Supabase CLI is pinned to 2.122.1. The helper uses its supported
+`--workdir`, `--network-id` and project-scoped `stop` options; it does not use
+remote linking, reset, volume deletion or user deletion.
+
+Prepare and check the inactive files:
+
+```bash
+nvm use
+npm run db:smtp:prepare
+npm run db:smtp:check
+```
+
+Preparation leaves the canonical config untouched and generates separate Gmail
+and Mailpit workdirs under ignored `supabase/.smtp-manual/`. Both retain the same
+local project ID and service ports, so they reuse this project's existing data
+volumes. The workdirs reference the existing local CLI temporary state without
+copying its contents. Migration and seed execution are disabled in these temporary profiles.
+Only the two email templates are copied. The private `.env.smtp.local` file is
+created with owner-only permissions if absent and is never overwritten.
+
+Open that private file in your local editor and fill `SUPABASE_AUTH_SMTP_USER`,
+`SUPABASE_AUTH_SMTP_PASS` and `SUPABASE_AUTH_SMTP_ADMIN_EMAIL`. Use your full Gmail
+account address as the username, the Google application password as the password,
+and an authorized sender address. Do not paste credentials into shell commands,
+chat, screenshots or versioned files. The helper loads only these fields at
+activation time; preparation and checking do not read the private file. The Gmail
+host, implicit TLS port and sender name are in `supabase/smtp-manual.toml`;
+credentials there are environment references only.
+
+When ready for a real manual delivery test, stop automated tests and run:
+
+```bash
+npm run db:smtp:start
+```
+
+This intentionally stops and starts only `zelo-local`, preserving its data. The
+CLI has no supported Auth-only configuration reload, so the project's other
+local services briefly restart too. Docker Desktop and other projects are not
+restarted. The existing loopback network/port checks remain mandatory. Provider
+output is captured and suppressed to avoid printing keys or SMTP credentials.
+The operation creates an ignored marker that blocks automated Auth email tests.
+Those tests also inspect only the local Auth SMTP-host field and require Mailpit,
+so an isolated test checkout cannot accidentally send through the manual profile.
+No email is sent merely by preparing the files; do not activate this profile
+until you intend to send a real test email.
+
+In another terminal, keep the app on local Supabase with registration mocks off:
+
+```bash
+nvm use
+NEXT_PUBLIC_APP_ENV=local NEXT_PUBLIC_REGISTRATION_DEMO=disabled NEXT_PUBLIC_FIRST_STEPS_MOCK=disabled npm run dev
+```
+
+Open `http://localhost:3000/criar-conta`. Submit exactly one signup using an address
+you control that is not already registered, then read the code in that external
+inbox and confirm it in the app. If the address already exists, do not delete the
+account or reset the database; choose another controlled test address. An API
+success or an entry in Sent Mail alone is not proof of receipt. During this
+profile, Auth uses external SMTP and its mail is not captured by Mailpit.
+
+Restore Mailpit immediately after the manual test, including after interruption:
+
+```bash
+npm run db:smtp:restore
+```
+
+Restoration does not require SMTP credentials. It restarts only the same local
+project using the Mailpit workdir, removes the test-blocking marker only after a
+successful start, and retains all accounts and volumes. The canonical config was
+never swapped, so this recovery command also works if activation was interrupted
+or the shell closed. Do not run profile commands concurrently. If an operation
+was killed, the next command recovers a dead process lock automatically; a live
+operation is never interrupted by another helper invocation.
+
+After successful restoration, ordinary `npm run db:start` and automated tests
+continue to use the standard Mailpit configuration. No hosted Supabase SMTP,
+provider settings, Vercel settings or squad environment is changed by this local
+profile. The single manual test account remains in the local database.
