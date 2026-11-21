@@ -539,3 +539,162 @@ first steps, SMTP template-readiness verification, and the associated tests and
 validation record. No new migration, broad authorization layer, remote environment
 change or deployment is introduced by ORI-87 itself. Per-account first-step
 dismissal remains outside this change; the post-signup display state is in memory.
+
+## Route and resource authorization (ORI-88)
+
+ORI-88 starts from the published ORI-87 branch at `8eafe3e`, preserving the
+PR #20 login/recovery, signup, confirmation, queue and first-steps flows. Its
+working branch is `feature/ori-88-auth-route-authorization`.
+
+### Inventory and authorization boundaries
+
+| Surface                                                                                                                                               | Existing operations                                         | Boundary                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/`                                                                                                                                                   | Redirect to login                                           | Public                                                                                                  |
+| `/login`, `/criar-conta`, `/confirmar-codigo`, `/recuperar-senha`, `/confirmar-codigo/recuperacao`                                                    | Authentication screens                                      | Public                                                                                                  |
+| `/fila`                                                                                                                                               | Queue shell and existing first steps; no occurrence records | Server-verified confirmed active session and own `profiles.is_sindico`                                  |
+| `/api/panel`                                                                                                                                          | GET own profile and owned condominium count                 | 401 for missing/invalid/pending/revoked session; 403 for non-manager; 503 for provider/database failure |
+| `/api/auth/session`                                                                                                                                   | GET confirmed identity                                      | Server identity validation and active-session check; 401 on rejected identity                           |
+| `/api/auth/logout`                                                                                                                                    | POST global logout                                          | Confirmed active session; existing same-origin protection                                               |
+| `/api/auth/signup`, `/api/auth/confirm-signup`, `/api/auth/resend-signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password` | POST authentication operations                              | Public entry points with existing input, confirmation, recovery and origin validation                   |
+| `public.profiles`                                                                                                                                     | Direct user API: own SELECT; UPDATE full_name/phone         | Own user ID, confirmed active session; role columns remain protected                                    |
+| `public.condominiums`                                                                                                                                 | Direct user API: own SELECT, INSERT, UPDATE name/address    | Own manager_id, manager profile, confirmed active session; immutable owner/slug; no user DELETE         |
+| `private.email_confirmation_challenges` and `public.email_confirmation_guard`                                                                         | Internal confirmation attempt budget/leases                 | Existing server-only privileged RPC; no domain data access                                              |
+
+There are no Server Actions, occurrence tables/endpoints, condominium application
+CRUD routes, membership tables or additional role mappings in this tree. The
+current relationship is `condominiums.manager_id -> profiles.id -> auth.users.id`.
+Profiles expose manager/resident booleans; public signup already permits choosing
+the manager account type. This change does not introduce an approval process or
+change that product decision. User metadata is not consulted for authorization.
+Future domain operations must validate the caller and resource relationship at
+every operation, retain RLS, and define their own inaccessible-resource response.
+The panel accepts no resource selector: injected query IDs do not change scope.
+No missing business endpoint was added to satisfy an ID-manipulation test.
+
+The inherited implementation already used `getUser()`, per-user queries,
+manager RLS, restricted profile column grants, SSR renewal, session/persistent
+cookies and isolated recovery clients. The gaps were a confirmed non-manager
+being able to render the queue, policies accepting unconfirmed or revoked
+sessions, and lack of evidence about replaying pre-logout credentials.
+
+### Active-session enforcement and logout guarantees
+
+The new migration adds `public.has_active_session()`. This narrow boolean RPC
+uses the JWT session claim and authenticated subject to check the matching
+`auth.sessions` row, confirmed email and `not_after`. It has no caller-selected
+arguments, uses an empty search path, and grants execution only to authenticated
+users. Its security-definer access reads Auth session state; it never grants
+callers direct access to Auth tables. Restrictive policies add this condition to
+both public tables without replacing their ownership or role policies. Missing,
+malformed, expired, pending and deleted sessions fail closed.
+
+Private server identity checks still call Supabase `getUser()` before the RPC.
+Session lookup errors never grant access. The queue renders an access-denied
+screen for non-managers without rendering its private shell; its streamed page
+can have HTTP 200, while the panel API returns 403. Private pages and API
+responses use private/no-store headers. SSR cookie refresh and persistence
+selection remain unchanged; no return URL or new redirect input was introduced.
+The service worker continues to cache only the public offline document.
+
+[Supabase documents](https://supabase.com/docs/guides/auth/sessions) that logout
+removes affected session rows, but an issued JWT can remain valid until expiry.
+Consequently, clearing cookies or validating a JWT alone is insufficient. The
+local test restores the complete pre-logout browser cookies and requires 401
+from panel/session plus a login redirect from the queue. It also reuses a
+previously issued user JWT directly against PostgREST: the RPC request is still
+accepted as an authenticated JWT but returns false; reads expose no rows, updates
+change no rows, inserts fail, and refresh fails. Global logout covers the other
+session issued for that same synthetic user too. No JWT revocation guarantee is
+claimed for unrelated Supabase services, future tables without these policies,
+or a request already in flight when logout occurs. A database migration is
+required before exercising these checks in an environment; no remote migration
+or deployment was performed here.
+
+### Local evidence and remaining dependencies
+
+`tests/e2e/authorization-local.spec.ts` uses two synthetic manager accounts with
+separate condominiums, a non-manager and an account whose confirmation is removed
+only within that synthetic fixture. User clients use the public key and their
+own issued credentials for isolation checks. Privileged credentials are used
+only for fixture creation/deletion; local SQL modifies only synthetic session
+state and removes synthetic condominiums during cleanup. The test disables
+traces, screenshots and videos and never prints credentials. It checks both
+ownership directions, foreign-ID reads/updates, forged ownership in inserts,
+owner/role mutation denial, own permitted writes, public screens, anonymous and
+invalid sessions, explicit session expiry, browser/API denial and logout replay.
+
+The existing real Mailpit suite covers signup, confirmation, recovery, login,
+logout, first steps, valid SSR refresh and both cookie persistence choices.
+The transactional database suites also verify active, pending, expired, missing,
+malformed and revoked session claims, restricted RPC privileges, and ownership
+policies. Existing condominium SQL fixtures now include confirmed Auth sessions
+so their original positive authorization checks remain meaningful.
+
+Validation uses Node.js 24.22.3 and the already-running local CLI-managed stack,
+with localhost-only service bindings and Mailpit. Local validation performs no reset, shared-environment change or external SMTP delivery. The local migration
+is recorded through `supabase migration up --local`; database types were generated
+from the running stack, including the previously existing confirmation RPC.
+Remote CI and hosted-provider behavior remain unverified by these local checks.
+
+Final ORI-88 local validation on 2026-11-21 passed formatting, formatting check,
+ESLint, route type generation/TypeScript, production build, Chromium installation
+and production audit (zero vulnerabilities). All 262 unit tests, 114 transactional
+database assertions and 46 browser tests passed. One existing registration-demo
+case was intentionally skipped because real Auth mode was enabled. Acceptance
+criteria 1–8 are covered for the existing surfaces: anonymous redirects/401,
+role denial, two-manager isolation, invalid/expired sessions, valid renewal,
+logout replay rejection, public Auth entry points and interface/direct-API
+regression. Condominium mutations are verified through the existing PostgREST
+API with user credentials; no application CRUD UI exists to exercise. Shared
+or hosted execution and unrelated provider services are outside this evidence.
+
+### Logout button follow-up (ORI-88)
+
+The real logout operation already revoked the backend session, cleared cookies
+and signup context, removed the private shell, and replaced/refreshed the login
+route on success. It retained context and displayed an error on failure. The
+remaining gap was that the button required loaded panel user data, preventing
+logout during loading or after a panel request failure. The button now depends
+only on its own pending state, and a synchronous request guard prevents duplicate
+submissions. Panel loading and logout use separate error states so one request
+cannot erase the other request's error or offer the wrong retry action.
+
+The authorization browser test now performs logout through the menu while panel
+loading returns a controlled 503. A first controlled logout failure preserves the
+private route and a valid backend session, displays the error, and permits retry.
+The retry is held in flight to verify the disabled button and absence of duplicate
+requests, then forwarded to the real existing endpoint. Success clears cookies,
+returns to login, and prevents private access after reload, back navigation to an
+actual earlier private history entry, direct queue navigation and replaying saved
+cookies against both protected GET endpoints. Existing direct-JWT revocation and
+user-credential RLS checks remain in the same scenario. Component tests verify
+logout during indefinitely pending panel loading, failed-result and exception
+retry, and clearing all signup context fields only after success. Local validation
+passed 262 unit tests, 114 database assertions and 46 browser tests, with the same
+single demonstration-mode skip; formatting, lint, types, build and production
+audit also passed. No additional migration or backend logout replacement was
+needed for this follow-up.
+
+### Delivery dependencies (ORI-88)
+
+On 2026-11-21, GitHub reports #15, #19 and #20 open against `develop`, each with
+successful Quality checks and Deploy skipped. Their current published heads are
+`cd3cea0`, `13e96ce` and `8eafe3e`, respectively. Git ancestry confirms that #19
+contains #15, #20 contains #19, and ORI-88 starts from the unchanged #20 head.
+Review and integration must follow [#15](https://github.com/Gremis/zelo/pull/15)
+→ [#19](https://github.com/Gremis/zelo/pull/19)
+→ [#20](https://github.com/Gremis/zelo/pull/20) → ORI-88. Because these PRs share
+ancestry, maintainers must coordinate squash merges and reconcile comparisons
+to avoid applying inherited work twice. No dependency PR is changed here.
+
+The aggregate diff against `develop` includes inherited first steps/navigation
+(#15), signup/confirmation, SSR session and local SMTP tooling (#19), and login,
+recovery, cookie persistence and template-readiness work (#20). ORI-88 itself
+adds active-session enforcement and restrictive RLS policies, queue role denial,
+private response headers, logout availability independent of panel loading,
+and their tests/types/documentation. Review its own changes against `8eafe3e`
+until those dependencies are integrated. The target environment needs the new
+`20261121120000_require_active_sessions.sql` migration, after the inherited
+migrations, before serving the updated private operations. No shared database
+migration is performed as part of publishing this branch or opening its PR.
