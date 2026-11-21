@@ -202,7 +202,8 @@ begin
     values
       (new.id, 'Zelador'),
       (new.id, 'Porteiro'),
-      (new.id, 'Auxiliar de limpeza');
+      (new.id, 'Auxiliar de limpeza')
+    on conflict (sindico_id, lower(nome)) do nothing;
   end if;
   return new;
 end;
@@ -215,5 +216,20 @@ create trigger on_profile_created_seed_funcoes
   after insert on public.profiles
   for each row
   execute function public.seed_funcoes_padrao();
+
+-- Semeia também quando um perfil existente passa a ser síndico.
+create trigger on_profile_sindico_seed_funcoes
+  after update of is_sindico on public.profiles
+  for each row
+  when (new.is_sindico and not old.is_sindico)
+  execute function public.seed_funcoes_padrao();
+
+-- Backfill: síndicos que já existiam antes desta migration.
+insert into public.funcoes (sindico_id, nome)
+select p.id, f.nome
+from public.profiles as p
+cross join (values ('Zelador'), ('Porteiro'), ('Auxiliar de limpeza')) as f(nome)
+where p.is_sindico
+on conflict (sindico_id, lower(nome)) do nothing;
 
 commit;
