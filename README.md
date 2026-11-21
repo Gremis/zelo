@@ -200,13 +200,15 @@ instead of granting access. Queue access also validates the confirmed identity o
 `/api/panel` additionally requires the account's protected `is_sindico` profile
 and filters condominium counts by the current identity. Logout uses the real
 Supabase session endpoint and refreshes client navigation state. The login form
-uses the existing login API and returns to the protected queue. The existing
-keep-connected checkbox does not yet select a distinct server session lifetime.
+uses the existing login API and returns to the protected queue. ORI-87 adds
+the cookie persistence choice and the separate recovery flow described below.
 
 Panel identity and first steps use the protected API even when development mock
 flags are present. Component mocks remain available as explicit test fixtures.
 A simulated signup is not an authenticated session and cannot unlock `/fila`.
-First-step dismissal affects only the current rendered panel; per-account
+First steps are shown only in the current post-signup flow. Login, logout and
+a fresh page load do not show this card. First-step dismissal affects only the
+current rendered panel; per-account
 persistence belongs to ORI-48. Only the condominium step can be derived from the
 existing database. Employee registration, resident-link delivery, occurrence
 history and their navigation destinations remain unavailable.
@@ -277,7 +279,8 @@ recorded here.
 This establishes external delivery and successful signup confirmation only.
 Incorrect or expired codes, code reuse, resend invalidation, attempt limits,
 session persistence after reload, logout and password recovery were not reported
-as tested with external SMTP. Their existing local automated coverage must not
+as tested with external SMTP during that signup-only check. The subsequent
+ORI-87 recovery acceptance is recorded below. Their existing local automated coverage must not
 be presented as external SMTP acceptance. Automated Auth integration tests use
 Mailpit; captured local mail is a separate form of evidence. No hosted Supabase
 SMTP configuration or hosted-environment acceptance was established by this test.
@@ -337,6 +340,27 @@ so an isolated test checkout cannot accidentally send through the manual profile
 No email is sent merely by preparing the files; do not activate this profile
 until you intend to send a real test email.
 
+Both activation and restoration now wait for Auth template readiness before
+printing success. The helper verifies the current container identity/start,
+the audited Auth version (`v2.197.0`), both configured internal template URLs,
+and an exact match with the prepared OTP template files. It also requires
+structured Auth reload events for both `confirmation` and `recovery` from the
+current startup, strictly later than any recorded load error for that purpose.
+The first reload following an initial load error is discarded even if its
+timestamp is later, and reloads sharing an error timestamp are never accepted.
+Events from stdout and stderr are ordered conservatively before evaluation:
+[this Auth version can emit a reload event after caching its default template](https://github.com/supabase/auth/blob/v2.197.0/internal/mailer/templatemailer/template.go).
+
+The readiness check polls for up to 45 seconds, with bounded local Docker probes.
+It does not call signup/recovery endpoints or send any email. An unreadable log,
+missing reload evidence, mismatched content, changed container, or unsupported
+Auth version prevents a success message. Failure exits nonzero and retains the
+active marker, including on an unverified restoration; use `npm run db:smtp:restore`
+and resolve the readiness failure before running automated Auth tests. Provider
+output remains suppressed. Do not request manual emails while the helper is
+starting or after a readiness failure. This startup check is not proof of Gmail
+receipt and does not add an application-wide mail or authorization gate.
+
 In another terminal, keep the app on local Supabase with registration mocks off:
 
 ```bash
@@ -369,3 +393,149 @@ After successful restoration, ordinary `npm run db:start` and automated tests
 continue to use the standard Mailpit configuration. No hosted Supabase SMTP,
 provider settings, Vercel settings or squad environment is changed by this local
 profile. The single manual test account remains in the local database.
+
+## Login and password recovery integration (ORI-87)
+
+Login, recovery request and recovery code/password screens use the existing light
+signup presentation. Recovery has its own memory-only context, separate from
+signup confirmation. Email and OTP never enter URL parameters, browser storage
+or application logs. Leaving a recovery screen clears the code and password,
+including when Next.js hides the route in an Activity. Reloading loses the flow.
+Login passwords are also cleared when the login route is hidden.
+
+The request and resend both call `POST /api/auth/forgot-password` with `{ email }`.
+An accepted request uses a generic response without confirming account existence;
+provider or connection failures are reported instead of simulating delivery.
+The intermediate Continue button checks only the six-digit format. Its text
+explicitly says that actual verification occurs when saving the new password.
+`POST /api/auth/reset-password` retains `{ email, code, password }`. The server
+validates the project password rules before consuming the OTP, verifies with
+`type: "recovery"`, and requires a confirmed identity matching the requested email.
+Signup verification continues to use `type: "signup"` and its existing guard.
+
+Recovery uses a separate request-scoped Supabase client with persistence and
+auto-refresh disabled. It never writes the temporary recovery session to browser
+cookies. A local sign-out is attempted in `finally` after verification/update;
+the isolated client is discarded even if provider revocation fails. Existing
+browser sessions are not used to authorize the password update. Successful
+updates return to login with an in-memory confirmation and the email prefilled.
+
+If verification consumes an OTP but the password update fails, `update_failed`
+requires a fresh code. The UI clears the password and OTP and disables Continue
+until a new send succeeds. An uncertain network or server result follows the same
+policy: it never claims success or retries the consumed code. Incorrect, expired
+and reused codes share a generic invalid-code response; rate limits and provider
+outages remain distinct. A changed password and email delivery are not atomic:
+a lost response may mean the password changed, so another recovery request is
+the safe restart. No durable recovery ticket or schema migration is introduced.
+
+The keep-connected checkbox selects cookie persistence, not a new authentication
+lifetime. Checked retains the existing Supabase SSR cookie lifetime. Unchecked
+removes `Max-Age` and `Expires` from live auth cookies, including chunked cookies.
+An HttpOnly same-site preference cookie preserves this choice in Route Handlers
+and SSR proxy renewals. Cookie deletion remains immediate; logout also clears
+the preference. Browser session restoration can restore session cookies, so
+closing a browser is not a guaranteed logout. Provider session policy remains
+unchanged. The unused browser Supabase factory is not part of this flow.
+
+Selective reuse was reviewed against [PR #14](https://github.com/Gremis/zelo/pull/14)
+(commits `a7d0e26`, `c6d18ca`, `c63a494`, `31bc1a7`) for code-flow navigation,
+request errors, field focus and test expectations, and
+[PR #18](https://github.com/Gremis/zelo/pull/18) (`3845c22`) for separate invalid-code,
+rate-limit and provider-error outcomes. These behaviors were adapted to the
+ORI-47 real signup/SSR implementation. No whole-branch integration or replacement
+of the real login with a stub was performed; the original branches and commit
+history remain intact.
+
+### Local validation and Gmail acceptance
+
+Use Node.js from `.nvmrc`. Run `npm run format`, `npm run format:check`,
+`npm run lint`, `npm run typecheck`, `npm run build`, `npm audit --omit=dev`,
+`npm test`, `npx playwright install chromium` and `npm run test:e2e`.
+The existing `ORI47_LOCAL_AUTH_TESTS=enabled` opt-in also enables the expanded
+real Auth browser test in `tests/e2e/registration-local.spec.ts`; use the existing
+local environment loading procedure. The suite refuses external Auth URLs and
+requires the existing Auth container to point to local Mailpit. Inspect containers,
+port bindings and SMTP routing before running it. Do not reset the database.
+
+The local browser scenario covers signup confirmation regression, real recovery
+mail, invalid/expired/replaced/reused codes, resend, old-password rejection,
+new-password login, logout and both cookie persistence options. To exercise
+expiry and resend without sleeps, it adjusts timestamps only on its synthetic
+account, which is removed by test cleanup. Using the current password as the
+replacement exercises a real provider rejection after OTP consumption; the test
+asserts no browser recovery session, requires a new code, and completes recovery
+with that new code. Component/service tests cover duplicate requests, rate limits,
+identity matching, update exceptions and isolated-session cleanup. Separate browser
+fixtures inject network failures and inspect keyboard/focus and layout at 360px
+and 1280px. These injected fixtures are not evidence of email delivery.
+
+On 2026-11-21, the operator reported successful end-to-end recovery using the
+local Supabase stack and the existing private Gmail SMTP profile. The operator
+confirmed that the screens were correct, the recovery flow completed, and login
+opened the occurrence queue without the first-steps card. This is reported manual
+acceptance, distinct from automated Mailpit evidence. The validated flow is
+recovery request, receipt of the recovery code in Gmail, format-only Continue,
+new password submission, login confirmation, login with the new password, queue
+access and logout. No address, password, OTP, recovery URL or token is retained.
+Old-password rejection and fault cases are independently covered by local tests;
+the manual report does not establish external-SMTP acceptance of every fault case.
+
+During preparation, an initial Auth template load failure produced the provider's
+default recovery link email. The SMTP helper now requires current-startup evidence
+of custom confirmation and recovery template loading before declaring readiness,
+including rejection of the initial fallback reload event. The successful manual
+report followed this investigation. No link-based recovery flow was added.
+
+After manual acceptance, `npm run db:smtp:restore` restored Mailpit without
+resetting the database or deleting volumes. The helper confirmed both custom OTP
+templates were loaded by Auth before completing restoration. Read-only checks
+confirmed Mailpit routing, absent transition marker/lock and localhost-only
+published service ports. The existing private SMTP file remains ignored and was
+not included in this delivery. Automated final Auth tests run only after this
+restoration and use synthetic local accounts and Mailpit.
+
+External SMTP is not enabled for automated tests. A future manual retest must use
+the existing preparation/activation/restoration procedure with an authorized
+recipient, without storing private values. This acceptance does not validate a
+hosted Supabase project, deploy templates to hosted Auth, or change provider-wide
+settings. Browser keyboard-space checks simulate a reduced viewport; physical
+mobile keyboard behavior has not been independently verified on a device.
+
+Final local validation used Node.js `24.22.3`: formatting, ESLint, Next.js route
+types/TypeScript, production build and the production dependency audit passed
+with zero reported vulnerabilities. All 258 unit tests passed. The full browser
+run with local Auth enabled passed 45 tests; the single skipped case requires
+explicit registration-demo mode and is unrelated to real recovery. This includes
+post-signup first steps and their absence after login/reload. Remote CI results
+must be checked on the ORI-87 PR and are not implied by this local record.
+
+### Integration dependencies and scope
+
+As checked on 2026-11-21, [PR #15](https://github.com/Gremis/zelo/pull/15)
+(first steps/panel navigation) and [PR #19](https://github.com/Gremis/zelo/pull/19)
+(real signup confirmation and SSR session) are both open against `develop`.
+ORI-87 starts at the published ORI-47 commit `13e96ce`; `origin/develop` does not
+contain it. The ORI-45 head `cd3cea0` is an ancestor of that base, so its work is
+already inherited by both ORI-47 and ORI-87. History and content were compared. Both PRs currently have successful Quality
+checks and are reported mergeable, while GitHub reports their merge state as
+`BLOCKED`; this delivery does not change their reviews or branch requirements.
+
+The recommended review/integration order is #15, then #19, then ORI-87. Merging
+#19 with its existing ancestry also brings in #15's commits; maintainers must
+coordinate how #15 is resolved in that case rather than applying duplicate
+squashed changes. No other PR is modified or merged as part of this delivery.
+If the dependency PRs are squash-merged, reconcile the ORI-87 comparison before
+integration so inherited work is not reviewed or applied twice.
+
+The inherited scope includes the signup/confirmation endpoints and guard,
+protected queue/panel, profile/condominium integration, original first-steps
+components, database migrations/types, and private SMTP profile tooling. These
+changes appear in the aggregate PR diff against `develop` until the dependency
+PRs are integrated. ORI-87 adds real recovery UI integration and error handling,
+isolated recovery sessions, persistent/session-cookie selection across SSR
+renewals, shared light auth layouts with safe vertical centering, post-signup-only
+first steps, SMTP template-readiness verification, and the associated tests and
+validation record. No new migration, broad authorization layer, remote environment
+change or deployment is introduced by ORI-87 itself. Per-account first-step
+dismissal remains outside this change; the post-signup display state is in memory.
