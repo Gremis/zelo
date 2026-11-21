@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
 import { useSignupFlow } from "@/components/signup-flow";
@@ -33,6 +33,7 @@ const linkClasses =
 export default function PasswordRecoveryPage() {
   const router = useRouter();
   const { recoveryEmail, setRecoveryEmail } = useSignupFlow();
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const emailId = useId();
   const emailErrorId = useId();
 
@@ -55,6 +56,7 @@ export default function PasswordRecoveryPage() {
     setRequestError("");
 
     if (nextEmailError) {
+      emailInputRef.current?.focus();
       return;
     }
 
@@ -90,6 +92,7 @@ export default function PasswordRecoveryPage() {
               E-mail
             </label>
             <input
+              ref={emailInputRef}
               id={emailId}
               name="email"
               type="email"

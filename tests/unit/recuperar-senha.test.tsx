@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import PasswordRecoveryPage from "@/app/recuperar-senha/page";
 import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
@@ -38,6 +39,24 @@ function renderRecovery() {
   );
 }
 
+function PrefilledRecoveryPage() {
+  const { setRecoveryEmail } = useSignupFlow();
+  const [ready, setReady] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => {
+          setRecoveryEmail("pessoa@example.invalid");
+          setReady(true);
+        }}
+      >
+        Return to recovery
+      </button>
+      {ready ? <PasswordRecoveryPage /> : null}
+    </>
+  );
+}
+
 test("renders the recovery screen", () => {
   renderRecovery();
 
@@ -64,6 +83,7 @@ test("shows a validation error linked to the e-mail field", () => {
   const emailField = screen.getByLabelText("E-mail");
 
   expect(emailError).toHaveAttribute("role", "alert");
+  expect(emailField).toHaveFocus();
   expect(emailField).toHaveAttribute("aria-invalid", "true");
   expect(emailField).toHaveAttribute("aria-describedby", emailError.id);
   expect(submitPasswordRecovery).not.toHaveBeenCalled();
@@ -132,4 +152,15 @@ test("keeps the recovery e-mail when returning to the recovery screen", () => {
   expect(screen.getByTestId("recovery-email")).toHaveTextContent(
     "pessoa@example.invalid",
   );
+});
+
+test("prefills the e-mail retained in the flow context", () => {
+  render(
+    <SignupFlowProvider>
+      <PrefilledRecoveryPage />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Return to recovery" }));
+
+  expect(screen.getByLabelText("E-mail")).toHaveValue("pessoa@example.invalid");
 });

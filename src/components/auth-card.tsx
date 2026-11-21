@@ -35,6 +35,25 @@ type AuthCardProps = {
   focusTitle?: boolean;
 };
 
+function SindicondoMark() {
+  return (
+    <svg viewBox="0 0 26 26" aria-hidden="true" className="size-[26px]">
+      <rect width="26" height="26" rx="7" fill="#0F766E" />
+      <rect x="6" y="7" width="14" height="3" rx="1.5" fill="#FEE4E2" />
+      <rect x="6" y="11.5" width="10" height="3" rx="1.5" fill="#fff" />
+      <rect
+        x="6"
+        y="16"
+        width="7"
+        height="3"
+        rx="1.5"
+        fill="#fff"
+        opacity="0.7"
+      />
+    </svg>
+  );
+}
+
 export function AuthCard({
   title,
   description,
@@ -57,34 +76,7 @@ export function AuthCard({
                 data-slot="brand-mark"
                 className={signupStyles["brand-mark"]}
               >
-                <svg viewBox="0 0 26 26" aria-hidden="true">
-                  <rect width="26" height="26" rx="7" fill="#0F766E" />
-                  <rect
-                    x="6"
-                    y="7"
-                    width="14"
-                    height="3"
-                    rx="1.5"
-                    fill="#FEE4E2"
-                  />
-                  <rect
-                    x="6"
-                    y="11.5"
-                    width="10"
-                    height="3"
-                    rx="1.5"
-                    fill="#fff"
-                  />
-                  <rect
-                    x="6"
-                    y="16"
-                    width="7"
-                    height="3"
-                    rx="1.5"
-                    fill="#fff"
-                    opacity="0.7"
-                  />
-                </svg>
+                <SindicondoMark />
               </span>
               Sindicondo
             </div>
@@ -121,36 +113,9 @@ export function AuthCard({
           <div className="flex items-center gap-2">
             <span
               aria-hidden="true"
-              className="flex size-8 items-center justify-center"
+              className="flex size-8 items-center justify-center rounded-lg bg-teal-700"
             >
-              <svg viewBox="0 0 26 26" className="size-8" aria-hidden="true">
-                <rect width="26" height="26" rx="7" fill="#0F766E" />
-                <rect
-                  x="6"
-                  y="7"
-                  width="14"
-                  height="3"
-                  rx="1.5"
-                  fill="#FEE4E2"
-                />
-                <rect
-                  x="6"
-                  y="11.5"
-                  width="10"
-                  height="3"
-                  rx="1.5"
-                  fill="#fff"
-                />
-                <rect
-                  x="6"
-                  y="16"
-                  width="7"
-                  height="3"
-                  rx="1.5"
-                  fill="#fff"
-                  opacity="0.7"
-                />
-              </svg>
+              <SindicondoMark />
             </span>
             <span className="text-sm font-semibold tracking-wide text-zinc-100">
               Sindicondo

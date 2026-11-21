@@ -2,10 +2,12 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
+import { ConfirmationCodeScreen } from "@/app/confirmar-codigo/page";
 import SignupPage from "@/app/criar-conta/page";
 import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
 import {
   submitConfirmationCode,
+  submitPasswordRecovery,
   submitResendConfirmationCode,
 } from "@/lib/auth/submit";
 
@@ -13,6 +15,7 @@ vi.mock("@/lib/auth/submit", () => ({
   submitConfirmationCode: vi.fn(async () => {
     throw new Error("Unavailable");
   }),
+  submitPasswordRecovery: vi.fn(async () => {}),
   submitResendConfirmationCode: vi.fn(async () => {
     throw new Error("Unavailable");
   }),
@@ -25,6 +28,8 @@ beforeEach(() => {
   vi.mocked(submitResendConfirmationCode).mockRejectedValue(
     new Error("Unavailable"),
   );
+  vi.mocked(submitPasswordRecovery).mockReset();
+  vi.mocked(submitPasswordRecovery).mockResolvedValue(undefined);
 });
 
 function TestFlow() {
@@ -62,6 +67,33 @@ function renderConfirmation() {
       <TestFlow />
     </SignupFlowProvider>,
   );
+}
+
+function RecoveryCodeTestPage() {
+  const { setRecoveryEmail } = useSignupFlow();
+  const [ready, setReady] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => {
+          setRecoveryEmail("recuperacao@example.invalid");
+          setReady(true);
+        }}
+      >
+        Start recovery
+      </button>
+      {ready ? <ConfirmationCodeScreen flow="recovery" /> : null}
+    </>
+  );
+}
+
+function renderRecoveryCode() {
+  render(
+    <SignupFlowProvider>
+      <RecoveryCodeTestPage />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Start recovery" }));
 }
 
 function submitCode() {
@@ -196,6 +228,70 @@ test("reports resend failure without an invented countdown or success", async ()
   expect(screen.queryByText(/30s|15 minutos/)).not.toBeInTheDocument();
 });
 
+test("renders the recovery code step with preserved e-mail and six-digit input", () => {
+  renderRecoveryCode();
+
+  expect(
+    screen.getByRole("heading", { name: "Digite o código" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("recuperacao@example.invalid")).toBeInTheDocument();
+  expect(screen.getByLabelText("Código")).toHaveAttribute(
+    "inputmode",
+    "numeric",
+  );
+  expect(screen.getByLabelText("Código")).toHaveAttribute(
+    "autocomplete",
+    "one-time-code",
+  );
+  expect(screen.getByLabelText("Código")).toHaveAttribute("maxlength", "6");
+  expect(screen.getByRole("link", { name: "Trocar e-mail" })).toHaveAttribute(
+    "href",
+    "/recuperar-senha",
+  );
+  expect(screen.getByText(/Ele vale por 15 minutos\./)).toBeInTheDocument();
+});
+
+test("resends a recovery code through the existing stub without a timer", async () => {
+  renderRecoveryCode();
+
+  fireEvent.click(screen.getByRole("button", { name: "Reenviar código" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Código reenviado. Confira seu e-mail.",
+  );
+  expect(submitPasswordRecovery).toHaveBeenCalledWith(
+    "recuperacao@example.invalid",
+  );
+  expect(screen.queryByText(/\d+s/)).not.toBeInTheDocument();
+});
+
+test("validates the recovery code length before continuing", () => {
+  renderRecoveryCode();
+
+  const code = screen.getByLabelText("Código");
+  fireEvent.change(code, { target: { value: "12a3" } });
+  expect(code).toHaveValue("123");
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+  expect(code).toHaveFocus();
+  expect(code).toHaveAccessibleDescription("Digite o código de 6 dígitos.");
+  expect(submitConfirmationCode).not.toHaveBeenCalled();
+});
+
+test("leaves recovery code verification to its pending backend contract", async () => {
+  renderRecoveryCode();
+
+  fireEvent.change(screen.getByLabelText("Código"), {
+    target: { value: "708264" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível validar o código agora.",
+  );
+  expect(submitConfirmationCode).not.toHaveBeenCalled();
+});
+
 test("preserves only non-secret draft fields between screens and loses them on reload", () => {
   const view = render(
     <SignupFlowProvider>
@@ -313,4 +409,26 @@ test("ignores a pending confirmation result after navigating to correct the emai
   expect(
     screen.getByRole("button", { name: "Confirmar e entrar" }),
   ).toBeEnabled();
+});
+
+test("does not resend while offline and restores the existing action after reconnection", () => {
+  let online = false;
+  const connection = vi
+    .spyOn(navigator, "onLine", "get")
+    .mockImplementation(() => online);
+  try {
+    renderConfirmation();
+    const resend = screen.getByRole("button", { name: "Reenviar código" });
+    expect(resend).toBeDisabled();
+    fireEvent.click(resend);
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+    act(() => {
+      online = true;
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(resend).toBeEnabled();
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+  } finally {
+    connection.mockRestore();
+  }
 });
