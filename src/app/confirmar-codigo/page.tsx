@@ -4,6 +4,7 @@ import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 import { useOnlineStatus } from "@/components/pwa-runtime";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -34,8 +35,14 @@ export function ConfirmationCodeScreen({
 }: {
   flow?: "signup" | "recovery";
 }) {
-  const { draft, recoveryEmail, registrationId, setRegistrationId } =
-    useSignupFlow();
+  const router = useRouter();
+  const {
+    draft,
+    recoveryEmail,
+    registrationId,
+    setRegistrationId,
+    setMockConfirmationComplete,
+  } = useSignupFlow();
   const email = flow === "recovery" ? recoveryEmail.trim() : draft.email.trim();
   const online = useOnlineStatus();
   const id = useId();
@@ -109,8 +116,13 @@ export function ConfirmationCodeScreen({
 
       if (result.ok) {
         setCode("");
-        setConfirmed(true);
-        if (!mockMode) setRegistrationId(null);
+        if (mockMode) {
+          setMockConfirmationComplete(true);
+          router.replace("/fila");
+        } else {
+          setConfirmed(true);
+          setRegistrationId(null);
+        }
       } else if (
         result.error === "invalid-code" ||
         result.error === "expired-code"

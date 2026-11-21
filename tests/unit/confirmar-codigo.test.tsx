@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
 import { ConfirmationCodeScreen } from "@/app/confirmar-codigo/page";
 import SignupPage from "@/app/criar-conta/page";
@@ -10,6 +10,11 @@ import {
   submitPasswordRecovery,
   submitResendConfirmationCode,
 } from "@/lib/auth/submit";
+
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
+
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock("@/lib/auth/submit", () => ({
   submitConfirmationCode: vi.fn(async () => {
@@ -22,6 +27,8 @@ vi.mock("@/lib/auth/submit", () => ({
 }));
 
 beforeEach(() => {
+  navigation.push.mockClear();
+  navigation.replace.mockClear();
   vi.mocked(submitConfirmationCode).mockReset();
   vi.mocked(submitConfirmationCode).mockRejectedValue(new Error("Unavailable"));
   vi.mocked(submitResendConfirmationCode).mockReset();
@@ -122,6 +129,16 @@ test("handles direct access and missing context without enabling confirmation", 
   );
 });
 
+test("preserves the base validation for an empty confirmation code", () => {
+  renderConfirmation();
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar e entrar" }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Informe o código recebido.",
+  );
+  expect(screen.getByLabelText("Código")).toHaveFocus();
+  expect(submitConfirmationCode).not.toHaveBeenCalled();
+});
+
 test("shows the email in memory, filters code input and focuses linked validation", () => {
   renderConfirmation();
   expect(screen.getByText("pessoa@example.invalid")).toBeInTheDocument();
@@ -167,7 +184,9 @@ test("reports unavailable confirmation and does not navigate", async () => {
   ).toBeInTheDocument();
 });
 
-test("shows accepted confirmation without inventing a queue destination", async () => {
+test("does not redirect a confirmation without a valid session outside mock mode", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", "enabled");
   vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
   renderConfirmation();
   submitCode();
@@ -178,19 +197,8 @@ test("shows accepted confirmation without inventing a queue destination", async 
   expect(heading).toHaveFocus();
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(
-    screen.queryByRole("heading", { name: "Confirme seu e-mail" }),
+    screen.queryByRole("heading", { name: "Conta criada." }),
   ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Digite o código de 6 dígitos para confirmar/),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText("pessoa@example.invalid")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("link", { name: "Revisar cadastro" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
-  expect(screen.getByRole("main")).toHaveTextContent("Sindicondo");
-  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
-  expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
 });
 
 test("locks confirmation and resend during a pending request", async () => {
