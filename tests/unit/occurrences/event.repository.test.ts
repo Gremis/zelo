@@ -1,18 +1,22 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createOccurrenceEventRepository } from "@/server/occurrences/event.repository";
-import type { PublicRegistration } from "@/server/occurrences/contracts";
+import type { CalculatedRegistration } from "@/server/occurrences/contracts";
 
 const state = vi.hoisted(() => ({ rpc: vi.fn(), createClient: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: state.createClient }));
 const request = vi.fn();
-const input: PublicRegistration = {
+const input: CalculatedRegistration = {
   type: "registered",
   condominiumSlug: "synthetic-abcd",
   reporterName: "Synthetic reporter",
   reporterPhone: "11900000000",
   reporterUnitOrRole: "Synthetic unit",
+  location: "Synthetic hall",
   description: "Synthetic report",
+  suggestedPriority: "normal",
+  suggestionReason: "Sem sinal de risco no relato.",
+  suggestionSource: "rules",
 };
 const occurrenceId = "64000000-0000-4000-8000-000000000001";
 const receipt = {
@@ -43,7 +47,7 @@ test("registration uses one restricted RPC and returns a minimal receipt", async
   expect(request).toHaveBeenCalledTimes(1);
   const [url, options] = request.mock.calls[0];
   expect(String(url)).toBe(
-    "http://127.0.0.1:54321/rest/v1/rpc/register_public_occurrence",
+    "http://127.0.0.1:54321/rest/v1/rpc/register_public_occurrence_with_suggestion",
   );
   expect(options.cache).toBe("no-store");
   expect(JSON.parse(options.body)).toEqual({
@@ -52,6 +56,10 @@ test("registration uses one restricted RPC and returns a minimal receipt", async
     reporter_phone: input.reporterPhone,
     reporter_unit_or_role: input.reporterUnitOrRole,
     description: input.description,
+    location: input.location,
+    calculated_priority: input.suggestedPriority,
+    calculated_reason: input.suggestionReason,
+    calculated_source: input.suggestionSource,
   });
   expect(state.createClient).not.toHaveBeenCalled();
 });

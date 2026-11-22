@@ -14,6 +14,7 @@ const registration: PublicRegistration = {
   reporterName: "Synthetic reporter",
   reporterPhone: "11900000000",
   reporterUnitOrRole: "Synthetic unit",
+  location: "Synthetic hall",
   description: "Synthetic report",
 };
 const note: InternalNote = {
@@ -36,9 +37,12 @@ test("public registration is one operation with trimmed self-declared fields", a
       reporterUnitOrRole: "  Synthetic unit  ",
     }),
   ).toEqual(receipt);
-  expect(repository.registerPublic).toHaveBeenCalledExactlyOnceWith(
-    registration,
-  );
+  expect(repository.registerPublic).toHaveBeenCalledExactlyOnceWith({
+    ...registration,
+    suggestedPriority: "normal",
+    suggestionReason: "Sem sinal de risco no relato.",
+    suggestionSource: "rules",
+  });
   expect(repository.appendInternalNote).not.toHaveBeenCalled();
 });
 
@@ -47,6 +51,12 @@ test.each([
   [],
   {},
   { ...registration, reporterUnitOrRole: undefined },
+  { ...registration, location: undefined },
+  { ...registration, location: " " },
+  { ...registration, location: "x".repeat(201) },
+  { ...registration, suggestedPriority: "urgent" },
+  { ...registration, suggestionReason: "Forged reason" },
+  { ...registration, suggestionSource: "ai" },
   { ...registration, reporterUnitOrRole: "  " },
   { ...registration, reporterName: " " },
   { ...registration, reporterPhone: "119" },
@@ -101,3 +111,46 @@ test("write failure propagates without compensating writes or retry", async () =
   expect(repository.registerPublic).toHaveBeenCalledTimes(1);
   expect(repository.appendInternalNote).not.toHaveBeenCalled();
 });
+
+test.each([
+  [
+    "Hall",
+    "Cheiro de gás no hall do 5º andar",
+    "urgent",
+    "Menciona gás: risco à segurança.",
+  ],
+  [
+    "Hall",
+    "Gasto alto com a conta de água",
+    "normal",
+    "Sem sinal de risco no relato.",
+  ],
+  ["GÁS", "Relato sem risco", "urgent", "Menciona gás: risco à segurança."],
+  [
+    "cheiro de",
+    "QUEIMADO",
+    "urgent",
+    "Menciona cheiro de queimado: risco à segurança.",
+  ],
+  ["fogo", "ga\u0301s", "urgent", "Menciona gás: risco à segurança."],
+  [
+    "Hall",
+    "Tomada dando   choque",
+    "urgent",
+    "Menciona dando choque: risco à segurança.",
+  ],
+])(
+  "calculates before the single write for %s / %s",
+  async (location, description, suggestedPriority, suggestionReason) => {
+    await service.registerPublic({ ...registration, location, description });
+    expect(repository.registerPublic).toHaveBeenCalledExactlyOnceWith({
+      ...registration,
+      location,
+      description,
+      suggestedPriority,
+      suggestionReason,
+      suggestionSource: "rules",
+    });
+    expect(repository.appendInternalNote).not.toHaveBeenCalled();
+  },
+);
