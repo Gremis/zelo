@@ -345,6 +345,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      append_occurrence_note: {
+        Args: { note: string; target_occurrence: string };
+        Returns: number;
+      };
       create_condominium: {
         Args: { p_address: string; p_name: string };
         Returns: {
