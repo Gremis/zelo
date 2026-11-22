@@ -1744,3 +1744,173 @@ The develop comparison includes inherited work until #27 and its prerequisites
 are integrated; recheck ancestry/content if prerequisites are squash-merged.
 Remote CI results must be verified on the published commit and are reported on
 the PR separately from the local database/HTTP evidence.
+
+### Persistent local demo occurrences (ORI-76)
+
+The demo is a small persisted database dataset, not an interface mock. It has
+four `new` occurrences in two dedicated condominiums under the explicitly selected
+`ori76-demo@example.invalid` account (`Conta Sintética ORI-76`). All names,
+addresses, phone values, units and descriptions are synthetic. No personal
+portfolio is selected or adopted. There are no low priorities, human decisions,
+responsible parties, deadlines, completions or AI calls.
+
+| Insertion order | Fixture key  | Condominium      | Synthetic report              | Rules result |
+| --------------- | ------------ | ---------------- | ----------------------------- | ------------ |
+| 1               | `normal-old` | Sintético Demo A | Hall lamp burned out          | Normal       |
+| 2               | `urgent-old` | Sintético Demo B | Gas smell in the kitchen      | Urgente      |
+| 3               | `normal-new` | Sintético Demo B | Garden tap dripping           | Normal       |
+| 4               | `urgent-new` | Sintético Demo A | Outlet giving electric shocks | Urgente      |
+
+Registration runs sequentially with actual database timestamps. No timestamps
+are forged or modified: the last urgent occurrence is newer than the first normal
+one, and both priorities have an older/newer pair. The real queue order is
+`urgent-old`, `urgent-new`, `normal-old`, `normal-new`. Cards include the original
+synthetic reporter, unit/function, location, description and condominium name.
+
+#### Manual preparation and execution
+
+Use Node.js 24 from `.nvmrc`, the locked dependencies and the existing running
+local stack prepared with `npm run db:start`. Apply the existing local ORI-74/75
+migrations through the normal local migration workflow first; this task adds no
+business migration. Inspect containers and their actual host bindings before
+loading data. The loader independently verifies the exact loopback API URL,
+project labels, running database/API containers, host ports 54322/54321 and
+loopback-only bindings. Both the selected Docker context and any `DOCKER_HOST`
+override must use a local Unix socket; SSH/TCP/HTTP Docker endpoints are rejected
+before container inspection or loading. It rejects remote configuration and any CI execution.
+It never starts, stops, resets or reconfigures the stack.
+
+Set a dedicated password of at least 12 characters in `ZELO_DEMO_PASSWORD`, or
+create the ignored `.env.demo.local` file containing only that variable and set
+its mode to 0600. Keep its contents private; never print or commit them. This
+file is used only by the manual loader/tests, is excluded from isolated build
+copies and contains no privileged Supabase credential. A private local password
+file was prepared for the verified dataset; its contents are not reported here.
+
+```sh
+npm run db:demo -- --local --prepare-account
+npm run db:demo -- --local
+```
+
+Account preparation is a separate explicit step using the local Auth admin API
+with email confirmation enabled at creation, without sending email or exercising
+SMTP. An existing account is reused only with the exact synthetic email, trusted
+app-metadata dataset marker and confirmed manager profile. Existing accounts and
+passwords are never reset, reassigned or elevated. Use the same password for
+subsequent runs; a conflicting identity or unavailable password causes a safe
+failure. Credentials and tracking codes are never printed. CLI output contains
+only created/reused/recovered/pending and urgent/normal counts.
+
+#### Reuse, atomic capture and safe recovery
+
+`seed.sql` remains empty. There is no automatic seed hook, application startup,
+CI, build or migration invocation of this command. The loader follows existing
+local CLI/Docker fixture patterns and calls the real occurrence factory/service
+from ORI-64/74; that service alone invokes ORI-94's engine. Dataset definitions
+contain no priority, reason, source, tracking code or timestamp assignments.
+Each successful registration retains the original transactional occurrence,
+computed suggestion and single registration event. The command does not update
+existing occurrences or events.
+
+Because the registration RPC intentionally has no public idempotency parameter,
+a file-only checkpoint cannot safely resolve a committed request whose response
+was lost. The manual loader therefore installs `scripts/demo-occurrences.sql`
+only in the verified local database: an unexposed, application-inaccessible
+`local_demo` schema holds dataset keys, dedicated account/condominium UUIDs,
+complete expected inputs and occurrence/event UUID mappings. An additional local
+AFTER INSERT registration trigger atomically captures the mapping in the same
+transaction as the existing occurrence and event. It matches a registered fixture
+by condominium UUID and the full declared input, never by name/description alone.
+Row locks and unique mappings reject duplicate concurrent registrations; failure
+rolls back the mapping with the occurrence/event. None of the application's
+existing protection triggers, privileges or public RPC contracts is disabled or
+extended. The helper does not create or classify business records itself.
+
+Condominiums are created through the existing `create_condominium` RPC under the
+real demo user's active claims; a local transaction records the resulting UUID
+with the fixture key. Account preparation can recover an already-created dedicated
+identity using its exact trusted marker. On repetition, the loader verifies
+ownership and definitions, checks mapped records/snapshots and reuses their IDs.
+A timeout or lost response is resolved from the transactional database mapping;
+uncommitted work remains pending for the next run. It never deletes/recreates
+history or repairs records by changing their content.
+
+Preserve the `local_demo` metadata with the local database. If dedicated
+condominiums/occurrences exist outside that registry, the loader refuses to adopt,
+duplicate or delete them. Changed fixture definitions, ownership or mapped
+business data also fail closed. Do not remove the registry while retaining its
+records. There is no automatic destructive cleanup command. The local-only helper
+objects and dataset must not be copied/applied to shared environments; loading a
+shared demo requires a separate reviewed operation.
+
+For an inspectable partial run, the following commits only the first example:
+
+```sh
+npm run db:demo -- --local --stop-after 1
+npm run db:demo -- --local
+npm run db:demo -- --local
+```
+
+`--stop-after` is a local loader option, not a public API parameter. A completed
+dataset is reused even when that option is passed again. All date ordering uses
+real registration times; no fixture clock override or timestamp backdating exists.
+
+#### Verification and observed results
+
+With a production server using the local stack at `127.0.0.1:3100`, run
+`npm run test:db:demo`. It tests the real service/RPC and HTTP queue with the demo
+account's SSR session cookies. It also prepares/reuses the explicitly synthetic
+`ori76-isolation@example.invalid` verification account, with its own trusted
+marker and the same local validation password, and confirms an empty portfolio
+through HTTP and direct RLS reads. Both dedicated accounts remain local; the suite
+has no automatic account/data deletion. Only its own temporary failure trigger
+and function are removed after the failure test.
+
+The verified initial load stopped after one Normal occurrence. A forced event
+failure left the original occurrence/event and manifest unchanged. The subsequent
+run recovered all three pending registrations despite simulated lost responses
+after real commits. Repeating the actual CLI returned `created: 0`, `reused: 4`,
+`recovered: 0`, `pending: 0`, `urgent: 2`, `normal: 2`, with unchanged occurrence and
+event identifiers. On an already complete dataset the suite checks duplicate-write
+rollback and reuse; pending-write/response-loss coverage requires a partial initial
+load, as exercised here, rather than deleting persisted records to repeat it.
+
+The real `GET /api/occurrences/queue` returned four New cards from two
+condominiums in the documented order, with open counts `{ urgent: 2, normal: 2,
+low: 0, unclassified: 0 }` and every other status count zero. Reasons match the
+real engine: gas and electric-shock expressions use their canonical terms; normal
+examples use `Sem sinal de risco no relato.`. All suggestions have source `rules`,
+no final priority/decision, and exactly one initial event with preserved reporter,
+server-time and public/structured snapshots. The other portfolio sees none of them.
+
+Local validation passed 502 unit tests across 38 files, five real demo integration
+cases, formatting, lint, typecheck and the production audit (zero vulnerabilities).
+A fresh isolated Node 24 container build passed; its prepared output was served on
+host Node 24.22.3 for HTTP verification. The CLI uses Node 24's native TypeScript
+transform and a narrow source-import resolver to call the existing server factory;
+its experimental-transform warning is expected, without changing package module
+mode or adding dependencies. No business source, dependency version, lockfile,
+public database type or historical migration was changed. There is no visual queue
+integration, SMTP, reset, shared operation or deployment during local validation.
+
+The existing browser regression also passed against the prepared production output:
+43 passed, with 15 unchanged conditional skips for local-auth opt-ins, SMTP flows
+and the separate registration-demo build. No browser test or skip condition was
+modified. The prior generated `.next` output is restored after validation. These
+are local results; no remote CI or shared database action was run.
+
+ORI-76 final review added local-Docker-endpoint rejection before container access.
+The affected unit suite now covers 25 cases; together with the previously passed
+suites this brings unit coverage to 511 tests across 38 files. The manual command
+was rechecked against the preserved dataset and reused all four occurrence/event
+mappings with no duplicates. No business source or historical migration needed
+correction. Remote CI results are reported separately on the published PR.
+
+ORI-76 starts directly from ORI-75's published head
+`d6eadfdfe934428a61aa2492a28d61e32a7c7dc6` in PR #28 and targets `develop`.
+The exclusive task diff is
+`git diff d6eadfdfe934428a61aa2492a28d61e32a7c7dc6...feature/ori-76-demo-occurrences`.
+The loader needs ORI-64/74 registration, and the verification/queue demonstration
+needs ORI-75's endpoint; these dependencies are inherited through #28. Integrate
+prerequisite PRs first. The develop comparison includes inherited work until then;
+recheck ancestry/content if prerequisites are squash-merged.
