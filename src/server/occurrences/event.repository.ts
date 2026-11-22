@@ -26,16 +26,23 @@ export function createOccurrenceEventRepository(
         const { url } = getSupabaseConfig();
         const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
         if (!key) throw new OccurrenceWriteError("unavailable");
-        const body: Database["public"]["Functions"]["register_public_occurrence"]["Args"] =
+        const body: Database["public"]["Functions"]["register_public_occurrence_with_suggestion"]["Args"] =
           {
             condominium_slug: input.condominiumSlug,
             reporter_name: input.reporterName,
             reporter_phone: input.reporterPhone,
             reporter_unit_or_role: input.reporterUnitOrRole,
             description: input.description,
+            location: input.location,
+            calculated_priority: input.suggestedPriority,
+            calculated_reason: input.suggestionReason,
+            calculated_source: input.suggestionSource,
           };
         const response = await fetch(
-          new URL("/rest/v1/rpc/register_public_occurrence", url),
+          new URL(
+            "/rest/v1/rpc/register_public_occurrence_with_suggestion",
+            url,
+          ),
           {
             method: "POST",
             headers: {
