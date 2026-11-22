@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { toResponse } from "@/server/auth/auth.http";
 import type { AuthRepository } from "@/server/auth/auth.repository";
 import { createAuthService as createService } from "@/server/auth/auth.service";
 
@@ -224,9 +225,13 @@ describe("AuthService.resetPassword", () => {
 it.each(["invalid_code", "rate_limited", "unknown"] as const)(
   "preserves recovery provider reason %s",
   async (reason) => {
+    const updatePassword = vi.fn(async () => ({ status: "ok" as const }));
+    const signOut = vi.fn(async () => ({ status: "ok" as const }));
     const result = await createAuthService(
       createRepository({
         verifyRecoveryCode: async () => ({ status: "error", reason }),
+        updatePassword,
+        signOut,
       }),
     ).resetPassword({
       email: USER.email,
@@ -244,6 +249,11 @@ it.each(["invalid_code", "rate_limited", "unknown"] as const)(
               : "unknown",
       },
     });
+    expect(toResponse(result).status).toBe(
+      reason === "rate_limited" ? 429 : reason === "unknown" ? 500 : 401,
+    );
+    expect(updatePassword).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
   },
 );
 it.each([false, true])(

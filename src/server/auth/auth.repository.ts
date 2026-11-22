@@ -82,6 +82,14 @@ function classifySignInError(error: AuthError): SignInErrorReason {
   return "unknown";
 }
 
+function isOtpInvalid(error: AuthError): boolean {
+  if (error.code === "otp_expired") {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("invalid") || message.includes("expired");
+}
+
 export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
   return {
     async signUp({ fullName, email, password, phone }) {
@@ -211,7 +219,7 @@ export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
           status: "error",
           reason: isRateLimited(error)
             ? "rate_limited"
-            : error.code === "otp_expired"
+            : isOtpInvalid(error)
               ? "invalid_code"
               : "unknown",
         };
