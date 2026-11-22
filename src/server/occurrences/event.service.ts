@@ -1,8 +1,10 @@
 import "server-only";
+import { detectRisk } from "@/lib/occurrences/risk-rules";
 import {
   OccurrenceWriteError,
   type InternalNote,
   type OccurrenceEventRepository,
+  type OccurrenceEventService,
   type PublicRegistration,
 } from "./contracts";
 
@@ -33,7 +35,7 @@ function text(value: unknown, max: number) {
 
 export function createOccurrenceEventService(
   repository: OccurrenceEventRepository,
-): OccurrenceEventRepository {
+): OccurrenceEventService {
   return {
     async registerPublic(input: PublicRegistration) {
       exactFields(input, [
@@ -42,6 +44,7 @@ export function createOccurrenceEventService(
         "reporterName",
         "reporterPhone",
         "reporterUnitOrRole",
+        "location",
         "description",
       ]);
       if (
@@ -53,13 +56,22 @@ export function createOccurrenceEventService(
         !/^[1-9][0-9]{9,10}$/.test(input.reporterPhone)
       )
         throw new OccurrenceWriteError("invalid_input");
+      const location = text(input.location, 200);
+      const description = text(input.description, 10000);
+      const risk = detectRisk(location, description);
       return repository.registerPublic({
         type: "registered",
         condominiumSlug: input.condominiumSlug,
         reporterName: text(input.reporterName, 200),
         reporterPhone: input.reporterPhone,
         reporterUnitOrRole: text(input.reporterUnitOrRole, 200),
-        description: text(input.description, 10000),
+        location,
+        description,
+        suggestedPriority: risk.hasRisk ? "urgent" : "normal",
+        suggestionReason: risk.hasRisk
+          ? `Menciona ${risk.term}: risco à segurança.`
+          : "Sem sinal de risco no relato.",
+        suggestionSource: "rules",
       });
     },
     async appendInternalNote(input: InternalNote) {
