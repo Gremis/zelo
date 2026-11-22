@@ -1118,3 +1118,104 @@ targets `develop`; merge prerequisites first and recheck ancestry/content if a
 prerequisite is squash-merged. Apply versioned migrations only through the
 authorized deployment process after prerequisite integration. Publishing this PR
 does not apply migrations or deploy to a shared environment.
+
+### Occurrence history integrity (ORI-63)
+
+`20261122110000_occurrence_history_access.sql` adds portfolio reads and the
+`append_occurrence_note(target_occurrence uuid, note text) -> bigint` RPC.
+Authorization follows the ORI-29 condominium manager relationship and ORI-88
+confirmed, active session checks. No owner is copied onto events or attachments.
+Child reads traverse the occurrence policy; ID, sequence and relation filters do
+not grant additional access. Missing and foreign occurrences both return no rows;
+the RPC returns the same `42501 / Occurrence unavailable.` error for both.
+
+| Role                    | Read occurrences/events/metadata | Direct writes                            | Internal note RPC                       |
+| ----------------------- | -------------------------------- | ---------------------------------------- | --------------------------------------- |
+| `anon`                  | Denied                           | Denied                                   | Denied                                  |
+| `authenticated`         | Active manager's portfolio only  | Denied, including sequences and truncate | Own portfolio, active confirmed session |
+| `service_role`          | Denied by table privileges       | Denied                                   | Denied                                  |
+| Database administrators | Privileged maintenance           | Privileged maintenance                   | Privileged maintenance                  |
+
+The note RPC accepts only an occurrence ID and a nonblank internal note of at most
+10,000 characters. It derives identity, name and phone from the authenticated
+manager's profile, fixes the author role and event type, uses server time and the
+current priority, and stores empty structured data. Notes are always internal,
+with no public text. Client payloads cannot select author, time, visibility or
+structured event data. A profile without a name is rejected. The function fixes
+an empty search path, qualifies application objects, limits EXECUTE and locks the
+occurrence and condominium while authorizing the append. It never updates an
+existing event or the occurrence itself.
+
+Events and attachment metadata have no application INSERT, UPDATE, DELETE or
+TRUNCATE privileges. Invoker triggers additionally reject UPDATE, DELETE and
+TRUNCATE by application roles, including `service_role` if a table grant is
+accidentally widened. The database maintenance roles `postgres` and
+`supabase_admin` are explicitly exempt; model constraint regression tests use that
+administrator boundary. Trigger EXECUTE is not exposed. Author references now use
+RESTRICT instead of SET NULL, preventing profile/account deletion from rewriting
+existing events. Existing occurrence/condominium and event/attachment RESTRICT
+relationships prevent cascading loss. Profile edits do not change snapshots.
+Retention or account erasure needs a separately reviewed maintenance procedure.
+
+`service_role` has BYPASSRLS: neither RLS nor FORCE RLS protects against that flag.
+Its denial here comes from ACLs and mutation triggers. The current production
+server use of its credential is `src/server/auth/confirmation-guard.ts`, calling
+only `email_confirmation_guard`; that function touches the private email guard
+records and has no dynamic SQL or occurrence access. Browser tests also use the
+credential for synthetic account setup. No occurrence service receives this key.
+Database owners, superusers and migrations can change grants, disable triggers or
+rewrite data; this is application history integrity, not absolute administrator
+immutability. Future privileged functions must be reviewed for the same boundary.
+
+ORI-64 must use the caller's authenticated session for internal notes, without
+receiving direct history write privileges. Atomic occurrence creation and its
+first `registered` event, other event types, attachment inclusion and public
+submission remain unavailable until a reviewed narrow transactional database
+operation is introduced by ORI-64. That operation must validate the real portfolio
+and session, derive author snapshots and server timestamps, enforce event-specific
+public projections and validate every attachment's occurrence/event pair. Public
+reporter fields are self-declared data, never a verified manager identity; public
+registration must not reuse the authenticated manager-note RPC. Internal notes and
+responsible names must never be copied to public payloads. The composite foreign
+key already enforces attachment/event occurrence consistency. There is no anonymous
+tracking read grant. Storage bytes, object overwrite/deletion permissions and
+content verification are outside metadata integrity and remain future work.
+
+Local evidence is in `supabase/tests/database/history-access.test.sql`, using two
+synthetic confirmed accounts with distinct sessions and portfolios and actual
+`SET ROLE authenticated`, `anon` and `service_role` execution. It covers successful
+reads/appends, foreign and missing IDs, sequence filters, direct child reads,
+forged payloads, revoked/invalid sessions, snapshots, deletion chains, effective
+privileges and trigger defense under transaction-local accidental grants. All
+fixtures and grants roll back. The ORI-62 model suite retains its constraint tests
+and now expects portfolio SELECT grants and RESTRICT author deletion.
+
+ORI-63 local validation used Node.js 24.22.3 and the locked Supabase CLI 2.122.1.
+The existing `zelo-local` containers were inspected first: exposed application
+ports 54321–54324 were bound only to IPv4/IPv6 loopback. Only the new migration was
+applied with `supabase migration up --local`; no reset, SMTP change or remote
+operation was performed. Types were regenerated from that running database.
+
+Validation passed: formatting/write and check, ESLint, route type generation and
+TypeScript, 284 unit tests, production build, 447 database assertions across five
+suites, and the existing concurrency regression (eight overlapping transactions,
+200 unique numbers and tracking codes). The production audit reported zero
+vulnerabilities. The standard browser run passed 43 cases and conditionally
+skipped 15; an additional explicit local-auth run passed 11 of those cases. The
+remaining three SMTP cases and one registration-demo-build case retain the
+existing conditions detailed above. No test was disabled or changed to bypass a
+failure. Revoked-session browser checks produced expected invalid-refresh-token
+server diagnostics while passing. No GitHub run or deployment was executed.
+
+Final ORI-63 review additionally verifies direct foreign event/attachment primary
+IDs, column-level write privileges, administrator role inheritance, the RPC's
+catalogued security configuration and effective EXECUTE grants, and rejection of
+a direct call to the legacy SECURITY DEFINER trigger function. Temporary grants
+used to exercise mutation triggers are revoked before the final privilege checks;
+the complete test transaction still rolls back.
+
+Publication targets `develop` and depends on PR #23 (ORI-62), whose head is
+`f2e6ca925df2d8369793ea3a800614b797b3ef45`. The exclusive ORI-63 review diff is
+`git diff f2e6ca925df2d8369793ea3a800614b797b3ef45...feature/ori-63-history-integrity-access`.
+Until #23 is integrated, GitHub's comparison against `develop` also contains its
+inherited commits. ORI-63 does not alter or merge that prerequisite PR.
