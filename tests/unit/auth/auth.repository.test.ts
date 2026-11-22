@@ -1,4 +1,4 @@
-import { createClient, type User } from "@supabase/supabase-js";
+import { AuthApiError, createClient, type User } from "@supabase/supabase-js";
 import { expect, it, vi } from "vitest";
 import { createAuthRepository } from "@/server/auth/auth.repository";
 
@@ -128,3 +128,27 @@ it("rejects recovery when the validated identity belongs to another email", asyn
     await repository.verifyRecoveryCode({ email: user.email!, code: "123456" }),
   ).toEqual({ status: "error", reason: "unknown" });
 });
+
+it.each([
+  [429, "over_request_rate_limit", "Invalid request", "rate_limited"],
+  [400, "over_email_send_rate_limit", "Request rejected", "rate_limited"],
+  [403, "otp_expired", "Token rejected", "invalid_code"],
+  [400, undefined, "Token invalid", "invalid_code"],
+  [400, undefined, "Token expired", "invalid_code"],
+  [500, "unexpected_failure", "Provider unavailable", "unknown"],
+] as const)(
+  "classifies recovery verification failure %s/%s/%s as %s",
+  async (status, code, message, reason) => {
+    const { client, user, repository } = setup();
+    vi.spyOn(client.auth, "verifyOtp").mockResolvedValue({
+      data: { user: null, session: null },
+      error: new AuthApiError(message, status, code),
+    });
+    expect(
+      await repository.verifyRecoveryCode({
+        email: user.email!,
+        code: "123456",
+      }),
+    ).toEqual({ status: "error", reason });
+  },
+);
