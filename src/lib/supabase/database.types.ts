@@ -379,6 +379,20 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
       };
+      register_public_occurrence: {
+        Args: {
+          condominium_slug: string;
+          description: string;
+          reporter_name: string;
+          reporter_phone: string;
+          reporter_unit_or_role: string;
+        };
+        Returns: {
+          number: number;
+          occurrence_id: string;
+          tracking_code: string;
+        }[];
+      };
       resolve_condominium_link: {
         Args: { p_slug: string };
         Returns: {
