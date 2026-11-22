@@ -23,6 +23,12 @@ export type SignInOutcome =
   | { status: "ok"; user: AuthUser }
   | { status: "error"; reason: SignInErrorReason };
 
+export type VerifyRecoveryErrorReason =
+  "invalid_code" | "rate_limited" | "unknown";
+
+export type VerifyRecoveryOutcome =
+  { status: "ok" } | { status: "error"; reason: VerifyRecoveryErrorReason };
+
 export type SimpleOutcome = { status: "ok" } | { status: "error" };
 
 export type ConfirmationOutcome =
@@ -37,7 +43,7 @@ export type AuthRepository = {
   signIn(params: SignInParams): Promise<SignInOutcome>;
   signOut(scope?: "local" | "global"): Promise<SimpleOutcome>;
   sendRecoveryEmail(email: string): Promise<SimpleOutcome>;
-  verifyRecoveryCode(params: EmailCodeParams): Promise<SimpleOutcome>;
+  verifyRecoveryCode(params: EmailCodeParams): Promise<VerifyRecoveryOutcome>;
   updatePassword(password: string): Promise<SimpleOutcome>;
 };
 
@@ -74,6 +80,26 @@ function classifySignInError(error: AuthError): SignInErrorReason {
   }
   if (isInvalidCredentials(error)) {
     return "invalid_credentials";
+  }
+  return "unknown";
+}
+
+function isOtpInvalid(error: AuthError): boolean {
+  if (error.code === "otp_expired") {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("invalid") || message.includes("expired");
+}
+
+function classifyVerifyRecoveryError(
+  error: AuthError,
+): VerifyRecoveryErrorReason {
+  if (isRateLimited(error)) {
+    return "rate_limited";
+  }
+  if (isOtpInvalid(error)) {
+    return "invalid_code";
   }
   return "unknown";
 }
@@ -193,7 +219,10 @@ export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
         token: code,
         type: "recovery",
       });
-      return error ? { status: "error" } : { status: "ok" };
+      if (error) {
+        return { status: "error", reason: classifyVerifyRecoveryError(error) };
+      }
+      return { status: "ok" };
     },
 
     async updatePassword(password) {
