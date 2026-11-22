@@ -72,11 +72,11 @@ select is((select count(*) from urgent_response_metrics where id='62000000-0000-
 select is((select 100.0*count(*) filter(where decided_priority=decided_suggested_priority)/count(*) from occurrences where id='62000000-0000-4000-8000-000000000001' and decided_suggested_priority is not null),100.0,'Decision snapshot survives later priority edit');
 select is((select extract(epoch from occurred_at-delegation_started_at)::bigint from occurrence_events where occurrence_id='62000000-0000-4000-8000-000000000001' and event_type='completed'),3600::bigint,'Delegation to completion duration');
 select ok(relrowsecurity and relforcerowsecurity,relname || ' uses forced RLS') from pg_class where oid in ('occurrences'::regclass,'occurrence_events'::regclass,'occurrence_attachments'::regclass);
-select ok(not has_table_privilege(r,t,p),r || ' lacks ' || p || ' on ' || t)
+select is(has_table_privilege(r,t,p), r = 'authenticated' and p = 'SELECT', r || ' expected ' || p || ' on ' || t)
 from (values ('anon'),('authenticated'),('service_role')) roles(r)
 cross join (values ('occurrences'),('occurrence_events'),('occurrence_attachments')) tables(t)
 cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) privileges(p);
-select is((select count(*) from pg_policy where polrelid in ('occurrences'::regclass,'occurrence_events'::regclass,'occurrence_attachments'::regclass)),0::bigint,'No premature access policies');
+select is((select count(*) from pg_policy where polrelid in ('occurrences'::regclass,'occurrence_events'::regclass,'occurrence_attachments'::regclass)),3::bigint,'Portfolio read policies cover all history tables');
 select throws_ok($$update occurrences set condominium_id=null where id='62000000-0000-4000-8000-000000000001'$$,'23502',null,'Required condominium_id');
 select throws_ok($$update occurrences set origin=null where id='62000000-0000-4000-8000-000000000001'$$,'23502',null,'Required origin');
 select throws_ok($$update occurrences set channel=null where id='62000000-0000-4000-8000-000000000001'$$,'23502',null,'Required channel');
@@ -96,9 +96,9 @@ select throws_ok($$update occurrences set internal_note=E' \t\n' where id='62000
 insert into auth.users(id,email) values ('62000000-0000-4000-8000-000000000003','ori62-author@example.invalid');
 update occurrence_events set author_profile_id='62000000-0000-4000-8000-000000000003' where id=(select id from first_event);
 update occurrences set responsible_profile_id='62000000-0000-4000-8000-000000000003', responsible_name='Synthetic responsible' where id='62000000-0000-4000-8000-000000000001';
-delete from auth.users where id='62000000-0000-4000-8000-000000000003';
-select ok((select author_profile_id is null and author_name='Synthetic author' and author_phone='00000000000' and author_role='manager' from occurrence_events where id=(select id from first_event)),'Author snapshots survive profile deletion');
-select ok((select responsible_profile_id is null and responsible_name='Synthetic responsible' from occurrences where id='62000000-0000-4000-8000-000000000001'),'Responsible snapshot survives profile deletion');
+select throws_ok($$delete from auth.users where id='62000000-0000-4000-8000-000000000003'$$,'23503',null,'Author deletion is restricted to preserve immutable reference');
+select ok((select author_profile_id='62000000-0000-4000-8000-000000000003' and author_name='Synthetic author' and author_phone='00000000000' and author_role='manager' from occurrence_events where id=(select id from first_event)),'Author snapshots and reference survive attempted deletion');
+select ok((select responsible_profile_id='62000000-0000-4000-8000-000000000003' and responsible_name='Synthetic responsible' from occurrences where id='62000000-0000-4000-8000-000000000001'),'Responsible snapshot survives rejected account deletion');
 insert into occurrence_events(occurrence_id,event_type,author_type,author_name,internal_description,occurred_at)
 values ('62000000-0000-4000-8000-000000000001','manager_update','manager','Synthetic author','Same timestamp','2026-01-01 00:05Z');
 select is((select id from occurrence_events where occurrence_id='62000000-0000-4000-8000-000000000001' and event_type='manager_update' order by occurred_at,id limit 1),(select id from first_event),'Identity breaks timestamp ties deterministically');
@@ -109,7 +109,7 @@ set local role anon;
 select throws_ok($$select tracking_code from public.occurrences$$,'42501',null,'Anonymous tracking lookup denied');
 reset role;
 set local role authenticated;
-select throws_ok($$select public_text from public.occurrence_events where visible_to_resident$$,'42501',null,'Visibility flag grants no table access');
+select is((select count(*) from public.occurrence_events where visible_to_resident),0::bigint,'Visibility flag grants no access without active portfolio session');
 reset role;
 set local role service_role;
 select throws_ok($$select * from public.occurrence_attachments$$,'42501',null,'Service bypass RLS grants no table privilege');
