@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID, randomInt } from "node:crypto";
 
+const publicRegistration = process.argv.includes("--public-registration");
 const container = "supabase_db_zelo-local";
 const user = randomUUID();
 const condominiums = [randomUUID(), randomUUID()];
@@ -56,12 +57,33 @@ try {
       ('${condominiums[0]}','${user}','Synthetic concurrency A','Synthetic address'),
       ('${condominiums[1]}','${user}','Synthetic concurrency B','Synthetic address');
     commit;`);
+  const slugs = condominiums.map((id) =>
+    query(`select slug from public.condominiums where id='${id}';`),
+  );
   for (let index = 0; index < 8; index++) {
     const worker = session(`begin;
       set local statement_timeout='30s';
+      ${
+        publicRegistration
+          ? `
+      set local role service_role;
+      select r.number || ':' || r.tracking_code
+      from generate_series(1,25) s
+      cross join lateral public.register_public_occurrence(
+        '${slugs[index % 2]}','Synthetic reporter','11900000000','Synthetic unit',
+        'ORI64 concurrent ' || s::text
+      ) r;
+      reset role;
+      select 'events:' || count(*) from public.occurrence_events e
+      join public.occurrences o on o.id=e.occurrence_id
+      where o.condominium_id='${condominiums[index % 2]}' and o.description like 'ORI64 concurrent %';
+      `
+          : `
       insert into public.occurrences(condominium_id,origin,channel,description)
       select '${condominiums[index % 2]}','manager_panel','phone','Synthetic concurrent report' from generate_series(1,25)
       returning number || ':' || tracking_code;
+      `
+      }
       select pg_advisory_xact_lock(${lock});
       rollback;\n`);
     worker.child.stdin.end();
@@ -84,6 +106,14 @@ try {
   gate.child.stdin.end(`select pg_advisory_unlock(${lock});\n`);
   await gate.done;
   const outputs = await Promise.all(workers.map((worker) => worker.done));
+  if (publicRegistration) {
+    for (const output of outputs)
+      assert.match(
+        output,
+        /^events:25$/m,
+        "Each worker creates exactly 25 initial events",
+      );
+  }
   const rows = outputs.flatMap((output) =>
     output.split("\n").filter((line) => /^\d+:[0-9a-f]{64}$/.test(line)),
   );
@@ -91,7 +121,7 @@ try {
   assert.equal(new Set(rows.map((row) => row.split(":")[0])).size, 200);
   assert.equal(new Set(rows.map((row) => row.split(":")[1])).size, 200);
   console.log(
-    "Passed: 8 overlapping transactions, 200 globally unique numbers and tracking codes across 2 condominiums; inserts rolled back.",
+    `Passed: 8 overlapping transactions, 200 globally unique numbers and tracking codes across 2 condominiums${publicRegistration ? "; 200 atomic initial events through service_role RPC" : ""}; inserts rolled back.`,
   );
 } finally {
   gate.child.stdin.end();
