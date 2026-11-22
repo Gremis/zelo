@@ -10,6 +10,18 @@ for (const viewport of [
     page,
   }, testInfo) => {
     await page.setViewportSize(viewport);
+    const mockMode =
+      ["local", "development"].includes(
+        process.env.NEXT_PUBLIC_APP_ENV ?? "",
+      ) && process.env.NEXT_PUBLIC_REGISTRATION_DEMO === "enabled";
+    if (!mockMode)
+      await page.route("**/api/auth/signup", (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Unavailable" }),
+        }),
+      );
     await page.goto("/login");
     await page.getByRole("link", { name: "Criar conta" }).click();
     await expect(page).toHaveURL("/criar-conta");

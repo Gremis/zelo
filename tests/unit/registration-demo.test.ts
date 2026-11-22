@@ -19,12 +19,17 @@ beforeEach(() => {
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("NEXT_PUBLIC_APP_ENV", "local");
   vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", "enabled");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockRejectedValue(new Error("Unavailable backend")),
+  );
   vi.useFakeTimers();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 async function settle<T>(promise: Promise<T>) {
@@ -44,9 +49,10 @@ test.each(["", "true", "disabled"])(
   async (flag) => {
     vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", flag);
     expect(isRegistrationDemoEnabled()).toBe(false);
-    await expect(submitSignup(values)).rejects.toThrow(
-      "Signup integration is not available.",
-    );
+    await expect(submitSignup(values)).resolves.toEqual({
+      ok: false,
+      error: "network",
+    });
   },
 );
 
@@ -57,25 +63,28 @@ test.each(["development", "test", "production"] as const)(
     vi.stubEnv("VERCEL_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
     expect(isRegistrationDemoEnabled()).toBe(false);
-    await expect(submitSignup(values)).rejects.toThrow();
+    await expect(submitSignup(values)).resolves.toEqual({
+      ok: false,
+      error: "network",
+    });
     await expect(
       submitConfirmationCode({
         registrationId: "demo-registration",
         email: values.email,
         code: "123456",
       }),
-    ).rejects.toThrow();
+    ).resolves.toEqual({ ok: false, error: "network" });
     await expect(
       submitResendConfirmationCode({
         registrationId: "demo-registration",
         email: values.email,
       }),
-    ).rejects.toThrow();
+    ).resolves.toEqual({ ok: false, error: "network" });
   },
 );
 
 test("identifies the contract as proposed and simulates loading before accepting a registration", async () => {
-  expect(registrationContractStatus).toBe("proposed-pending-ORI-22-and-ORI-47");
+  expect(registrationContractStatus).toBe("integrated-ORI-47");
   let settled = false;
   const request = submitSignup(values).then((result) => {
     settled = true;
@@ -192,8 +201,9 @@ test.each(["", "preview", "Production", "unknown"])(
   async (appEnv) => {
     vi.stubEnv("NEXT_PUBLIC_APP_ENV", appEnv);
     expect(isRegistrationDemoEnabled()).toBe(false);
-    await expect(submitSignup(values)).rejects.toThrow(
-      "Signup integration is not available.",
-    );
+    await expect(submitSignup(values)).resolves.toEqual({
+      ok: false,
+      error: "network",
+    });
   },
 );

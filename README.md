@@ -73,7 +73,7 @@ PostgreSQL, the Data API, Auth, Storage, Studio and local email testing are enab
 
 ### Migrations and types
 
-`supabase/migrations` starts empty, and `supabase/seed.sql` is intentionally empty. No domain schema or synthetic migration is included. Create future reviewed schema changes with:
+`supabase/migrations` contains the reviewed profile, condominium and confirmation-guard migrations. `supabase/seed.sql` is intentionally empty. Create future reviewed schema changes with:
 
 ```bash
 npx --no-install supabase migration new describe_change
@@ -89,7 +89,7 @@ Run `npm run db:types` only after the local database is running and after schema
 
 Import `createClient` from `@/lib/supabase/client` for browser code or from `@/lib/supabase/server` for server code. The server factory is asynchronous, request-scoped and protected by `server-only`. Configuration is validated when a factory is called, not during module import. The existing homepage does not call either factory.
 
-The server factory follows the SSR `getAll`/`setAll` cookie adapter and tolerates read-only Server Component cookie writes. No proxy, login flow, authorization or session-refresh integration is implemented. Do not rely on these factories alone for authenticated sessions; implement refresh handling and response cache headers with authentication later. No privileged admin client exists.
+The server factory follows the SSR `getAll`/`setAll` cookie adapter and tolerates read-only Server Component cookie writes. The proxy refreshes sessions and preserves cookie/cache headers. Private pages and APIs must also verify the identity on the server; the factory and proxy alone do not grant access. The confirmation guard uses a server-only privileged RPC request as described below; no privileged browser or admin application client exists.
 
 Local Docker volumes and credentials are independent from any future hosted environments. Local commands do not link remote projects. Only the reviewed deployment job described below may connect to an environment-specific Session pooler and apply versioned migrations. Never use remote reset, remote seed or automatic migration repair.
 
@@ -184,6 +184,684 @@ The permanent branches `main` and `develop` already exist. Start new task branch
 
 ## Pending setup and known limitations
 
-The deployment pipeline is configured but remote execution and recovery procedures require operational verification. Database integration tests are not configured. Authentication and other business features are outside this foundation.
+The deployment pipeline is configured but remote execution and recovery procedures require operational verification. The general Quality job requires no database credentials. Optional local Auth integration and SQL checks are described below; hosted SMTP delivery and provider-wide enforcement remain pending.
 
 The known full dependency audit issue is GHSA-g3hv-75wg-m249 through `@typescript-eslint/typescript-estree` to `minimatch@10.2.6`. The checked `typescript-eslint@8.72.2` still requires `^10.2.2`. The production-only audit is the blocking audit in this initial CI; it does not audit all development dependencies or establish that the complete dependency tree is free of vulnerabilities. No overrides or advisory suppression are configured.
+
+## Signup confirmation integration (ORI-47)
+
+The real flow calls `/api/auth/signup`, `/api/auth/confirm-signup` and
+`/api/auth/resend-signup`. Supabase verifies the signup OTP and establishes the
+SSR cookie session. The browser checks `/api/auth/session` before navigating to
+`/fila`. After successful code verification, temporary session-check failures
+can be retried without submitting the consumed code again. The verified session
+must match the registration email; an inactive or mismatched session offers login
+instead of granting access. Queue access also validates the confirmed identity on the server;
+`/api/panel` additionally requires the account's protected `is_sindico` profile
+and filters condominium counts by the current identity. Logout uses the real
+Supabase session endpoint and refreshes client navigation state. The login form
+uses the existing login API and returns to the protected queue. ORI-87 adds
+the cookie persistence choice and the separate recovery flow described below.
+
+Panel identity and first steps use the protected API even when development mock
+flags are present. Component mocks remain available as explicit test fixtures.
+A simulated signup is not an authenticated session and cannot unlock `/fila`.
+First steps are shown only in the current post-signup flow. Login, logout and
+a fresh page load do not show this card. First-step dismissal affects only the
+current rendered panel; per-account
+persistence belongs to ORI-48. Only the condominium step can be derived from the
+existing database. Employee registration, resident-link delivery, occurrence
+history and their navigation destinations remain unavailable.
+
+The implemented confirmation policy is a six-digit, single-use code valid
+for 15 minutes, five incorrect application verification attempts followed by a
+15-minute block, and at least 60 seconds between sends. A resend must invalidate the previous provider code. The
+local Auth configuration requires eight password characters containing an ASCII letter
+and a digit. Check the same policy in the hosted project's Auth settings;
+repository configuration does not automatically update hosted Auth.
+
+The application guard calls only the `email_confirmation_guard` RPC using a
+server-only service-role credential. It does not create an admin browser client
+or expose privileged credentials in public variables. Its two existing migrations
+must be present before real signup. This key has broader provider privileges than
+the RPC needs; keep its use isolated and consider a dedicated restricted backend
+credential before expanding this integration. The guard does not prevent direct
+calls to Supabase Auth with the public key. Application attempt limits therefore
+do not establish global provider enforcement; configure and verify provider rate
+limits separately. Do not claim a global five-attempt guarantee.
+
+### Hosted development email setup
+
+In the intended development Supabase project, open Authentication, Email, SMTP
+Settings and configure custom SMTP directly in the dashboard:
+
+- Host: `smtp.gmail.com`.
+- Port: `465` with implicit TLS, or the provider-supported STARTTLS configuration.
+- Username: the full Google account address.
+- Password: the Google application password, entered only in the dashboard.
+- Sender address: the authorized sending account or verified alias.
+- Sender name: `Sindicondo`.
+
+Creating a Google application password does not configure SMTP. Enable email
+confirmation and review OTP expiry, password policy and Auth rate limits. Set
+Site URL and allowed redirect URLs for the matching application environment.
+Use the versioned confirmation template with `{{ .Token }}` for the code flow;
+review the recovery template independently. Local templates are not automatically
+published to hosted Auth. Keep SMTP passwords out of application environment
+variables and repository files.
+
+Application environment names are `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and server-only `SUPABASE_SERVICE_ROLE_KEY`.
+Use matching local or development project values. Disable
+`NEXT_PUBLIC_REGISTRATION_DEMO` for real signup. Vercel public values require a
+rebuild; the development project uses the Production scope in this repository's
+deployment pipeline. Do not change hosted settings or deploy without explicit
+authorization.
+
+Local end-to-end tests require the CLI-managed `zelo-local` stack, the confirmation
+migrations, disabled registration mocks and `ORI47_LOCAL_AUTH_TESTS=enabled`.
+They use synthetic accounts and capture codes in local Mailpit. Only that local
+suite is allowed to manipulate test records. Do not record credentials, codes or
+tokens in screenshots, traces or logs. Captured local mail proves local Auth
+integration, not delivery to an external inbox. Hosted delivery acceptance needs
+an explicitly authorized test recipient, actual receipt and full confirmation;
+a successful signup API response alone is insufficient.
+
+### Validation record
+
+On 2026-11-21, manual validation reported a successful signup using the local
+Supabase stack with the temporary Gmail SMTP profile. The confirmation code
+arrived in an external inbox, and entering it successfully confirmed the account
+and allowed the real flow to continue. This is a manual validation record,
+not an automated test result. No recipient address, password, code or token is
+recorded here.
+
+This establishes external delivery and successful signup confirmation only.
+Incorrect or expired codes, code reuse, resend invalidation, attempt limits,
+session persistence after reload, logout and password recovery were not reported
+as tested with external SMTP during that signup-only check. The subsequent
+ORI-87 recovery acceptance is recorded below. Their existing local automated coverage must not
+be presented as external SMTP acceptance. Automated Auth integration tests use
+Mailpit; captured local mail is a separate form of evidence. No hosted Supabase
+SMTP configuration or hosted-environment acceptance was established by this test.
+
+After restoration, read-only inspection confirmed that local Auth
+routes email to Mailpit, the manual-profile marker and operation lock are absent,
+the canonical config has no custom SMTP section, and published local service
+ports remain on loopback. No credentials were inspected and no services were
+changed during this verification.
+
+### Temporary local Gmail profile
+
+The standard `supabase/config.toml` continues to route Auth mail to Mailpit.
+The installed Supabase CLI is pinned to 2.122.1. The helper uses its supported
+`--workdir`, `--network-id` and project-scoped `stop` options; it does not use
+remote linking, reset, volume deletion or user deletion.
+
+Prepare and check the inactive files:
+
+```bash
+nvm use
+npm run db:smtp:prepare
+npm run db:smtp:check
+```
+
+Preparation leaves the canonical config untouched and generates separate Gmail
+and Mailpit workdirs under ignored `supabase/.smtp-manual/`. Both retain the same
+local project ID and service ports, so they reuse this project's existing data
+volumes. The workdirs reference the existing local CLI temporary state without
+copying its contents. Migration and seed execution are disabled in these temporary profiles.
+Only the two email templates are copied. The private `.env.smtp.local` file is
+created with owner-only permissions if absent and is never overwritten.
+
+Open that private file in your local editor and fill `SUPABASE_AUTH_SMTP_USER`,
+`SUPABASE_AUTH_SMTP_PASS` and `SUPABASE_AUTH_SMTP_ADMIN_EMAIL`. Use your full Gmail
+account address as the username, the Google application password as the password,
+and an authorized sender address. Do not paste credentials into shell commands,
+chat, screenshots or versioned files. The helper loads only these fields at
+activation time; preparation and checking do not read the private file. The Gmail
+host, implicit TLS port and sender name are in `supabase/smtp-manual.toml`;
+credentials there are environment references only.
+
+When ready for a real manual delivery test, stop automated tests and run:
+
+```bash
+npm run db:smtp:start
+```
+
+This intentionally stops and starts only `zelo-local`, preserving its data. The
+CLI has no supported Auth-only configuration reload, so the project's other
+local services briefly restart too. Docker Desktop and other projects are not
+restarted. The existing loopback network/port checks remain mandatory. Provider
+output is captured and suppressed to avoid printing keys or SMTP credentials.
+The operation creates an ignored marker that blocks automated Auth email tests.
+Those tests also inspect only the local Auth SMTP-host field and require Mailpit,
+so an isolated test checkout cannot accidentally send through the manual profile.
+No email is sent merely by preparing the files; do not activate this profile
+until you intend to send a real test email.
+
+Both activation and restoration now wait for Auth template readiness before
+printing success. The helper verifies the current container identity/start,
+the audited Auth version (`v2.197.0`), both configured internal template URLs,
+and an exact match with the prepared OTP template files. It also requires
+structured Auth reload events for both `confirmation` and `recovery` from the
+current startup, strictly later than any recorded load error for that purpose.
+The first reload following an initial load error is discarded even if its
+timestamp is later, and reloads sharing an error timestamp are never accepted.
+Events from stdout and stderr are ordered conservatively before evaluation:
+[this Auth version can emit a reload event after caching its default template](https://github.com/supabase/auth/blob/v2.197.0/internal/mailer/templatemailer/template.go).
+
+The readiness check polls for up to 45 seconds, with bounded local Docker probes.
+It does not call signup/recovery endpoints or send any email. An unreadable log,
+missing reload evidence, mismatched content, changed container, or unsupported
+Auth version prevents a success message. Failure exits nonzero and retains the
+active marker, including on an unverified restoration; use `npm run db:smtp:restore`
+and resolve the readiness failure before running automated Auth tests. Provider
+output remains suppressed. Do not request manual emails while the helper is
+starting or after a readiness failure. This startup check is not proof of Gmail
+receipt and does not add an application-wide mail or authorization gate.
+
+In another terminal, keep the app on local Supabase with registration mocks off:
+
+```bash
+nvm use
+NEXT_PUBLIC_APP_ENV=local NEXT_PUBLIC_REGISTRATION_DEMO=disabled NEXT_PUBLIC_FIRST_STEPS_MOCK=disabled npm run dev
+```
+
+Open `http://localhost:3000/criar-conta`. Submit exactly one signup using an address
+you control that is not already registered, then read the code in that external
+inbox and confirm it in the app. If the address already exists, do not delete the
+account or reset the database; choose another controlled test address. An API
+success or an entry in Sent Mail alone is not proof of receipt. During this
+profile, Auth uses external SMTP and its mail is not captured by Mailpit.
+
+Restore Mailpit immediately after the manual test, including after interruption:
+
+```bash
+npm run db:smtp:restore
+```
+
+Restoration does not require SMTP credentials. It restarts only the same local
+project using the Mailpit workdir, removes the test-blocking marker only after a
+successful start, and retains all accounts and volumes. The canonical config was
+never swapped, so this recovery command also works if activation was interrupted
+or the shell closed. Do not run profile commands concurrently. If an operation
+was killed, the next command recovers a dead process lock automatically; a live
+operation is never interrupted by another helper invocation.
+
+After successful restoration, ordinary `npm run db:start` and automated tests
+continue to use the standard Mailpit configuration. No hosted Supabase SMTP,
+provider settings, Vercel settings or squad environment is changed by this local
+profile. The single manual test account remains in the local database.
+
+## Login and password recovery integration (ORI-87)
+
+Login, recovery request and recovery code/password screens use the existing light
+signup presentation. Recovery has its own memory-only context, separate from
+signup confirmation. Email and OTP never enter URL parameters, browser storage
+or application logs. Leaving a recovery screen clears the code and password,
+including when Next.js hides the route in an Activity. Reloading loses the flow.
+Login passwords are also cleared when the login route is hidden.
+
+The request and resend both call `POST /api/auth/forgot-password` with `{ email }`.
+An accepted request uses a generic response without confirming account existence;
+provider or connection failures are reported instead of simulating delivery.
+The intermediate Continue button checks only the six-digit format. Its text
+explicitly says that actual verification occurs when saving the new password.
+`POST /api/auth/reset-password` retains `{ email, code, password }`. The server
+validates the project password rules before consuming the OTP, verifies with
+`type: "recovery"`, and requires a confirmed identity matching the requested email.
+Signup verification continues to use `type: "signup"` and its existing guard.
+
+Recovery uses a separate request-scoped Supabase client with persistence and
+auto-refresh disabled. It never writes the temporary recovery session to browser
+cookies. A local sign-out is attempted in `finally` after verification/update;
+the isolated client is discarded even if provider revocation fails. Existing
+browser sessions are not used to authorize the password update. Successful
+updates return to login with an in-memory confirmation and the email prefilled.
+
+If verification consumes an OTP but the password update fails, `update_failed`
+requires a fresh code. The UI clears the password and OTP and disables Continue
+until a new send succeeds. An uncertain network or server result follows the same
+policy: it never claims success or retries the consumed code. Incorrect, expired
+and reused codes share a generic invalid-code response; rate limits and provider
+outages remain distinct. A changed password and email delivery are not atomic:
+a lost response may mean the password changed, so another recovery request is
+the safe restart. No durable recovery ticket or schema migration is introduced.
+
+The keep-connected checkbox selects cookie persistence, not a new authentication
+lifetime. Checked retains the existing Supabase SSR cookie lifetime. Unchecked
+removes `Max-Age` and `Expires` from live auth cookies, including chunked cookies.
+An HttpOnly same-site preference cookie preserves this choice in Route Handlers
+and SSR proxy renewals. Cookie deletion remains immediate; logout also clears
+the preference. Browser session restoration can restore session cookies, so
+closing a browser is not a guaranteed logout. Provider session policy remains
+unchanged. The unused browser Supabase factory is not part of this flow.
+
+Selective reuse was reviewed against [PR #14](https://github.com/Gremis/zelo/pull/14)
+(commits `a7d0e26`, `c6d18ca`, `c63a494`, `31bc1a7`) for code-flow navigation,
+request errors, field focus and test expectations, and
+[PR #18](https://github.com/Gremis/zelo/pull/18) (`3845c22`) for separate invalid-code,
+rate-limit and provider-error outcomes. These behaviors were adapted to the
+ORI-47 real signup/SSR implementation. No whole-branch integration or replacement
+of the real login with a stub was performed; the original branches and commit
+history remain intact.
+
+### Local validation and Gmail acceptance
+
+Use Node.js from `.nvmrc`. Run `npm run format`, `npm run format:check`,
+`npm run lint`, `npm run typecheck`, `npm run build`, `npm audit --omit=dev`,
+`npm test`, `npx playwright install chromium` and `npm run test:e2e`.
+The existing `ORI47_LOCAL_AUTH_TESTS=enabled` opt-in also enables the expanded
+real Auth browser test in `tests/e2e/registration-local.spec.ts`; use the existing
+local environment loading procedure. The suite refuses external Auth URLs and
+requires the existing Auth container to point to local Mailpit. Inspect containers,
+port bindings and SMTP routing before running it. Do not reset the database.
+
+The local browser scenario covers signup confirmation regression, real recovery
+mail, invalid/expired/replaced/reused codes, resend, old-password rejection,
+new-password login, logout and both cookie persistence options. To exercise
+expiry and resend without sleeps, it adjusts timestamps only on its synthetic
+account, which is removed by test cleanup. Using the current password as the
+replacement exercises a real provider rejection after OTP consumption; the test
+asserts no browser recovery session, requires a new code, and completes recovery
+with that new code. Component/service tests cover duplicate requests, rate limits,
+identity matching, update exceptions and isolated-session cleanup. Separate browser
+fixtures inject network failures and inspect keyboard/focus and layout at 360px
+and 1280px. These injected fixtures are not evidence of email delivery.
+
+On 2026-11-21, the operator reported successful end-to-end recovery using the
+local Supabase stack and the existing private Gmail SMTP profile. The operator
+confirmed that the screens were correct, the recovery flow completed, and login
+opened the occurrence queue without the first-steps card. This is reported manual
+acceptance, distinct from automated Mailpit evidence. The validated flow is
+recovery request, receipt of the recovery code in Gmail, format-only Continue,
+new password submission, login confirmation, login with the new password, queue
+access and logout. No address, password, OTP, recovery URL or token is retained.
+Old-password rejection and fault cases are independently covered by local tests;
+the manual report does not establish external-SMTP acceptance of every fault case.
+
+During preparation, an initial Auth template load failure produced the provider's
+default recovery link email. The SMTP helper now requires current-startup evidence
+of custom confirmation and recovery template loading before declaring readiness,
+including rejection of the initial fallback reload event. The successful manual
+report followed this investigation. No link-based recovery flow was added.
+
+After manual acceptance, `npm run db:smtp:restore` restored Mailpit without
+resetting the database or deleting volumes. The helper confirmed both custom OTP
+templates were loaded by Auth before completing restoration. Read-only checks
+confirmed Mailpit routing, absent transition marker/lock and localhost-only
+published service ports. The existing private SMTP file remains ignored and was
+not included in this delivery. Automated final Auth tests run only after this
+restoration and use synthetic local accounts and Mailpit.
+
+External SMTP is not enabled for automated tests. A future manual retest must use
+the existing preparation/activation/restoration procedure with an authorized
+recipient, without storing private values. This acceptance does not validate a
+hosted Supabase project, deploy templates to hosted Auth, or change provider-wide
+settings. Browser keyboard-space checks simulate a reduced viewport; physical
+mobile keyboard behavior has not been independently verified on a device.
+
+Final local validation used Node.js `24.22.3`: formatting, ESLint, Next.js route
+types/TypeScript, production build and the production dependency audit passed
+with zero reported vulnerabilities. All 258 unit tests passed. The full browser
+run with local Auth enabled passed 45 tests; the single skipped case requires
+explicit registration-demo mode and is unrelated to real recovery. This includes
+post-signup first steps and their absence after login/reload. Remote CI results
+must be checked on the ORI-87 PR and are not implied by this local record.
+
+### Integration dependencies and scope
+
+As checked on 2026-11-21, [PR #15](https://github.com/Gremis/zelo/pull/15)
+(first steps/panel navigation) and [PR #19](https://github.com/Gremis/zelo/pull/19)
+(real signup confirmation and SSR session) are both open against `develop`.
+ORI-87 starts at the published ORI-47 commit `13e96ce`; `origin/develop` does not
+contain it. The ORI-45 head `cd3cea0` is an ancestor of that base, so its work is
+already inherited by both ORI-47 and ORI-87. History and content were compared. Both PRs currently have successful Quality
+checks and are reported mergeable, while GitHub reports their merge state as
+`BLOCKED`; this delivery does not change their reviews or branch requirements.
+
+The recommended review/integration order is #15, then #19, then ORI-87. Merging
+#19 with its existing ancestry also brings in #15's commits; maintainers must
+coordinate how #15 is resolved in that case rather than applying duplicate
+squashed changes. No other PR is modified or merged as part of this delivery.
+If the dependency PRs are squash-merged, reconcile the ORI-87 comparison before
+integration so inherited work is not reviewed or applied twice.
+
+The inherited scope includes the signup/confirmation endpoints and guard,
+protected queue/panel, profile/condominium integration, original first-steps
+components, database migrations/types, and private SMTP profile tooling. These
+changes appear in the aggregate PR diff against `develop` until the dependency
+PRs are integrated. ORI-87 adds real recovery UI integration and error handling,
+isolated recovery sessions, persistent/session-cookie selection across SSR
+renewals, shared light auth layouts with safe vertical centering, post-signup-only
+first steps, SMTP template-readiness verification, and the associated tests and
+validation record. No new migration, broad authorization layer, remote environment
+change or deployment is introduced by ORI-87 itself. Per-account first-step
+dismissal remains outside this change; the post-signup display state is in memory.
+
+## Route and resource authorization (ORI-88)
+
+ORI-88 starts from the published ORI-87 branch at `8eafe3e`, preserving the
+PR #20 login/recovery, signup, confirmation, queue and first-steps flows. Its
+working branch is `feature/ori-88-auth-route-authorization`.
+
+### Inventory and authorization boundaries
+
+| Surface                                                                                                                                               | Existing operations                                         | Boundary                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/`                                                                                                                                                   | Redirect to login                                           | Public                                                                                                  |
+| `/login`, `/criar-conta`, `/confirmar-codigo`, `/recuperar-senha`, `/confirmar-codigo/recuperacao`                                                    | Authentication screens                                      | Public                                                                                                  |
+| `/fila`                                                                                                                                               | Queue shell and existing first steps; no occurrence records | Server-verified confirmed active session and own `profiles.is_sindico`                                  |
+| `/api/panel`                                                                                                                                          | GET own profile and owned condominium count                 | 401 for missing/invalid/pending/revoked session; 403 for non-manager; 503 for provider/database failure |
+| `/api/auth/session`                                                                                                                                   | GET confirmed identity                                      | Server identity validation and active-session check; 401 on rejected identity                           |
+| `/api/auth/logout`                                                                                                                                    | POST global logout                                          | Confirmed active session; existing same-origin protection                                               |
+| `/api/auth/signup`, `/api/auth/confirm-signup`, `/api/auth/resend-signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password` | POST authentication operations                              | Public entry points with existing input, confirmation, recovery and origin validation                   |
+| `public.profiles`                                                                                                                                     | Direct user API: own SELECT; UPDATE full_name/phone         | Own user ID, confirmed active session; role columns remain protected                                    |
+| `public.condominiums`                                                                                                                                 | Direct user API: own SELECT, INSERT, UPDATE name/address    | Own manager_id, manager profile, confirmed active session; immutable owner/slug; no user DELETE         |
+| `private.email_confirmation_challenges` and `public.email_confirmation_guard`                                                                         | Internal confirmation attempt budget/leases                 | Existing server-only privileged RPC; no domain data access                                              |
+
+There are no Server Actions, occurrence tables/endpoints, condominium application
+CRUD routes, membership tables or additional role mappings in this tree. The
+current relationship is `condominiums.manager_id -> profiles.id -> auth.users.id`.
+Profiles expose manager/resident booleans; public signup already permits choosing
+the manager account type. This change does not introduce an approval process or
+change that product decision. User metadata is not consulted for authorization.
+Future domain operations must validate the caller and resource relationship at
+every operation, retain RLS, and define their own inaccessible-resource response.
+The panel accepts no resource selector: injected query IDs do not change scope.
+No missing business endpoint was added to satisfy an ID-manipulation test.
+
+The inherited implementation already used `getUser()`, per-user queries,
+manager RLS, restricted profile column grants, SSR renewal, session/persistent
+cookies and isolated recovery clients. The gaps were a confirmed non-manager
+being able to render the queue, policies accepting unconfirmed or revoked
+sessions, and lack of evidence about replaying pre-logout credentials.
+
+### Active-session enforcement and logout guarantees
+
+The new migration adds `public.has_active_session()`. This narrow boolean RPC
+uses the JWT session claim and authenticated subject to check the matching
+`auth.sessions` row, confirmed email and `not_after`. It has no caller-selected
+arguments, uses an empty search path, and grants execution only to authenticated
+users. Its security-definer access reads Auth session state; it never grants
+callers direct access to Auth tables. Restrictive policies add this condition to
+both public tables without replacing their ownership or role policies. Missing,
+malformed, expired, pending and deleted sessions fail closed.
+
+Private server identity checks still call Supabase `getUser()` before the RPC.
+Session lookup errors never grant access. The queue renders an access-denied
+screen for non-managers without rendering its private shell; its streamed page
+can have HTTP 200, while the panel API returns 403. Private pages and API
+responses use private/no-store headers. SSR cookie refresh and persistence
+selection remain unchanged; no return URL or new redirect input was introduced.
+The service worker continues to cache only the public offline document.
+
+[Supabase documents](https://supabase.com/docs/guides/auth/sessions) that logout
+removes affected session rows, but an issued JWT can remain valid until expiry.
+Consequently, clearing cookies or validating a JWT alone is insufficient. The
+local test restores the complete pre-logout browser cookies and requires 401
+from panel/session plus a login redirect from the queue. It also reuses a
+previously issued user JWT directly against PostgREST: the RPC request is still
+accepted as an authenticated JWT but returns false; reads expose no rows, updates
+change no rows, inserts fail, and refresh fails. Global logout covers the other
+session issued for that same synthetic user too. No JWT revocation guarantee is
+claimed for unrelated Supabase services, future tables without these policies,
+or a request already in flight when logout occurs. A database migration is
+required before exercising these checks in an environment; no remote migration
+or deployment was performed here.
+
+### Local evidence and remaining dependencies
+
+`tests/e2e/authorization-local.spec.ts` uses two synthetic manager accounts with
+separate condominiums, a non-manager and an account whose confirmation is removed
+only within that synthetic fixture. User clients use the public key and their
+own issued credentials for isolation checks. Privileged credentials are used
+only for fixture creation/deletion; local SQL modifies only synthetic session
+state and removes synthetic condominiums during cleanup. The test disables
+traces, screenshots and videos and never prints credentials. It checks both
+ownership directions, foreign-ID reads/updates, forged ownership in inserts,
+owner/role mutation denial, own permitted writes, public screens, anonymous and
+invalid sessions, explicit session expiry, browser/API denial and logout replay.
+
+The existing real Mailpit suite covers signup, confirmation, recovery, login,
+logout, first steps, valid SSR refresh and both cookie persistence choices.
+The transactional database suites also verify active, pending, expired, missing,
+malformed and revoked session claims, restricted RPC privileges, and ownership
+policies. Existing condominium SQL fixtures now include confirmed Auth sessions
+so their original positive authorization checks remain meaningful.
+
+Validation uses Node.js 24.22.3 and the already-running local CLI-managed stack,
+with localhost-only service bindings and Mailpit. Local validation performs no reset, shared-environment change or external SMTP delivery. The local migration
+is recorded through `supabase migration up --local`; database types were generated
+from the running stack, including the previously existing confirmation RPC.
+Remote CI and hosted-provider behavior remain unverified by these local checks.
+
+Final ORI-88 local validation on 2026-11-21 passed formatting, formatting check,
+ESLint, route type generation/TypeScript, production build, Chromium installation
+and production audit (zero vulnerabilities). All 262 unit tests, 114 transactional
+database assertions and 46 browser tests passed. One existing registration-demo
+case was intentionally skipped because real Auth mode was enabled. Acceptance
+criteria 1–8 are covered for the existing surfaces: anonymous redirects/401,
+role denial, two-manager isolation, invalid/expired sessions, valid renewal,
+logout replay rejection, public Auth entry points and interface/direct-API
+regression. Condominium mutations are verified through the existing PostgREST
+API with user credentials; no application CRUD UI exists to exercise. Shared
+or hosted execution and unrelated provider services are outside this evidence.
+
+### Logout button follow-up (ORI-88)
+
+The real logout operation already revoked the backend session, cleared cookies
+and signup context, removed the private shell, and replaced/refreshed the login
+route on success. It retained context and displayed an error on failure. The
+remaining gap was that the button required loaded panel user data, preventing
+logout during loading or after a panel request failure. The button now depends
+only on its own pending state, and a synchronous request guard prevents duplicate
+submissions. Panel loading and logout use separate error states so one request
+cannot erase the other request's error or offer the wrong retry action.
+
+The authorization browser test now performs logout through the menu while panel
+loading returns a controlled 503. A first controlled logout failure preserves the
+private route and a valid backend session, displays the error, and permits retry.
+The retry is held in flight to verify the disabled button and absence of duplicate
+requests, then forwarded to the real existing endpoint. Success clears cookies,
+returns to login, and prevents private access after reload, back navigation to an
+actual earlier private history entry, direct queue navigation and replaying saved
+cookies against both protected GET endpoints. Existing direct-JWT revocation and
+user-credential RLS checks remain in the same scenario. Component tests verify
+logout during indefinitely pending panel loading, failed-result and exception
+retry, and clearing all signup context fields only after success. Local validation
+passed 262 unit tests, 114 database assertions and 46 browser tests, with the same
+single demonstration-mode skip; formatting, lint, types, build and production
+audit also passed. No additional migration or backend logout replacement was
+needed for this follow-up.
+
+### Delivery dependencies (ORI-88)
+
+On 2026-11-21, GitHub reports #15, #19 and #20 open against `develop`, each with
+successful Quality checks and Deploy skipped. Their current published heads are
+`cd3cea0`, `13e96ce` and `8eafe3e`, respectively. Git ancestry confirms that #19
+contains #15, #20 contains #19, and ORI-88 starts from the unchanged #20 head.
+Review and integration must follow [#15](https://github.com/Gremis/zelo/pull/15)
+→ [#19](https://github.com/Gremis/zelo/pull/19)
+→ [#20](https://github.com/Gremis/zelo/pull/20) → ORI-88. Because these PRs share
+ancestry, maintainers must coordinate squash merges and reconcile comparisons
+to avoid applying inherited work twice. No dependency PR is changed here.
+
+The aggregate diff against `develop` includes inherited first steps/navigation
+(#15), signup/confirmation, SSR session and local SMTP tooling (#19), and login,
+recovery, cookie persistence and template-readiness work (#20). ORI-88 itself
+adds active-session enforcement and restrictive RLS policies, queue role denial,
+private response headers, logout availability independent of panel loading,
+and their tests/types/documentation. Review its own changes against `8eafe3e`
+until those dependencies are integrated. The target environment needs the new
+`20261121120000_require_active_sessions.sql` migration, after the inherited
+migrations, before serving the updated private operations. No shared database
+migration is performed as part of publishing this branch or opening its PR.
+
+### Condominium integration
+
+`/condominios` reuses ORI-88 confirmed active sessions, manager permissions and
+RLS. Its API accepts only name and address, derives ownership from the validated
+identity, and returns private responses without caching. Creation uses an invoker
+RPC and the existing unique constraint, with eight bounded collision retries.
+New slugs remove leading category words and accents, limit the stem to forty
+characters, and append four cryptographically random lowercase alphanumeric
+characters. Existing identifiers remain unchanged, including legacy UUID suffixes.
+The short suffix is a public identifier, never an administrative credential.
+
+Set server-only `PUBLIC_APP_ORIGIN` to the application's absolute public origin
+(for example `http://127.0.0.1:3100` locally). This must be an HTTP(S) origin
+without a path, credentials, query or fragment. Generated links use this value;
+request headers do not determine their destination. Configure it independently
+for each environment before enabling the flow. After the inherited migrations,
+apply these reviewed migrations in order without resetting existing data:
+
+1. `20261121200000_condominium_links.sql`: MVP slug generation, bounded creation
+   retries and restricted public link resolution.
+2. `20261121201000_refine_condominium_prefixes.sql`: complete leading-word removal
+   and preservation of the existing immutability error contracts.
+
+Both migrations are necessary. The second was added after the first had already
+been applied locally; applied migrations were not edited. Existing identifiers
+are retained. Generate database types from the running local stack with
+`npm run db:types`. Applying migrations to a shared environment is a separate,
+reviewed deployment action and is not part of publishing this PR.
+
+`/c/[slug]` resolves only the current name and address through an exact-slug RPC.
+Anonymous table access remains denied. Unknown identifiers show “Link não
+encontrado”. The occurrence form does not exist in this branch: the valid-link
+page explicitly reports that registration is unavailable. Copying a link does
+not establish that occurrences can already be submitted.
+
+The condominium browser suite uses two synthetic local managers and never calls
+signup, recovery or resend endpoints. It covers persisted creation, duplicate
+names, concurrent requests, validation, cancellation, stable editing, successful
+and failed clipboard writes, tenant isolation, rejected identity payloads, public
+resolution, mobile overflow, navigation and logout. Run it with the existing local
+environment and `ORI47_LOCAL_AUTH_TESTS=enabled`:
+
+```bash
+npm run test:e2e -- --grep "real condominium flow"
+```
+
+Database tests exercise deterministic collisions, bounded exhaustion and slug
+normalization inside rolled-back transactions. Run `npm run test:db`. For a
+broader browser regression without email generation, exclude
+`registration-local.spec.ts`; those older tests explicitly exercise local mail.
+
+Manual review: log in as a manager, open Condomínios from the menu, create a
+record, copy its absolute link, reload and edit both fields. Confirm the URL stays
+the same and the menu count changes. Open the link signed out and check that only
+current name/address and the form dependency appear. Repeat with a second manager
+to confirm isolation. Check empty values, cancellation, clipboard denial and a
+360px viewport. Local credentials and generated reports remain ignored.
+
+### Condominium prototype measurements
+
+The public [navigable prototype](https://sindicondo.netlify.app/#sprint2/sindico)
+was inspected in Chromium with `getComputedStyle` at 1728 × 742 CSS pixels and
+360 × 900 CSS pixels, with device scale factor 1 and no zoom or scaling. The
+prototype's demonstration toolbar is separate from the product shell.
+
+| Element      | Measured typography                                                                    |
+| ------------ | -------------------------------------------------------------------------------------- |
+| Body         | Inter, 14px, weight 400, line height 20.3px                                            |
+| Page title   | Space Grotesk, 24px, weight 700, line height 34.8px                                    |
+| Card title   | Space Grotesk, 16px, weight 700, line height 23.2px                                    |
+| Address      | Inter, 13px, weight 400, line height 18.85px                                           |
+| Link         | JetBrains Mono, 12.5px, CSS weight 400 using the loaded 500 face, line height 18.125px |
+| Small button | Inter, 13px, weight 600, 5px vertical and 10px horizontal padding                      |
+
+Content is limited to 1080px; four desktop columns are 261px each with 12px gaps.
+Cards use 16px padding, a 1px `#e5e7eb` border and a 10px radius. Link panels use
+10px padding, 6px gaps, a 10px top margin and an 8px radius. These measurements
+are applied only to Condomínios, reusing existing font families and Tailwind.
+Controls retain 44px minimum height on mobile and coarse pointers. Full absolute
+URLs remain visible with wrapping and are copied unchanged.
+
+The visual browser fixture uses the real components and compiled font styles,
+with synthetic API responses and no database writes. It checks measured styles,
+responsive columns, forms, long content and the complete clipboard value. Run
+`npm run test:e2e -- tests/e2e/condominiums-visual.spec.ts`.
+
+The administrative API canonicalizes submitted names with Unicode NFC before
+persistence so decomposed Portuguese accents produce the same slug stem as their
+precomposed equivalents. Existing slugs and previously distributed links are not
+regenerated. The database unique constraint and immutable-slug trigger remain in
+place; no schema change is needed for this input normalization.
+
+For publication, set `PUBLIC_APP_ORIGIN` to the official product origin in the
+Production environment of the corresponding Vercel project. Both deployment
+projects use Vercel Production settings, pulled before building. Local development
+keeps its functional loopback origin. Changing this setting changes the origin
+used to present links, not their persisted slug; maintain routing for any
+previously distributed domain when changing product domains. No remote setting
+is changed by the visual refinement or its tests.
+
+### Condominium acceptance and delivery
+
+On 2026-11-21, the product owner manually accepted the Condomínios interface and
+functional flow, including navigation in both directions through the menu. This
+records acceptance of condominium management and its transitions; it does not
+establish that residents can register occurrences. That form is still a separate
+dependency, explicitly reported by the valid public-link page.
+
+The pending-access state came from the route-level Suspense fallback inheriting
+the global dark body background. Both private pages now keep a light presentation
+container around authorization and use a public shell skeleton. No profile or
+condominium data is rendered by that skeleton. Server identity, confirmed active
+session, role checks, cookie renewal, RLS and redirects remain in place. Slow
+navigation keeps the prior authorized shell while the next response is pending;
+access without a session still redirects to login. Success notices expire after
+five seconds with timer cleanup; validation and server errors remain visible.
+
+Final review also added same-origin/JSON checks for administrative writes and
+preserved locally saved records when an older initial-list response arrives late.
+The origin check follows the existing authentication convention for Next.js
+internal hostnames. It does not determine the public link destination.
+
+Final local validation used Node 24.22.3 and the existing CLI-managed loopback
+Supabase stack: 275 unit/component tests, 132 transactional database assertions
+and 54 browser tests passed, with one demo-only browser case skipped. Formatting,
+ESLint, route-aware TypeScript checks, production build and the production-only
+audit passed; the latter found zero vulnerabilities. Browser checks covered
+persistent creation/reload, repeated names, concurrent requests, edit/cancel,
+complete clipboard values and denial, immutable/legacy slugs, two-manager
+isolation through API and user-scoped database access, rejected ownership/slug
+payloads, restricted public resolution, measured typography, timer behavior,
+long content, 360px layouts and slow dark-mode navigation/direct entry. Synthetic
+local accounts and records were cleaned up by their fixtures. No reset, shared
+migration, deployment or provider configuration change was performed.
+
+The three inherited `registration-local.spec.ts` scenarios that generate local
+mail were explicitly excluded from this final local regression. No signup,
+recovery or resend email was requested during delivery validation. Credential-free
+CI runs the ordinary full suite; local Auth/database scenarios remain opt-in.
+Remote Quality results must be read from the authorized GitHub run, not inferred
+from these local results.
+
+The task starts at ORI-88 commit `921cdad`. On 2026-11-21, `develop` does not yet
+contain its 16 inherited commits. The existing schema (#16) and PWA (#17) are
+merged. The required integration chain #15 → #19 → #20 → #21 (ORI-88) remains
+open against `develop`, with Quality passing on each as verified through GitHub.
+This delivery follows #21 and targets `develop`; integration of that chain must
+be coordinated before merging. Existing PRs and branches are not modified.
+Inherited work includes first steps/navigation, signup/confirmation, login and
+recovery, SMTP readiness, session persistence and active-session authorization.
+The new work is condominium CRUD/link integration, public resolution, scoped
+visual refinement, light access transitions and their tests/documentation.
+Review the task-specific diff against `921cdad` until those dependencies land.
+No dedicated GitHub issue was identified; ORI-88 is a prerequisite, not an
+invented identifier for this task. Application dependency versions, lockfile and
+CI/deployment workflows are unchanged by this task.
+
+A separate informational full-tree `npm audit` on this delivery exited with
+failure and reported 44 development-chain findings: 22 moderate, 21 high and one
+critical. The critical finding is `tar` through the Vercel CLI dependency chain
+(`GHSA-23hp-3jrh-7fpw`). The lockfile is byte-for-byte identical to the ORI-88 base;
+these findings were not introduced by condominium dependencies. The earlier
+minimatch advisory remains part of the inherited tooling risk. No audit finding
+was suppressed, no override was added, and the complete tree is not claimed to be
+vulnerability-free. Tooling remediation requires a separate reviewed dependency
+update; the configured blocking gate remains the production-only audit.

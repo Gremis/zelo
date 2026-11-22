@@ -6,6 +6,18 @@ const networkName = "zelo-local-loopback";
 const bindingOption = "com.docker.network.bridge.host_binding_ipv4";
 const label = "dev.zelo.project";
 const root = fileURLToPath(new URL("../", import.meta.url));
+const profile = process.env.ZELO_LOCAL_DB_PROFILE;
+if (profile && !["gmail", "mailpit"].includes(profile)) {
+  throw new Error("Unknown local database profile.");
+}
+const profileArgs = profile
+  ? [
+      "--workdir",
+      fileURLToPath(
+        new URL(`../supabase/.smtp-manual/${profile}/`, import.meta.url),
+      ),
+    ]
+  : [];
 
 function docker(args) {
   return execFileSync("docker", args, {
@@ -109,10 +121,14 @@ try {
     new URL("../node_modules/supabase/dist/supabase.js", import.meta.url),
   );
   startupAttempted = true;
-  execFileSync(process.execPath, [cli, "start", "--network-id", networkName], {
-    cwd: root,
-    stdio: "inherit",
-  });
+  execFileSync(
+    process.execPath,
+    [cli, "start", "--network-id", networkName, ...profileArgs],
+    {
+      cwd: root,
+      stdio: "inherit",
+    },
+  );
   verifyContainers();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

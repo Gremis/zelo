@@ -1,13 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { toResponse } from "@/server/auth/auth.http";
 import type { AuthRepository } from "@/server/auth/auth.repository";
-import { createAuthService } from "@/server/auth/auth.service";
+import { createAuthService as createService } from "@/server/auth/auth.service";
 
+const guard = async () => ({
+  status: "ok" as const,
+  id: "11111111-1111-4111-8111-111111111111",
+  lease: "22222222-2222-4222-8222-222222222222",
+});
+const createAuthService = (repository: AuthRepository) =>
+  createService(repository, guard);
 const USER = { id: "user-1", email: "maria@example.com" };
 
 function createRepository(
   overrides: Partial<AuthRepository> = {},
 ): AuthRepository {
   return {
+    confirmSignup: async () => ({ status: "ok" }),
+    resendSignup: async () => ({ status: "ok" }),
+    getConfirmedUser: async () => USER,
     signUp: async () => ({ status: "created", user: USER }),
     signIn: async () => ({ status: "ok", user: USER }),
     signOut: async () => ({ status: "ok" }),
@@ -23,12 +34,21 @@ describe("AuthService.signUp", () => {
     const service = createAuthService(createRepository());
 
     const result = await service.signUp({
-      fullName: "Maria",
+      fullName: "Maria Exemplo",
       email: "maria@example.com",
       password: "codigo789",
+      phone: "21999990000",
+      acceptedTerms: true,
     });
 
-    expect(result).toEqual({ ok: true, data: { user: USER } });
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        user: USER,
+        registrationId: "11111111-1111-4111-8111-111111111111",
+        email: USER.email,
+      },
+    });
   });
 
   it("does not reach the repository when input is invalid", async () => {
@@ -51,21 +71,24 @@ describe("AuthService.signUp", () => {
     expect(result.error.code).toBe("invalid_input");
   });
 
-  it("maps a duplicate e-mail to a conflict error", async () => {
+  it("preserves the duplicate error contract for existing accounts", async () => {
     const service = createAuthService(
       createRepository({ signUp: async () => ({ status: "duplicate" }) }),
     );
-
     const result = await service.signUp({
-      fullName: "Maria",
-      email: "maria@example.com",
+      fullName: "Maria Exemplo",
+      email: USER.email,
       password: "codigo789",
+      phone: "21999990000",
+      acceptedTerms: true,
     });
-
-    if (result.ok) {
-      throw new Error("expected a failure");
-    }
-    expect(result.error.code).toBe("email_already_registered");
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "email_already_registered",
+        message: "Este e-mail já está cadastrado.",
+      },
+    });
   });
 });
 
@@ -132,7 +155,7 @@ describe("AuthService.logout", () => {
 });
 
 describe("AuthService.requestPasswordRecovery", () => {
-  it("returns a generic message even when the provider fails", async () => {
+  it("reports provider failure without pretending the code was sent", async () => {
     const service = createAuthService(
       createRepository({
         sendRecoveryEmail: async () => ({ status: "error" }),
@@ -143,12 +166,7 @@ describe("AuthService.requestPasswordRecovery", () => {
       email: "maria@example.com",
     });
 
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        message: "Se o e-mail existir, enviamos as instruções de recuperação.",
-      },
-    });
+    expect(result).toMatchObject({ ok: false, error: { code: "unknown" } });
   });
 });
 
@@ -202,4 +220,72 @@ describe("AuthService.resetPassword", () => {
 
     expect(result).toEqual({ ok: true, data: { success: true } });
   });
+});
+
+it.each(["invalid_code", "rate_limited", "unknown"] as const)(
+  "preserves recovery provider reason %s",
+  async (reason) => {
+    const updatePassword = vi.fn(async () => ({ status: "ok" as const }));
+    const signOut = vi.fn(async () => ({ status: "ok" as const }));
+    const result = await createAuthService(
+      createRepository({
+        verifyRecoveryCode: async () => ({ status: "error", reason }),
+        updatePassword,
+        signOut,
+      }),
+    ).resetPassword({
+      email: USER.email,
+      code: "123456",
+      password: "Example123",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code:
+          reason === "invalid_code"
+            ? "invalid_recovery_code"
+            : reason === "rate_limited"
+              ? "rate_limited"
+              : "unknown",
+      },
+    });
+    expect(toResponse(result).status).toBe(
+      reason === "rate_limited" ? 429 : reason === "unknown" ? 500 : 401,
+    );
+    expect(updatePassword).not.toHaveBeenCalled();
+    expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
+  },
+);
+it.each([false, true])(
+  "always closes the isolated recovery session after update failure (throw: %s)",
+  async (throws) => {
+    const signOut = vi.fn(async () => ({ status: "ok" as const }));
+    const updatePassword = vi.fn(async () => {
+      if (throws) throw new Error("Unavailable");
+      return { status: "error" as const };
+    });
+    const normal = createRepository();
+    const normalSignOut = vi.spyOn(normal, "signOut");
+    const recovery = createRepository({ signOut, updatePassword });
+    const result = await createService(normal, guard, recovery).resetPassword({
+      email: USER.email,
+      code: "123456",
+      password: "Example123",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "update_failed" },
+    });
+    expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
+    expect(normalSignOut).not.toHaveBeenCalled();
+  },
+);
+it("closes the recovery session after success", async () => {
+  const signOut = vi.fn(async () => ({ status: "ok" as const }));
+  await createAuthService(createRepository({ signOut })).resetPassword({
+    email: USER.email,
+    code: "123456",
+    password: "Example123",
+  });
+  expect(signOut).toHaveBeenCalledExactlyOnceWith("local");
 });

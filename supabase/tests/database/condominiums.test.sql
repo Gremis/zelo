@@ -60,7 +60,7 @@ from (values (''), ('   '), (E'\t\n\r')) as invalid(value);
 
 select matches(
   (select slug from public.condominiums where name = 'Edifício São João'),
-  '^edificio-sao-joao-[0-9a-f]{32}$',
+  '^sao-joao-[a-z0-9]{4}$',
   'Slug contains the normalized initial name and a random code'
 );
 
@@ -137,7 +137,7 @@ select lives_ok(
 
 select matches(
   (select slug from public.condominiums where name = '東京'),
-  '^condominium-[0-9a-f]{32}$',
+  '^condominio-[a-z0-9]{4}$',
   'An empty normalized name uses a stable fallback prefix'
 );
 
@@ -166,8 +166,8 @@ from pg_class where oid = 'public.condominiums'::regclass;
 
 select is(
   (select count(*) from pg_policy where polrelid = 'public.condominiums'::regclass),
-  3::bigint,
-  'Only select, insert and update policies exist'
+  4::bigint,
+  'Ownership policies and restrictive session policy exist'
 );
 
 select ok(
@@ -213,8 +213,15 @@ insert into public.condominiums (manager_id, name, address) values
   ('29000000-0000-4000-8000-000000000002', 'B private', 'Synthetic street 200'),
   ('29000000-0000-4000-8000-000000000003', 'Non-manager private', 'Synthetic street 300');
 
+update auth.users set email_confirmed_at = now()
+where id in ('29000000-0000-4000-8000-000000000001', '29000000-0000-4000-8000-000000000002', '29000000-0000-4000-8000-000000000003');
+insert into auth.sessions (id, user_id) values
+  ('88000000-0000-4000-8000-000000000001', '29000000-0000-4000-8000-000000000001'),
+  ('88000000-0000-4000-8000-000000000002', '29000000-0000-4000-8000-000000000002'),
+  ('88000000-0000-4000-8000-000000000003', '29000000-0000-4000-8000-000000000003');
+
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000001","session_id":"88000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 
 select is(auth.uid(), '29000000-0000-4000-8000-000000000001'::uuid, 'Access tests use manager A identity');
 
@@ -269,7 +276,7 @@ select throws_ok(
 );
 select matches(
   (select slug from public.condominiums where name = 'A edited'),
-  '^a-created-[0-9a-f]{32}$',
+  '^a-created-[a-z0-9]{4}$',
   'An authenticated edit preserves the slug generated from the initial name'
 );
 select is(
@@ -285,7 +292,7 @@ select throws_ok(
   '42501', null, 'Deletion is not granted even for owned rows'
 );
 
-select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000002","session_id":"88000000-0000-4000-8000-000000000002","role":"authenticated"}', true);
 select is(
   (select is_sindico and is_morador from public.profiles where id = auth.uid()),
   true, 'Manager B explicitly has both manager and resident roles'
@@ -307,7 +314,7 @@ select lives_ok(
 );
 select is((select address from public.condominiums where name = 'B private'), 'Synthetic avenue 200', 'The edit by a user with both roles is persisted');
 
-select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"29000000-0000-4000-8000-000000000003","session_id":"88000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
 select is((select count(*) from public.condominiums), 0::bigint, 'Non-manager cannot read even an owned condominium');
 select throws_ok(
   $$insert into public.condominiums (manager_id, name, address) values ('29000000-0000-4000-8000-000000000003', 'Denied', 'Synthetic street 600')$$,

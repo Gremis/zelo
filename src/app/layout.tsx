@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PwaRuntime } from "@/components/pwa-runtime";
+import { RecoveryFlowProvider } from "@/components/recovery-flow";
 import { SignupFlowProvider } from "@/components/signup-flow";
 
 const geistSans = Geist({
@@ -36,7 +37,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <PwaRuntime>
-          <SignupFlowProvider>{children}</SignupFlowProvider>
+          <RecoveryFlowProvider>
+            <SignupFlowProvider>{children}</SignupFlowProvider>
+          </RecoveryFlowProvider>
         </PwaRuntime>
       </body>
     </html>

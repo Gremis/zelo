@@ -78,7 +78,43 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      create_condominium: {
+        Args: { p_address: string; p_name: string };
+        Returns: {
+          address: string;
+          id: string;
+          manager_id: string;
+          name: string;
+          slug: string;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "condominiums";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      email_confirmation_guard: {
+        Args: {
+          email_address: string;
+          lease_id?: string;
+          operation: string;
+          outcome?: string;
+          registration_id?: string;
+        };
+        Returns: Json;
+      };
+      has_active_session: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      resolve_condominium_link: {
+        Args: { p_slug: string };
+        Returns: {
+          address: string;
+          name: string;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

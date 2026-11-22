@@ -1,7 +1,9 @@
-import { getAuthService } from "@/server/auth/auth.factory";
-import { handleJson } from "@/server/auth/auth.http";
+import { authRequest } from "@/server/auth/auth.http";
 
 export async function POST(request: Request) {
-  const service = await getAuthService();
-  return handleJson(request, (body) => service.requestPasswordRecovery(body));
+  return authRequest(
+    request,
+    (service, body) => service.requestPasswordRecovery(body),
+    200,
+  );
 }
