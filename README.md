@@ -865,3 +865,256 @@ minimatch advisory remains part of the inherited tooling risk. No audit finding
 was suppressed, no override was added, and the complete tree is not claimed to be
 vulnerability-free. Tooling remediation requires a separate reviewed dependency
 update; the configured blocking gate remains the production-only audit.
+
+## ORI-62 occurrence and history model
+
+This delivery starts from `origin/develop` at `c7220bc`, incorporating published
+`feature/condominiums-integration` at `8bf559d` through merge commit `6639938`. The
+inherited changes include authentication, panel navigation, condominium integration
+and their existing migrations/tests. ORI-62 adds only the occurrence schema, its
+SQL/concurrency tests, generated database types, this documentation and a test
+command. The merge commit contains only inherited integration content; the
+ORI-62 commits follow it. The working tree was clean before integration.
+No SMTP operation or shared-environment migration/deployment is part of this delivery.
+
+### Occurrences
+
+`occurrences.id` is the internal UUID. `number` is a globally unique PostgreSQL
+`GENERATED ALWAYS AS IDENTITY` bigint, backed by a sequence shared by all
+condominiums. Concurrent inserts and rollbacks may leave gaps. `tracking_code` is
+an independently generated 32-byte cryptographic random value encoded as 64 hex
+characters, protected by a unique constraint. It is independent of both `number`
+and the condominium public link. Collision errors must be retried by a future
+trusted creation service. A modified code is not guaranteed to be nonexistent.
+
+`condominium_id` reuses ORI-29 `condominiums`; profile references reuse ORI-20
+`profiles`. No employee table exists in this integrated dependency. Consequently,
+there is no speculative employee foreign key: responsible people are represented
+by optional name, phone and role snapshots, with an optional profile reference
+only when the person actually has a profile. Employee integration must add its
+real relationship in a later migration.
+
+| Fields                                                                                                             | Meaning                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `origin`                                                                                                           | Creation entry point: `public_form` or `manager_panel`                                                                                                                                  |
+| `channel`                                                                                                          | Original communication medium: `web`, `whatsapp`, `phone`, `in_person`, `other`                                                                                                         |
+| `reporter_name`, `reporter_phone`, `reporter_unit_or_role`                                                         | Optional supplied reporter snapshots; not the authenticated author                                                                                                                      |
+| `created_by_profile_id`                                                                                            | Optional authenticated creator relationship                                                                                                                                             |
+| `description`, `location`                                                                                          | Required nonblank report and optional nonblank location                                                                                                                                 |
+| `status`                                                                                                           | `new` (Novo), `in_progress` (Em andamento), `delegated` (Delegado), `completed` (Concluído)                                                                                             |
+| `registered_at`, `completed_at`, `due_at`                                                                          | Timezone-aware registration, completion and optional deadline                                                                                                                           |
+| `suggested_priority`, `suggestion_source`, `suggestion_reason`, `suggestion_at`                                    | All absent or all supplied; priority `low`, `normal`, `urgent`; source `ai` or `rules`                                                                                                  |
+| `final_priority`, `priority_change_reason`, `category`, `ai_failure_reason`                                        | Optional current classification and explanation; these are not human history events                                                                                                     |
+| `priority_decided_at`, `decided_suggested_priority`, `decided_priority`                                            | First priority decision timestamp and compared values, preserved independently of later current-priority/suggestion edits; no suggestion means exclusion from the retention denominator |
+| `decision`, `responsible_profile_id`, `responsible_name`, `responsible_phone`, `responsible_role`, `internal_note` | Optional operational decision, responsible relationship/snapshots and private note                                                                                                      |
+
+A panel report can omit the reporter, final priority and responsible person.
+Optional text must be nonblank when present. Phone values are snapshots rather
+than a new phone normalization contract. Completion requires `completed_at` and
+cannot precede registration. Overdue is derived from `due_at < now()` and
+`status <> 'completed'`, never a fifth status. Indexes support condominium lists,
+queue filtering, profile references and deterministic event timelines.
+
+### Events and attachments
+
+`occurrence_events.id` is a bigint identity used after `occurred_at` to break ties.
+`occurred_at` defaults to database `clock_timestamp()`. The future trusted writer
+must use the database default for live events; privileged fixtures may specify
+historical times. No first event is automatically created in ORI-62.
+
+| `event_type`          | Structured contract for the future writer                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `registered`          | Reporter or authenticated creator snapshots, with registration explanation                                                               |
+| `responsible_changed` | `previous_responsible_name`, `responsible_name`, `responsible_phone`, `responsible_role`; `delegation_started_at` when delegation starts |
+| `deadline_changed`    | `previous_due_at`, `due_at`; null new deadline means removal                                                                             |
+| `manager_update`      | Internal activity description and optional separately written resident text                                                              |
+| `employee_message`    | Message recorded with author snapshots and internal content                                                                              |
+| `completed`           | Completion description and `delegation_started_at` snapshot of the delegation being completed, if any                                    |
+
+Every event has a required internal description, author type (`reporter`,
+`manager`, `employee`, `system`), optional profile relationship and optional
+name/phone/role snapshots. Human authors require a name; system authors have no
+profile reference. `is_human_action` explicitly distinguishes manager/employee
+actions from registration, automation and reporter messages. `priority_snapshot`
+captures effective priority at that action. The writer must record both fields
+consistently, without interpreting description text. `data` is an internal JSON
+object for additional structured details; it is never a public projection.
+
+`visible_to_resident` defaults to false and requires independent `public_text`
+when true. This flag authorizes no table access and does not make the author,
+phone, responsible snapshots, internal description or JSON payload public. A
+future public endpoint must explicitly project permitted columns and authorize
+the tracking code. It must not return complete rows. Attachment visibility will
+also need a dedicated access decision; event visibility grants no Storage access.
+
+`occurrence_attachments` stores the event and occurrence IDs, private storage
+bucket/path, original file name, MIME type, positive byte size and server-default
+creation timestamp. A composite foreign key prevents linking an attachment to
+an event from another occurrence. Bucket/path pairs are unique. Paths reject URL
+schemes; permanent public URLs are not an access mechanism. Uploads, actual buckets,
+file validation and Storage policies are deferred.
+
+Condominium, occurrence, event and attachment references use `ON DELETE RESTRICT`.
+Optional profile references use `ON DELETE SET NULL`; name/phone/role snapshots
+remain unchanged after edits or deletion of the related profile. All references
+explicitly restrict primary-key updates. Removing a person cannot cascade into
+occurrence evidence. This does not yet prevent privileged deletion or alteration
+of unreferenced history rows: that guarantee belongs to ORI-63.
+
+### Metrics and subsequent contracts
+
+These examples use structured snapshots, not mutable current priority or free
+text. Durations are PostgreSQL intervals. The urgent cohort is defined by the
+priority snapshot of the initial registration event; later reclassification must
+not rewrite that snapshot. A registration with unknown priority is excluded until
+an explicit classification contract is defined by the future writer. The first
+human action is selected regardless of its later priority; pending reports return
+a null response duration. This avoids confusing a later urgent action with the
+first action. ORI-64 must populate these snapshots consistently; ORI-62 does not
+automate or freeze them.
+
+```sql
+select o.id, a.occurred_at - o.registered_at as first_human_response
+from public.occurrences o
+cross join lateral (
+  select e.priority_snapshot
+  from public.occurrence_events e
+  where e.occurrence_id = o.id and e.event_type = 'registered'
+  order by e.occurred_at, e.id
+  limit 1
+) registration
+left join lateral (
+  select e.occurred_at
+  from public.occurrence_events e
+  where e.occurrence_id = o.id and e.is_human_action
+  order by e.occurred_at, e.id
+  limit 1
+) a on true
+where registration.priority_snapshot = 'urgent';
+
+select 100.0 * count(*) filter (
+  where decided_priority = decided_suggested_priority
+) / nullif(count(*), 0) as suggested_priority_retained_percent
+from public.occurrences
+where priority_decided_at is not null
+  and decided_suggested_priority is not null;
+
+select occurrence_id, id as completion_event_id,
+       occurred_at - delegation_started_at as delegation_to_completion
+from public.occurrence_events
+where event_type = 'completed' and delegation_started_at is not null;
+```
+
+ORI-64 must atomically create the occurrence and registration event, centralize
+event writing, populate server times and snapshots, retain the first priority
+decision comparison, and capture the matching delegation start at completion.
+Later reassignments must not change previous completed-cycle snapshots. Human
+history excludes priority suggestion/change and AI failure events; their relevant
+state lives on the occurrence. This delivery supplies the data structure, not
+these service guarantees or a separate audit subsystem.
+
+All three tables have enabled and forced RLS, no access policies, and explicit
+revocation of table/identity-sequence privileges from `PUBLIC`, `anon`,
+`authenticated` and `service_role`. This is an initially closed schema, including
+for the bypass-RLS service role. ORI-63 must implement the complete append-only
+history rules and portfolio isolation through narrowly authorized operations.
+Do not loosen grants simply to make application queries or tests pass. No
+anonymous tracking-code lookup or application business API is implemented here.
+
+### Local validation
+
+Use Node.js from `.nvmrc`, the locked local CLI and the existing verified
+loopback-only `zelo-local` stack. Apply pending migrations with
+`node_modules/.bin/supabase migration up --local`; never reset or link a remote
+project. Generate types with `npm run db:types` only against the running local
+schema. `npm run test:db` includes transactional pgTAP tests for persistence,
+required/optional fields, invalid values, references, snapshots, public/internal
+separation, metrics and denied initial permissions. Test fixtures roll back.
+
+`npm run test:db:concurrency` uses Docker access to that exact local database
+container. Eight separate PostgreSQL transactions insert 200 occurrences across
+two synthetic condominiums. An advisory-lock barrier proves all eight transactions
+overlap before any is released. It checks global number and tracking-code
+uniqueness, rolls back occurrence inserts and removes its UUID-scoped synthetic
+parent fixtures. Sequence gaps remain intentionally. It neither resets existing
+data nor changes application grants. It is an explicit local database test, not
+an additional CI dependency.
+
+Initial validation used Node.js 24.22.3: 255 database assertions, 200 concurrent
+inserts, 281 unit tests, formatting/check, ESLint, route type generation/TypeScript,
+production build and production dependency audit (zero vulnerabilities). The
+initial Chromium run passed 43 tests and skipped 15 pre-existing conditional cases.
+The final review expanded database coverage to 306 assertions and added three
+passing generated-type contract tests; it repeated concurrency, local type
+generation, formatting/check, ESLint and typecheck. The generated schema did not
+change during review. An additional production build and targeted Chromium run
+passed all 11 pertinent local-auth cases using synthetic accounts and no email
+operations. Local results do not establish remote CI success; the pull request tracks the
+authorized GitHub Quality run. No remote deployment was performed.
+
+### Final acceptance review
+
+| Acceptance group                 | Evidence and boundary                                                                                                                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch and dependency history    | Merge `6639938` has parents `c7220bc` and `8bf559d`; its tree exactly matches the published condominium integration. Task changes were committed afterward. No resets, rebases or force pushes.                                                                     |
+| Existing references              | ORI-29 condominium and ORI-20 profile foreign keys; no duplicate people or speculative employee table. Missing employee integration remains explicit.                                                                                                               |
+| Occurrence identity and tracking | UUID identity, global identity sequence, unique 256-bit random tracking code; eight overlapping transactions, 200 unique numbers/codes in two condominiums; duplicate tracking codes rejected.                                                                      |
+| Registration and optional fields | Distinct origin/channel checks, nullable reporter/priority/responsible/future fields, whitespace rejection, server timestamp defaults, four valid statuses and derived overdue condition tested.                                                                    |
+| Classification and decisions     | Suggested/final priorities, reasons, source, category, AI failure and first-decision snapshots are on the occurrence; later classification edits do not change stored comparison fields.                                                                            |
+| Event vocabulary and author      | All six event types persist; priority-change and AI-failure event types are rejected. Required fields, author kinds, object payloads and snapshot independence are checked.                                                                                         |
+| Historical preservation          | Profile edits/deletion preserve author name/phone/role and responsible snapshots; references become null without cascading history. Condominium/occurrence/event deletion cannot erase referenced evidence.                                                         |
+| Event ordering                   | Server-default timestamp plus identity tie-breaker; equal-time event ordering tested.                                                                                                                                                                               |
+| Public and internal data         | Separate public text/internal description; visible events require public text; no flag grants table or Storage access. Public projection remains deferred.                                                                                                          |
+| Attachments                      | Required storage metadata, unique bucket/path, positive size and valid MIME shape; composite event/occurrence FK rejects missing/mismatched relationships. URL and blank path/name checks tested.                                                                   |
+| Metrics                          | Tests cover initial urgent cohort despite later priority edits/escalation, first human action, first-decision suggestion retention and delegation/completion duration from snapshots. Equivalent SQL examples appear above.                                         |
+| Initial security                 | Actual local ACLs grant privileges only to postgres. RLS is enabled/forced, zero policies, no app-role table/sequence privileges; real denied queries and privilege matrices tested. This is not full portfolio authorization.                                      |
+| Generated types                  | Regenerated from the local database; type tests cover minimal inserts, optional snapshots, database-generated identities and the composite attachment relationship. Text CHECK domains remain strings in CLI-generated types; database constraints validate values. |
+| Existing behavior                | No ORI-62 change to application screens, routes, services, E2E sources, dependencies or lockfile. Previous unit/browser results and 11 additional real-local E2E cases found no regression.                                                                         |
+| Deferred work                    | ORI-63: complete append-only history and portfolio isolation. ORI-64: centralized event writer, correct snapshot population and atomic initial history. Uploads, Storage policies and public tracking pages are deferred.                                           |
+
+### The 15 initially skipped browser cases
+
+All conditions below already exist in the published condominium integration.
+No skip, test selection rule or E2E source was added or changed by ORI-62. The
+additional run explicitly selected the five relevant local-auth spec files; it
+did not silently disable cases in a full run. The four remaining cases were
+excluded from that targeted run for the reasons below.
+
+| #   | Existing case                                                                                                                                                  | Initial condition                                  | Final review                                                                                              |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | `authorization-local.spec.ts:37:1` — ORI-88 isolates user resources and rejects revoked sessions through UI and direct APIs                                    | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 2   | `condominiums-local.spec.ts:12:1` — real condominium flow, concurrent creation and tenant isolation                                                            | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 3   | `pwa.spec.ts:218:1` — does not simulate signup, confirmation, or resend success offline when mocks are explicitly enabled                                      | Explicit local/development registration-demo build | Excluded: requires a separate demo build; unrelated to the SQL model                                      |
+| 4   | `first-steps.spec.ts:6:3` — queue after login omits first steps at 360px                                                                                       | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 5   | `first-steps.spec.ts:6:3` — queue after login omits first steps at 1440px                                                                                      | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 6   | `panel.spec.ts:6:3` — panel navigation and modal accessibility at 360px                                                                                        | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 7   | `panel.spec.ts:6:3` — panel navigation and modal accessibility at 1440px                                                                                       | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 8   | `registration-local.spec.ts:123:1` — real local signup, email code, confirmed session, logout and password recovery                                            | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Excluded: executes signup/resend/recovery email flows; SMTP/email operations remain outside authorization |
+| 9   | `registration-local.spec.ts:446:1` — real resend replaces the code and keeps the original pending credentials                                                  | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Excluded: executes signup/resend/recovery email flows; SMTP/email operations remain outside authorization |
+| 10  | `registration-local.spec.ts:557:1` — durable budget blocks parallel incorrect codes and survives resend                                                        | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Excluded: executes signup/resend/recovery email flows; SMTP/email operations remain outside authorization |
+| 11  | `panel-transition-local.spec.ts:40:5` — light protected transition /condominios to /fila at 360px on slow network                                              | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 12  | `panel-transition-local.spec.ts:40:5` — light protected transition /fila to /condominios at 360px on slow network                                              | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 13  | `panel-transition-local.spec.ts:40:5` — light protected transition /condominios to /fila at 1440px on slow network                                             | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 14  | `panel-transition-local.spec.ts:40:5` — light protected transition /fila to /condominios at 1440px on slow network                                             | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+| 15  | `panel-transition-local.spec.ts:111:1` — direct private routes still redirect a signed-out user without rendering private content on slow dark-mode navigation | `ORI47_LOCAL_AUTH_TESTS=enabled`                   | Passed in additional local run                                                                            |
+
+### Publication dependencies
+
+Remote references and open PRs were checked before publication.
+[#15](https://github.com/Gremis/zelo/pull/15) and
+[#18](https://github.com/Gremis/zelo/pull/18) are independent prerequisites of
+[#19](https://github.com/Gremis/zelo/pull/19), followed by
+[#20](https://github.com/Gremis/zelo/pull/20),
+[#21](https://github.com/Gremis/zelo/pull/21),
+[#22](https://github.com/Gremis/zelo/pull/22), then ORI-62. PR #14 is not a
+prerequisite of this chain. ORI-29 and the integrated ORI-20 schema provide the
+existing condominium/profile references. ORI-63 and ORI-64 are subsequent
+deliveries, not included acceptance claims.
+
+Review the
+[ORI-62-only diff](https://github.com/Gremis/zelo/compare/6639938...feature/ori-62-occurrences-history-model)
+separately from inherited authentication, panel and condominium work. The PR
+targets `develop`; merge prerequisites first and recheck ancestry/content if a
+prerequisite is squash-merged. Apply versioned migrations only through the
+authorized deployment process after prerequisite integration. Publishing this PR
+does not apply migrations or deploy to a shared environment.
