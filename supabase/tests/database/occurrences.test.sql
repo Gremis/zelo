@@ -5,9 +5,9 @@ select no_plan();
 insert into auth.users(id,email) values ('62000000-0000-4000-8000-000000000001','ori62@example.invalid');
 insert into public.condominiums(id,manager_id,name,address) values
 ('62000000-0000-4000-8000-000000000001','62000000-0000-4000-8000-000000000001','Synthetic ORI62','Synthetic address');
-insert into public.occurrences(id, condominium_id, origin, channel, description) values
-('62000000-0000-4000-8000-000000000001','62000000-0000-4000-8000-000000000001','manager_panel','phone','Synthetic report'),
-('62000000-0000-4000-8000-000000000002','62000000-0000-4000-8000-000000000001','public_form','web','Second synthetic report');
+insert into public.occurrences(id, condominium_id, origin, channel, description, suggested_priority, suggestion_source, suggestion_reason, suggestion_at) values
+('62000000-0000-4000-8000-000000000001','62000000-0000-4000-8000-000000000001','manager_panel','phone','Synthetic report','urgent','rules','Synthetic rule','2026-01-01 00:00Z'),
+('62000000-0000-4000-8000-000000000002','62000000-0000-4000-8000-000000000001','public_form','web','Second synthetic report',null,null,null,null);
 select is((select status from occurrences where id='62000000-0000-4000-8000-000000000001'),'new','Initial status');
 select ok((select reporter_name is null and final_priority is null and responsible_profile_id is null from occurrences where id='62000000-0000-4000-8000-000000000001'),'Initial optional fields remain null');
 select is((select count(distinct tracking_code) from occurrences where condominium_id='62000000-0000-4000-8000-000000000001'),2::bigint,'Independent unique tracking codes');
@@ -20,10 +20,10 @@ select throws_ok($$update occurrences set origin='phone' where id='62000000-0000
 select throws_ok($$update occurrences set channel='public_form' where id='62000000-0000-4000-8000-000000000001'$$,'23514',null,'Reject invalid channel');
 select throws_ok($$update occurrences set final_priority='high' where id='62000000-0000-4000-8000-000000000001'$$,'23514',null,'Reject invalid final_priority');
 select throws_ok($$update occurrences set reporter_name=' ' where id='62000000-0000-4000-8000-000000000001'$$,'23514',null,'Reject invalid reporter_name');
-select throws_ok($$update occurrences set suggested_priority='urgent' where id='62000000-0000-4000-8000-000000000001'$$,'23514',null,'Reject invalid suggested_priority');
+select throws_ok($$update occurrences set suggested_priority='normal' where id='62000000-0000-4000-8000-000000000001'$$,'42501',null,'Original suggested priority cannot change');
 select throws_ok($$update occurrences set condominium_id='62000000-0000-4000-8000-000000000099' where id='62000000-0000-4000-8000-000000000001'$$,'23503',null,'Reject invalid condominium_id');
 select throws_ok($$update occurrences set status='completed' where id='62000000-0000-4000-8000-000000000001'$$,'23514',null,'Reject invalid status');
-update occurrences set registered_at='2026-01-01 00:00Z', suggested_priority='urgent', suggestion_source='rules', suggestion_reason='Synthetic rule', suggestion_at='2026-01-01 00:00Z', final_priority='normal', priority_decided_at='2026-01-01 00:01Z', decided_priority='urgent', decided_suggested_priority='urgent' where id='62000000-0000-4000-8000-000000000001';
+update occurrences set registered_at='2026-01-01 00:00Z', final_priority='normal', priority_decided_at='2026-01-01 00:01Z', decided_priority='urgent', decided_suggested_priority='urgent' where id='62000000-0000-4000-8000-000000000001';
 insert into occurrence_events(occurrence_id,event_type,author_type,author_profile_id,author_name,author_phone,author_role,internal_description,public_text,visible_to_resident,occurred_at,is_human_action,priority_snapshot) values
 ('62000000-0000-4000-8000-000000000001','manager_update','manager','62000000-0000-4000-8000-000000000001','Synthetic author','00000000000','manager','Private note','Public update',true,'2026-01-01 00:05Z',true,'urgent');
 create temporary table first_event as select id from occurrence_events where occurrence_id='62000000-0000-4000-8000-000000000001';
@@ -161,8 +161,8 @@ select ok((select due_at < now() and status <> 'completed' from occurrences wher
 select lives_ok($$update occurrences set status='delegated' where id='62000000-0000-4000-8000-000000000002'$$,'Delegated status persists');
 select throws_ok($$update occurrences set status='completed', completed_at=registered_at - interval '1 second' where id='62000000-0000-4000-8000-000000000002'$$,'23514',null,'Completion cannot precede registration');
 select lives_ok($$update occurrences set status='completed', completed_at=clock_timestamp() where id='62000000-0000-4000-8000-000000000002'$$,'Completed status persists with completion time');
-select lives_ok($$update occurrences set suggested_priority='low', suggestion_source='ai', suggestion_reason='Later synthetic suggestion', suggestion_at=clock_timestamp(), final_priority='low' where id='62000000-0000-4000-8000-000000000001'$$,'Later suggestion and final priority may change');
-select is((select decided_suggested_priority from occurrences where id='62000000-0000-4000-8000-000000000001'),'urgent','Decision comparison survives changed suggestion');
+select throws_ok($$update occurrences set suggested_priority='low', suggestion_source='ai', suggestion_reason='Later synthetic suggestion', suggestion_at=clock_timestamp(), final_priority='low' where id='62000000-0000-4000-8000-000000000001'$$,'42501','Original occurrence suggestion is immutable.','Later suggestion overwrite is rejected');
+select is((select decided_suggested_priority from occurrences where id='62000000-0000-4000-8000-000000000001'),'urgent','Decision comparison preserves original suggestion');
 select is((select extract(epoch from occurred_at-delegation_started_at)::bigint from occurrence_events where occurrence_id='62000000-0000-4000-8000-000000000001' and event_type='completed'),3600::bigint,'Completion duration is independent of current occurrence fields');
 select * from finish();
 rollback;
