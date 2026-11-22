@@ -1399,3 +1399,82 @@ Until #24 and its prerequisites are integrated, the develop comparison contains
 inherited work. Recheck ancestry/content if those prerequisites are squash-merged.
 Final review adds direct database length-limit tests and exact metric assertions
 for the first authenticated human action and delegation-to-completion duration.
+
+### Risk keyword rules (ORI-94)
+
+`detectRisk(where: string, report: string): RiskRulesResult` in
+`src/lib/occurrences/risk-rules.ts` is a pure, deterministic function with no
+persistence, network or AI access. It returns `{ hasRisk: true, term: RiskTerm }`
+or `{ hasRisk: false, term: null }`. `term` is the canonical accented expression
+from the official list, suitable for a consumer to construct its reason; it is
+not a normalized excerpt or a semantic classification.
+
+The 37 expressions live only in `src/lib/occurrences/risk-terms.ts`, preserving
+the final list and order from
+[ORI-83](https://linear.app/orionbootcamp26/issue/ORI-83/pm-prompt-formato-da-resposta-categorias-palavras-de-risco-e-exemplos).
+This snapshot was supplied with `prompt_v2.txt`, `gabarito.csv` and the ORI-83
+issue text for ORI-94. List revisions must be reviewed with their source changes
+and rerun against both official fixtures; the AI prompt's broader examples do
+not extend this list. The fixtures retain all 16 phrases and the complete
+50-row CSV answer key, including its expected priorities, categories and notes.
+G40 contains the supplied synthetic personal-data test example.
+
+The function searches `where + " " + report`. This is an explicitly adopted
+technical interpretation of searching both fields together, not a confirmed
+implementation detail of the PM's reference engine. Expressions may cross the
+field boundary; a dedicated test covers `"cheiro de"` plus `"queimado"`.
+For multiple matches, the first expression in official list order wins,
+regardless of its position or length in the input. For example, `gás` wins over
+`vazamento de gás`. This is the documented deterministic tie-break adopted here;
+the supplied reference material does not specify one.
+
+Matching lowercases text, decomposes Unicode with NFD and removes combining
+marks. Each normalized expression is escaped before compiling its regular
+expression, with internal spaces replaced by `\s+` and boundaries
+`(?<![a-z0-9])` and `(?![a-z0-9])`. This intentionally recognizes `fogo` in
+`corta-fogo` and rejects `gasto`, `fogão`, `fogos` and alphanumeric extensions.
+There are no standalone `choque` or `curto` rules, no `rachadura` rule and no
+semantic exceptions for negation or gas bills.
+
+Local automated evaluation reproduces 16/16 official phrase results and evaluates
+all 50 answer-key examples: 20 urgent, 21 normal and nine low priority. The six
+urgent matches are G01 (`gás`), G05 (`fumaça`), G08 (`alagando`), G09
+(`dando choque`), G15 (`faísca`) and G17 (`fio desencapado`). The only false
+positive is G36 (`gás`, a gas bill). The remaining 14 urgent cases are expected
+keyword misses: contextual risk and spelling errors require another consumer.
+These results agree with the published ORI-83 aggregate; they do not constitute
+execution of unavailable PM reference source code. Run
+`npm test -- tests/unit/occurrences/risk-rules.test.ts` to reproduce them.
+
+ORI-74 should call this function when computing priority and build a reason from
+the canonical term before persisting through its own workflow. ORI-84 should use
+a positive match above AI output and as its failure fallback; a negative match
+means only that no listed expression was found. Priority assignment, fallback
+messages, categories, persistence and AI orchestration remain consumer work and
+are not implemented here.
+
+ORI-94 final review confirmed exact equality with the supplied official list
+(including order), all phrase expectations and all 50 CSV rows. Validation on
+Node.js 24.22.3 passed formatting/write and check, ESLint, route type generation
+and TypeScript, all 452 unit tests across 36 files (including 125 risk-rule tests),
+and the production dependency audit with zero vulnerabilities.
+
+The host build initially failed because of sandbox Google Fonts access and
+Turbopack internal port binding restrictions. The isolated alternative succeeded:
+a disposable container using the already installed `node:24-alpine` image
+(Node.js 24.22.2) received a temporary copy from a read-only source mount, excluding
+`.env*`, `.git`, dependencies, build output and provider state; `npm ci` and
+`npm run build` passed without published ports or changes to existing containers,
+machine security or shared settings. Local browser tests were not repeated during
+final review because this pure function has no interface integration. The PR's
+existing Quality workflow also validates the production build with the exact
+`.nvmrc` Node.js version and runs its standard browser suite; remote results must
+be checked on the published commit. No deployment is part of this task.
+
+ORI-94 branches directly from the published ORI-64 head
+`0139ec583a2eef6d685c806356d99ed3adb77bdd`, inherited through PR #25, and targets
+`develop`. The exclusive task diff is
+`git diff 0139ec583a2eef6d685c806356d99ed3adb77bdd...feature/ori-94-risk-rules-engine`.
+The comparison against develop includes inherited work while #25 and its
+prerequisites remain open. Integrate the prerequisite PRs first and recheck
+ancestry/content if they are squash-merged.
