@@ -23,7 +23,8 @@
     "db:smtp:prepare": "node scripts/db-smtp.mjs prepare",
     "db:smtp:check": "node scripts/db-smtp.mjs check",
     "db:smtp:start": "node scripts/db-smtp.mjs start",
-    "db:smtp:restore": "node scripts/db-smtp.mjs restore"
+    "db:smtp:restore": "node scripts/db-smtp.mjs restore",
+    "test:db:concurrency": "node tests/db/occurrences-concurrency.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

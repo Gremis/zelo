@@ -42,6 +42,273 @@ export type Database = {
           },
         ];
       };
+      occurrence_attachments: {
+        Row: {
+          content_type: string;
+          created_at: string;
+          event_id: number;
+          file_name: string;
+          id: string;
+          occurrence_id: string;
+          size_bytes: number;
+          storage_bucket: string;
+          storage_path: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          content_type: string;
+          created_at?: string;
+          event_id: number;
+          file_name: string;
+          id?: string;
+          occurrence_id: string;
+          size_bytes: number;
+          storage_bucket: string;
+          storage_path: string;
+        };
+        Update: {
+          content_type?: string;
+          created_at?: string;
+          event_id?: number;
+          file_name?: string;
+          id?: string;
+          occurrence_id?: string;
+          size_bytes?: number;
+          storage_bucket?: string;
+          storage_path?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "occurrence_attachments_occurrence_id_event_id_fkey";
+            columns: ["occurrence_id", "event_id"];
+            isOneToOne: false;
+            referencedRelation: "occurrence_events";
+            referencedColumns: ["occurrence_id", "id"];
+          },
+        ];
+      };
+      occurrence_events: {
+        Row: {
+          author_name: string | null;
+          author_phone: string | null;
+          author_profile_id: string | null;
+          author_role: string | null;
+          author_type: string;
+          data: NonNullable<Json>;
+          delegation_started_at: string | null;
+          due_at: string | null;
+          event_type: string;
+          id: number;
+          internal_description: string;
+          is_human_action: boolean;
+          occurred_at: string;
+          occurrence_id: string;
+          previous_due_at: string | null;
+          previous_responsible_name: string | null;
+          priority_snapshot: string | null;
+          public_text: string | null;
+          responsible_name: string | null;
+          responsible_phone: string | null;
+          responsible_role: string | null;
+          visible_to_resident: boolean;
+        };
+        ComputedFields: never;
+        Insert: {
+          author_name?: string | null;
+          author_phone?: string | null;
+          author_profile_id?: string | null;
+          author_role?: string | null;
+          author_type: string;
+          data?: NonNullable<Json>;
+          delegation_started_at?: string | null;
+          due_at?: string | null;
+          event_type: string;
+          id?: never;
+          internal_description: string;
+          is_human_action?: boolean;
+          occurred_at?: string;
+          occurrence_id: string;
+          previous_due_at?: string | null;
+          previous_responsible_name?: string | null;
+          priority_snapshot?: string | null;
+          public_text?: string | null;
+          responsible_name?: string | null;
+          responsible_phone?: string | null;
+          responsible_role?: string | null;
+          visible_to_resident?: boolean;
+        };
+        Update: {
+          author_name?: string | null;
+          author_phone?: string | null;
+          author_profile_id?: string | null;
+          author_role?: string | null;
+          author_type?: string;
+          data?: NonNullable<Json>;
+          delegation_started_at?: string | null;
+          due_at?: string | null;
+          event_type?: string;
+          id?: never;
+          internal_description?: string;
+          is_human_action?: boolean;
+          occurred_at?: string;
+          occurrence_id?: string;
+          previous_due_at?: string | null;
+          previous_responsible_name?: string | null;
+          priority_snapshot?: string | null;
+          public_text?: string | null;
+          responsible_name?: string | null;
+          responsible_phone?: string | null;
+          responsible_role?: string | null;
+          visible_to_resident?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "occurrence_events_author_profile_id_fkey";
+            columns: ["author_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "occurrence_events_occurrence_id_fkey";
+            columns: ["occurrence_id"];
+            isOneToOne: false;
+            referencedRelation: "occurrences";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      occurrences: {
+        Row: {
+          ai_failure_reason: string | null;
+          category: string | null;
+          channel: string;
+          completed_at: string | null;
+          condominium_id: string;
+          created_by_profile_id: string | null;
+          decided_priority: string | null;
+          decided_suggested_priority: string | null;
+          decision: string | null;
+          description: string;
+          due_at: string | null;
+          final_priority: string | null;
+          id: string;
+          internal_note: string | null;
+          location: string | null;
+          number: number;
+          origin: string;
+          priority_change_reason: string | null;
+          priority_decided_at: string | null;
+          registered_at: string;
+          reporter_name: string | null;
+          reporter_phone: string | null;
+          reporter_unit_or_role: string | null;
+          responsible_name: string | null;
+          responsible_phone: string | null;
+          responsible_profile_id: string | null;
+          responsible_role: string | null;
+          status: string;
+          suggested_priority: string | null;
+          suggestion_at: string | null;
+          suggestion_reason: string | null;
+          suggestion_source: string | null;
+          tracking_code: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ai_failure_reason?: string | null;
+          category?: string | null;
+          channel: string;
+          completed_at?: string | null;
+          condominium_id: string;
+          created_by_profile_id?: string | null;
+          decided_priority?: string | null;
+          decided_suggested_priority?: string | null;
+          decision?: string | null;
+          description: string;
+          due_at?: string | null;
+          final_priority?: string | null;
+          id?: string;
+          internal_note?: string | null;
+          location?: string | null;
+          number?: never;
+          origin: string;
+          priority_change_reason?: string | null;
+          priority_decided_at?: string | null;
+          registered_at?: string;
+          reporter_name?: string | null;
+          reporter_phone?: string | null;
+          reporter_unit_or_role?: string | null;
+          responsible_name?: string | null;
+          responsible_phone?: string | null;
+          responsible_profile_id?: string | null;
+          responsible_role?: string | null;
+          status?: string;
+          suggested_priority?: string | null;
+          suggestion_at?: string | null;
+          suggestion_reason?: string | null;
+          suggestion_source?: string | null;
+          tracking_code?: string;
+        };
+        Update: {
+          ai_failure_reason?: string | null;
+          category?: string | null;
+          channel?: string;
+          completed_at?: string | null;
+          condominium_id?: string;
+          created_by_profile_id?: string | null;
+          decided_priority?: string | null;
+          decided_suggested_priority?: string | null;
+          decision?: string | null;
+          description?: string;
+          due_at?: string | null;
+          final_priority?: string | null;
+          id?: string;
+          internal_note?: string | null;
+          location?: string | null;
+          number?: never;
+          origin?: string;
+          priority_change_reason?: string | null;
+          priority_decided_at?: string | null;
+          registered_at?: string;
+          reporter_name?: string | null;
+          reporter_phone?: string | null;
+          reporter_unit_or_role?: string | null;
+          responsible_name?: string | null;
+          responsible_phone?: string | null;
+          responsible_profile_id?: string | null;
+          responsible_role?: string | null;
+          status?: string;
+          suggested_priority?: string | null;
+          suggestion_at?: string | null;
+          suggestion_reason?: string | null;
+          suggestion_source?: string | null;
+          tracking_code?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "occurrences_condominium_id_fkey";
+            columns: ["condominium_id"];
+            isOneToOne: false;
+            referencedRelation: "condominiums";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "occurrences_created_by_profile_id_fkey";
+            columns: ["created_by_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "occurrences_responsible_profile_id_fkey";
+            columns: ["responsible_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profiles: {
         Row: {
           created_at: string;
