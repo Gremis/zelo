@@ -21,7 +21,7 @@ test.beforeAll(async () => {
     resolve: {
       alias: { "@": resolve("src"), "next/navigation": "\0queue-navigation" },
     },
-    esbuild: { jsx: "automatic" },
+    esbuild: { jsx: "automatic", jsxDev: false },
     build: {
       write: false,
       lib: {
