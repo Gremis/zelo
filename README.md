@@ -2069,6 +2069,12 @@ not email delivery. No personal browser session was inspected or impersonated.
 Production build/browser checks run in a credential-free temporary checkout with
 its own .next and port-3100 server, preserving the local dev server on port 3000.
 
+The queue visual fixture explicitly compiles production JSX, independent of
+process environment changes left by an earlier SSR fixture in the same worker.
+Regression verification runs confirmation visual tests followed by queue tests
+with one worker (14 passing cases); the same production browser suite also runs
+with CI-style scheduling. Assertions, timeouts and retry settings are unchanged.
+
 #### Review base and exclusive diff
 
 ORI-77 starts directly from published ORI-76 head
