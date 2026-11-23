@@ -16,7 +16,7 @@ test("navigates between the login and password recovery screens", async ({
     page.getByRole("heading", { level: 1, name: "Recuperar senha" }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: "Voltar para o login" }).click();
+  await page.getByRole("link", { name: "Voltar para entrar" }).click();
 
   await expect(page).toHaveURL("/login");
   await expect(
