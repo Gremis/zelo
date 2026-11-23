@@ -2095,3 +2095,70 @@ other PRs to hide inherited work. Temporary deployment checker/workflow changes
 were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
+
+## Employee UI integration review (ORI-51)
+
+The employee page reuses the ORI-49 tables and ORI-50 repository, validation and
+RPCs. The additive `funcaoId` request field is resolved only against the current
+manager's RLS-filtered roles; a caller-supplied role name cannot replace that
+selection. The original name-based backend contract remains available. New role
+creation and employee activation controls remain outside this UI task.
+
+Employee endpoints now use `confirmedIdentity`, including its active-session
+probe, instead of accepting `getUser()` alone. The new page receives the same
+private/no-store proxy headers as the existing panel pages; employee JSON success
+and error responses also prohibit caching. Supabase cookie refresh and persistence
+semantics are unchanged. `ConfirmationCodeScreen` remains a local function in
+its page module: removing its named export satisfies Next's page-export whitelist
+without changing the default page component or confirmation behavior.
+
+### SQL provenance and fixture corrections
+
+The original employee tests pass against the original ORI-49 (`44b0c5d`) and
+ORI-50 (`43bf26f`) migration histories in disposable local databases. Their
+unconfirmed accounts and JWTs without session IDs are incompatible with the
+active-session policies inherited from ORI-78. The integrated fixtures now create
+confirmed users and real session rows, assert that the session is active before
+the positive authorization cases, and explicitly reject expired/revoked sessions.
+No application policy, grant or historical migration was relaxed.
+
+The unchanged ORI-78 (`9f56c79`) event/history tests pass on an empty schema but
+reproduce their failures with preexisting synthetic records and that branch's
+`scripts/demo-occurrences.sql`. Event queries previously counted unrelated
+history or selected multiple registrations. They now scope fixture assertions by
+occurrence ID and compare the total history count before/after the intentionally
+failed write. The optional `local_demo.occurrences` foreign key adds a dependency
+to `TRUNCATE ... CASCADE`; its denied privilege previously stopped the test before
+the evidence trigger. The accidental-grant test now grants/revokes TRUNCATE for
+that dependency closure inside its rolled-back transaction, still requiring the
+exact append-only trigger error. Runtime permissions and history stay unchanged.
+
+### Demo and real-browser verification
+
+The Demo preparation route previously compared the browser's Origin with Next's
+internal request hostname: `127.0.0.1:3100` was rejected when Next reported
+`localhost:3100`. It now compares Origin with the request Host, following the
+existing condominium endpoint convention. Foreign origins, a different port and
+untrusted forwarded-host values remain rejected before authentication or writes.
+The request still derives the manager only from the confirmed active session.
+Preparation ownership, eligibility and idempotence are unchanged.
+
+Run browser validation with `ACCOUNT_DEMO_ENABLED=true`,
+`ORI47_LOCAL_AUTH_TESTS=enabled`, `ORI51_LOCAL_TESTS=enabled` and the local Supabase
+test credentials available only to the test process. `npm run test:e2e` builds and
+manages its own production server at `127.0.0.1:3100`; that port must be free.
+The local Mailpit profile must already be active for signup confirmation. Tests
+cover confirmation through captured local email, existing sessions, re-login,
+Demo IDs remaining stable, Demo not completing real first steps, real employee
+persistence after re-login, selected ownership/role IDs, cross-portfolio HTTP and
+direct Data API attacks, duplicate phones, free-text/empty schedules, field
+retention on errors, keyboard focus and responsive layouts. Synthetic cleanup is
+restricted to the created account IDs at the local API and removes their Demo
+records before account deletion.
+
+`npm run test:db:account-demo` now targets the same `127.0.0.1:3100` production
+server instead of an unrelated server on port 3000. Run it with Demo enabled and
+no concurrent writers: it verifies snapshots of all preexisting portfolio data.
+`npm run test:db` runs the transaction-isolated SQL suite against the existing
+local stack without reset. No remote execution or publication is implied by these
+local checks.
