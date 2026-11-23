@@ -81,7 +81,7 @@ async function mount(page: Page, fixture = "all") {
   await page.evaluate(() => document.fonts.ready);
 }
 
-for (const width of [360, 1024, 1280, 1728]) {
+for (const width of [360, 390, 560, 561, 768, 999, 1000, 1001, 1440]) {
   test(`queue presentation at ${width}px preserves all cards and keyboard access`, async ({
     page,
   }, testInfo) => {
@@ -94,9 +94,50 @@ for (const width of [360, 1024, 1280, 1728]) {
     });
     await page.setViewportSize({ width, height: 1000 });
     await mount(page);
-    await expect(page.getByRole("article")).toHaveCount(7);
-    await expect(page.getByLabel("4 em Novo")).toBeVisible();
-    await expect(page.getByLabel("1 em Delegado")).toBeVisible();
+    if (width <= 1000) {
+      await expect(page.getByRole("tab")).toHaveCount(4);
+      const firstTab = page.getByRole("tab").first();
+      expect(
+        await firstTab.evaluate((node) => getComputedStyle(node).flexDirection),
+      ).toBe(width > 560 ? "row" : "column");
+      const [label, count] = await firstTab
+        .locator("span")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return { x, y, width, height };
+          }),
+        );
+      if (width > 560) {
+        expect(count.x).toBeGreaterThan(label.x + label.width);
+        expect(Math.abs(count.y - label.y)).toBeLessThan(1);
+      } else {
+        expect(count.y).toBeGreaterThanOrEqual(label.y + label.height);
+      }
+      await expect(page.getByRole("article")).toHaveCount(4);
+      await page.getByRole("tab", { name: "Delegado 1", exact: true }).click();
+      await expect(page.getByRole("article")).toHaveCount(1);
+      await expect(page.getByRole("tabpanel")).toHaveCount(1);
+      await page.keyboard.press("Home");
+      await expect(
+        page.getByRole("tab", { name: "Novo 4", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await expect(
+        page.getByRole("tab", { name: "Concluído 1", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("End");
+      await expect(
+        page.getByRole("tab", { name: "Concluído 1", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Home");
+    } else {
+      await expect(page.getByRole("tab")).toHaveCount(0);
+      await expect(page.getByRole("article")).toHaveCount(7);
+      await expect(page.getByLabel("4 em Novo")).toBeVisible();
+      await expect(page.getByLabel("1 em Delegado")).toBeVisible();
+    }
     const headings = await page.locator("main h2").evaluateAll((nodes) =>
       nodes.map((node) => ({
         text: node.textContent,
@@ -271,4 +312,86 @@ test("compact cards retain demo identification, accessible full dates and comple
   const badge = await card.getByText("Urgente", { exact: true }).boundingBox();
   expect(number!.x).toBeGreaterThan(badge!.x + badge!.width);
   await expect(card.locator("footer")).toContainText("Pessoa Sintética Um");
+});
+
+test("selection survives data updates and resizing without additional requests", async ({
+  page,
+}) => {
+  let requests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/occurrences/queue")) requests += 1;
+  });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await mount(page, "refresh");
+  await page.getByRole("tab", { name: "Delegado 1", exact: true }).click();
+  await page.getByRole("button", { name: "Atualizar dados de teste" }).click();
+  await expect(
+    page.getByRole("tab", { name: "Delegado 0", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toContainText(
+    "Nenhuma ocorrência delegada.",
+  );
+  await page.setViewportSize({ width: 1001, height: 900 });
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Delegado", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 360, height: 900 });
+  await expect(
+    page.getByRole("tab", { name: "Delegado 0", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toHaveCount(1);
+  expect(requests).toBe(0);
+});
+
+test("mobile long cards and zero counts fit without horizontal scrolling", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 900 });
+  await mount(page, "stress");
+  await expect(page.getByRole("article")).toHaveCount(4);
+  await page
+    .getByRole("button", { name: "Ler relato completo" })
+    .first()
+    .click();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("tab", { name: "Concluído 0", exact: true }).click();
+  await expect(page.getByRole("tabpanel")).toContainText(
+    "Nenhuma ocorrência concluída.",
+  );
+});
+
+test.describe("mobile touch navigation", () => {
+  test.use({ hasTouch: true });
+
+  test("uses the connected response for every tab without fetching again", async ({
+    page,
+  }) => {
+    let attempts = 0;
+    await page.route("**/api/occurrences/queue", (route) => {
+      attempts += 1;
+      return route.fulfill({ json: queueFixture("all") });
+    });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await mount(page, "connected");
+    await expect(
+      page.getByRole("tab", { name: "Novo 4", exact: true }),
+    ).toBeVisible();
+    for (const [label, count] of [
+      ["Andamento 1", 1],
+      ["Delegado 1", 1],
+      ["Concluído 1", 1],
+      ["Novo 4", 4],
+    ] as const) {
+      const tab = page.getByRole("tab", { name: label, exact: true });
+      await tab.tap();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("article")).toHaveCount(count);
+    }
+    expect(attempts).toBe(1);
+  });
 });
