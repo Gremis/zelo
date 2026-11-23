@@ -2095,3 +2095,51 @@ other PRs to hide inherited work. Temporary deployment checker/workflow changes
 were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
+
+### Occurrence detail card and priority decision (ORI-70)
+
+`/fila` opens the occurrence card from a queue card or its "Abrir ocorrência"
+button. On desktop the card is a modal over the dimmed queue: page scroll is
+locked, focus moves to "Fechar", Tab is trapped inside the panel, and the card
+closes on the X, Escape or a backdrop click. At 1000px and below the panel
+expands in place inside the current tab as a single column, the queue content is
+hidden while it is open, and the previous page scroll is restored on close. The
+X is always the first control and exposes the accessible name "Fechar".
+
+The header shows number, condominium, status, the report as title, and unit,
+location and registration time in the Sao Paulo calendar. The case column keeps
+the priority select (Urgente/Normal/Baixa), the suggestion state ("Sugerida pelo
+Sindicondo" until a decision exists, then "Sugerida: <prioridade>"), the
+suggestion reason, the category, and "Registrada por" with the reporter name,
+phone and unit or role. "Por que mudou? (opcional)" appears only when the final
+priority differs from the suggested one, and stores the reason immediately.
+
+`GET /api/occurrences/[id]` reads the card through the `occurrence_detail` RPC.
+Only confirmed managers of the occurrence's condominium can read it; another
+portfolio returns no row, so HTTP 404 is indistinguishable from a missing
+occurrence. `PATCH /api/occurrences/[id]/priority` calls
+`decide_occurrence_priority`, which requires an active confirmed session, locks
+completed occurrences with 409, keeps the original suggested priority immutable,
+stores the final priority and change reason as occurrence data and never writes
+a history row.
+
+Activity stays open, newest first, with date, time and author, and shows the
+viewer as "(síndico, você)" while the stored event keeps the author name. The
+text-only update box sits above the history, is hidden for completed occurrences
+and posts to `POST /api/occurrences/[id]/updates`, which reuses the existing
+append-only occurrence event service. Empty text returns "Escreva a
+atualização.", a successful insert clears the box and adds the newest row, and
+updates never change status or priority. Attachments (ORI-66) and
+responsible/deadline/completion (ORI-72) remain out of scope, as do editing or
+deleting an update.
+
+Migration `20261123120000_occurrence_detail_priority.sql` adds both functions
+with fixed search paths, explicit grants and no service_role bypass. Local
+validation passed: formatting, ESLint, route types/TypeScript, 615 unit tests,
+the nine database test files (598 assertions, including the new
+`occurrence-detail.test.sql`) and the 13 occurrence queue browser cases covering
+desktop, 360px mobile, priority change, reason selection, manager updates,
+empty-update validation, Esc/backdrop closing and another-portfolio 404. The
+local database required `npm run db:stop` and `npm run db:start` after
+`npm run db:reset` because the reset left storage unhealthy on this host; the
+reset itself applied every migration before the failed health check.

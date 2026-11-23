@@ -4,10 +4,12 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ConnectedOccurrenceQueue } from "@/components/occurrence-queue-connected";
 import { loadOccurrenceQueue } from "@/lib/occurrences/queue-request";
+import { occurrenceDetailFixture } from "../fixtures/occurrence-detail";
 import { queueEmptyFixture, queueFixture } from "../fixtures/occurrence-queue";
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -180,4 +182,54 @@ test("unexpected ineligibility is visible and retry prepares and refreshes cards
   fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
   expect(await screen.findAllByRole("article")).toHaveLength(4);
   expect(router.replace).not.toHaveBeenCalled();
+});
+
+test("opening a card loads its detail and a priority change refreshes the queue without a loading flash", async () => {
+  const queue = queueFixture("fixtures");
+  const detail = occurrenceDetailFixture();
+  let queueCalls = 0;
+  let resolveRefresh!: (response: Response) => void;
+  request.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/occurrences/queue") {
+      queueCalls += 1;
+      if (queueCalls === 1) return Promise.resolve(Response.json(queue));
+      return new Promise<Response>((complete) => {
+        resolveRefresh = complete;
+      });
+    }
+    if (url === `/api/occurrences/${detail.id}`)
+      return Promise.resolve(Response.json(detail));
+    if (url === `/api/occurrences/${detail.id}/priority`) {
+      const body = JSON.parse(String(init?.body)) as { priority: string };
+      return Promise.resolve(
+        Response.json({
+          finalPriority: body.priority,
+          suggestionPending: false,
+          priorityChangeReason: null,
+        }),
+      );
+    }
+    return Promise.reject(new Error("Unexpected request"));
+  });
+  render(<ConnectedOccurrenceQueue />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Abrir ocorrência #7704" }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByRole("heading", {
+      name: /cheiro de gás no hall do quinto andar/,
+    }),
+  ).toBeInTheDocument();
+  fireEvent.change(within(dialog).getByLabelText("Prioridade"), {
+    target: { value: "normal" },
+  });
+  await waitFor(() => expect(queueCalls).toBe(2));
+  expect(screen.queryByText("Carregando ocorrências…")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("article")).toHaveLength(4);
+  await act(async () => {
+    resolveRefresh(Response.json(queue));
+  });
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getAllByRole("article")).toHaveLength(4);
 });

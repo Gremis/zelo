@@ -369,6 +369,14 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      decide_occurrence_priority: {
+        Args: {
+          change_reason?: string;
+          decided_priority: string;
+          target_occurrence: string;
+        };
+        Returns: Json;
+      };
       email_confirmation_guard: {
         Args: {
           email_address: string;
@@ -383,6 +391,7 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
       };
+      occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
       portfolio_occurrence_queue: {
         Args: Record<PropertyKey, never>;
         Returns: Json;

@@ -2,7 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { build } from "vite";
 import { resolve } from "node:path";
 import { readdir } from "node:fs/promises";
+import { occurrenceDetailFixture } from "../fixtures/occurrence-detail";
 import { queueFixture, queueEmptyFixture } from "../fixtures/occurrence-queue";
+import type { PriorityChangeReason } from "@/server/occurrences/detail.contract";
+import type { QueuePriority } from "@/server/occurrences/queue.contract";
 
 let script: string;
 let stylesheets: string;
@@ -271,4 +274,186 @@ test("compact cards retain demo identification, accessible full dates and comple
   const badge = await card.getByText("Urgente", { exact: true }).boundingBox();
   expect(number!.x).toBeGreaterThan(badge!.x + badge!.width);
   await expect(card.locator("footer")).toContainText("Pessoa Sintética Um");
+});
+
+type PriorityBody = {
+  priority: QueuePriority;
+  reason: PriorityChangeReason | null;
+};
+
+async function mockOccurrenceDetail(page: Page) {
+  let current = occurrenceDetailFixture();
+  const priorityBodies: PriorityBody[] = [];
+  const updates: string[] = [];
+  await page.route("**/api/occurrences/*", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({ json: current });
+  });
+  await page.route("**/api/occurrences/queue", (route) =>
+    route.fulfill({ json: queueFixture("all") }),
+  );
+  await page.route("**/api/occurrences/*/priority", (route) => {
+    const body = route.request().postDataJSON() as PriorityBody;
+    priorityBodies.push(body);
+    current = {
+      ...current,
+      finalPriority: body.priority,
+      effectivePriority: body.priority,
+      suggestionPending: false,
+      priorityChangeReason: body.reason,
+      priorityDecidedAt: new Date().toISOString(),
+    };
+    return route.fulfill({
+      json: {
+        finalPriority: body.priority,
+        suggestionPending: false,
+        priorityChangeReason: body.reason,
+      },
+    });
+  });
+  await page.route("**/api/occurrences/*/updates", (route) => {
+    const body = route.request().postDataJSON() as { text: string };
+    updates.push(body.text);
+    current = {
+      ...current,
+      events: [
+        {
+          id: 3 + updates.length,
+          type: "manager_update",
+          occurredAt: new Date().toISOString(),
+          authorType: "manager",
+          authorName: "Pessoa Síndica Sintética",
+          authorPhone: "31999990000",
+          authorRole: "manager",
+          authorIsViewer: true,
+          text: body.text,
+        },
+        ...current.events,
+      ],
+    };
+    return route.fulfill({ json: { eventId: 3 + updates.length } });
+  });
+  return { priorityBodies, updates };
+}
+
+test("detail card saves priority, records a reason and appends manager updates", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const mocks = await mockOccurrenceDetail(page);
+  await mount(page, "connected");
+  await expect(page.getByRole("article")).toHaveCount(7);
+  await page.getByRole("button", { name: "Abrir ocorrência #7704" }).click();
+  const dialog = page.getByRole("dialog", { name: /cheiro de gás/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Prioridade")).toHaveValue("urgent");
+  await expect(dialog.getByText("Sugerida pelo Sindicondo")).toBeVisible();
+  await expect(dialog.getByText("Por quê:")).toBeVisible();
+  await expect(dialog.getByText("Categoria:")).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe(
+    "hidden",
+  );
+  await dialog.getByLabel("Prioridade").selectOption("normal");
+  await expect(dialog.getByText("Sugerida: Urgente")).toBeVisible();
+  expect(mocks.priorityBodies).toEqual([{ priority: "normal", reason: null }]);
+  await dialog
+    .getByLabel("Por que mudou? (opcional)")
+    .selectOption("recurring");
+  await expect(dialog.getByLabel("Por que mudou? (opcional)")).toHaveValue(
+    "recurring",
+  );
+  expect(mocks.priorityBodies).toEqual([
+    { priority: "normal", reason: null },
+    { priority: "normal", reason: "recurring" },
+  ]);
+  const history = dialog.getByRole("list", {
+    name: "Histórico da ocorrência",
+  });
+  await expect(history.getByRole("listitem").first()).toContainText(
+    "Zelador olhou o portão",
+  );
+  await expect(history.getByRole("listitem").first()).toContainText(
+    "(síndico, você)",
+  );
+  await dialog
+    .getByLabel("Escreva uma atualização")
+    .fill("Visita marcada para amanhã.");
+  await dialog.getByRole("button", { name: "Adicionar" }).click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "Atualização adicionada.",
+  );
+  await expect(dialog.getByLabel("Escreva uma atualização")).toHaveValue("");
+  await expect(history.getByRole("listitem").first()).toContainText(
+    "Visita marcada para amanhã.",
+  );
+  await dialog.getByRole("button", { name: "Adicionar" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Escreva a atualização.");
+  expect(mocks.updates).toEqual(["Visita marcada para amanhã."]);
+  await expect(
+    dialog.getByText("Só você vê. O morador não vê as atualizações."),
+  ).toBeVisible();
+  await page.mouse.click(20, 500);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
+    "hidden",
+  );
+  await page.getByRole("button", { name: "Abrir ocorrência #7704" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("detail card expands in place on mobile and closes with the X", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await mockOccurrenceDetail(page);
+  await mount(page, "connected");
+  await page.getByRole("button", { name: "Abrir ocorrência #7704" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(360.5);
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
+    "hidden",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(
+    page.getByRole("heading", { name: "Novo", exact: true }),
+  ).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Fechar" })).toBeFocused();
+  await dialog.getByRole("button", { name: "Fechar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(7);
+  await expect(
+    page.getByRole("heading", { name: "Novo", exact: true }),
+  ).toBeVisible();
+});
+
+test("a detail outside the manager portfolio is presented as not found", async ({
+  page,
+}) => {
+  await page.route("**/api/occurrences/*", (route) =>
+    route.fulfill({ status: 404, json: { error: "Synthetic not found" } }),
+  );
+  await page.route("**/api/occurrences/queue", (route) =>
+    route.fulfill({ json: queueFixture("all") }),
+  );
+  await mount(page, "connected");
+  await page.getByRole("button", { name: "Abrir ocorrência #7704" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Ocorrência não encontrada.",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Tentar novamente" }),
+  ).toHaveCount(0);
 });
