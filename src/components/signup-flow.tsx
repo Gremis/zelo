@@ -10,8 +10,8 @@ export type SignupDraft = {
 };
 
 const SignupFlowContext = createContext<{
-  mockConfirmationComplete: boolean;
-  setMockConfirmationComplete: Dispatch<SetStateAction<boolean>>;
+  confirmationComplete: boolean;
+  setConfirmationComplete: Dispatch<SetStateAction<boolean>>;
   draft: SignupDraft;
   setDraft: Dispatch<SetStateAction<SignupDraft>>;
   recoveryEmail: string;
@@ -26,15 +26,14 @@ export function SignupFlowProvider({ children }: { children: ReactNode }) {
     email: "",
     phone: "",
   });
-  const [mockConfirmationComplete, setMockConfirmationComplete] =
-    useState(false);
+  const [confirmationComplete, setConfirmationComplete] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   return (
     <SignupFlowContext.Provider
       value={{
-        mockConfirmationComplete,
-        setMockConfirmationComplete,
+        confirmationComplete,
+        setConfirmationComplete,
         draft,
         setDraft,
         recoveryEmail,

@@ -9,17 +9,20 @@ import {
 describe("validateSignUp", () => {
   it("accepts valid input and trims name and email", () => {
     const result = validateSignUp({
-      fullName: "  Maria  ",
+      fullName: "  Maria Exemplo  ",
       email: "  maria@example.com ",
       password: "codigo789",
+      phone: "21999990000",
+      acceptedTerms: true,
     });
 
     expect(result).toEqual({
       ok: true,
       data: {
-        fullName: "Maria",
+        fullName: "Maria Exemplo",
         email: "maria@example.com",
         password: "codigo789",
+        phone: "21999990000",
       },
     });
   });
@@ -32,23 +35,29 @@ describe("validateSignUp", () => {
     }
     expect(result.error.code).toBe("invalid_input");
     expect(result.error.details).toEqual({
-      fullName: "Informe o nome.",
-      email: "Informe o e-mail.",
-      password: "Informe a senha.",
+      fullName: "Digite nome e sobrenome.",
+      email: "Digite um e-mail válido, como nome@email.com.",
+      phone: "Digite o celular com DDD.",
+      password: "A senha ainda não cumpre os requisitos abaixo.",
+      acceptedTerms:
+        "Para criar a conta, aceite os termos de uso e a política de privacidade.",
     });
   });
 
   it("rejects a short password", () => {
     const result = validateSignUp({
-      fullName: "Maria",
+      fullName: "Maria Exemplo",
       email: "maria@example.com",
       password: "123",
+      acceptedTerms: true,
     });
 
     if (result.ok) {
       throw new Error("expected a validation failure");
     }
-    expect(result.error.details?.password).toContain("pelo menos 6");
+    expect(result.error.details?.password).toBe(
+      "A senha ainda não cumpre os requisitos abaixo.",
+    );
   });
 });
 
@@ -57,6 +66,7 @@ describe("validateLogin", () => {
     const result = validateLogin({
       email: "maria@example.com",
       password: "codigo789",
+      phone: "21999990000",
     });
 
     expect(result.ok).toBe(true);
@@ -89,6 +99,7 @@ describe("validateResetPassword", () => {
       email: "maria@example.com",
       code: "123456",
       password: "codigo789",
+      phone: "21999990000",
     });
 
     expect(result.ok).toBe(true);
@@ -104,6 +115,39 @@ describe("validateResetPassword", () => {
       throw new Error("expected a validation failure");
     }
     expect(result.error.details?.code).toBe("Informe o código.");
-    expect(result.error.details?.password).toContain("pelo menos 6");
+    expect(result.error.details?.password).toContain("pelo menos 8");
   });
 });
+
+it.each([false, undefined, "true"])(
+  "rejects signup without explicit consent: %s",
+  (acceptedTerms) => {
+    const result = validateSignUp({
+      fullName: "Pessoa Exemplo",
+      email: "person@example.invalid",
+      phone: "21999990000",
+      password: "Example123",
+      acceptedTerms,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_input",
+        details: { acceptedTerms: expect.any(String) },
+      },
+    });
+  },
+);
+
+it.each(["abcdefgh", "12345678", "ááááááá1"])(
+  "rejects recovery passwords outside the signup/provider policy",
+  (password) => {
+    expect(
+      validateResetPassword({
+        email: "person@example.invalid",
+        code: "123456",
+        password,
+      }).ok,
+    ).toBe(false);
+  },
+);

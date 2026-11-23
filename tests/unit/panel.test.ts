@@ -5,6 +5,7 @@ import { createPanelOperations } from "@/lib/panel/operations";
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 test("mock accepts typed identity, returns copies and clears only its own context on logout", async () => {
@@ -51,6 +52,10 @@ test.each(["production", "preview", ""])(
   async (environment) => {
     vi.stubEnv("NEXT_PUBLIC_APP_ENV", environment);
     vi.stubEnv("NEXT_PUBLIC_FIRST_STEPS_MOCK", "enabled");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    );
     const operations = createPanelOperations();
     expect(await operations.loadUser()).toEqual({
       ok: false,
@@ -62,3 +67,32 @@ test.each(["production", "preview", ""])(
     });
   },
 );
+
+test("uses the protected API and real logout even with a development mock flag", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "development");
+  vi.stubEnv("NEXT_PUBLIC_FIRST_STEPS_MOCK", "enabled");
+  const identity = {
+    name: "Pessoa Sintética",
+    initials: "PS",
+    condominiumCount: 0,
+  };
+  const request = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          user: identity,
+          firstSteps: { completed: [], dismissed: false },
+        }),
+      ),
+    )
+    .mockResolvedValueOnce(new Response("{}"));
+  vi.stubGlobal("fetch", request);
+  const operations = createPanelOperations();
+  expect(await operations.loadUser()).toEqual({ ok: true, data: identity });
+  expect(await operations.logout()).toEqual({ ok: true, data: null });
+  expect(request.mock.calls.map(([url]) => url)).toEqual([
+    "/api/panel",
+    "/api/auth/logout",
+  ]);
+});

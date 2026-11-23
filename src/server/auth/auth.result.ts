@@ -6,6 +6,10 @@ export type AuthErrorCode =
   | "email_already_registered"
   | "invalid_recovery_code"
   | "update_failed"
+  | "invalid_confirmation_code"
+  | "confirmation_blocked"
+  | "confirmation_expired"
+  | "unauthorized"
   | "unknown";
 
 export type AuthError = {

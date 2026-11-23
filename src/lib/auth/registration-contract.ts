@@ -1,6 +1,6 @@
-import type { SignupFormValues } from "./signup";
+import type { SignupFormValues } from "./signup-validation";
 
-export const registrationContractStatus = "proposed-pending-ORI-22-and-ORI-47";
+export const registrationContractStatus = "integrated-ORI-47";
 
 export type ProposedSignupInput = SignupFormValues;
 export type ProposedConfirmationInput = {
@@ -13,6 +13,8 @@ export type ProposedRegistrationFailure = {
   ok: false;
   error:
     | "network"
+    | "already-registered"
+    | "rate-limited"
     | "invalid-code"
     | "expired-code"
     | "attempt-limit"

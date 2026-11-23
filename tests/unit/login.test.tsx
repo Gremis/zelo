@@ -3,6 +3,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import LoginPage from "@/app/login/page";
 import { submitLogin } from "@/lib/auth/submit";
 
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
+
 vi.mock("@/lib/auth/submit", () => ({
   submitLogin: vi.fn(async () => {}),
 }));
@@ -168,4 +171,19 @@ test("submits the credentials once while the request is pending", () => {
   fireEvent.click(pendingButton);
 
   expect(submitLogin).toHaveBeenCalledTimes(1);
+});
+
+test("navigates to the protected queue after the real login contract succeeds", async () => {
+  render(<LoginPage />);
+  fireEvent.change(screen.getByLabelText("E-mail"), {
+    target: { value: "person@example.invalid" },
+  });
+  fireEvent.change(screen.getByLabelText("Senha"), {
+    target: { value: "Example123" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+  await vi.waitFor(() =>
+    expect(navigation.replace).toHaveBeenCalledWith("/fila"),
+  );
+  expect(navigation.refresh).toHaveBeenCalled();
 });

@@ -1,5 +1,5 @@
+import { loadPanel } from "@/lib/panel/request";
 import type { FirstStepsOperations } from "./contract";
-import { createFirstStepsMock } from "./mock";
 
 export function isFirstStepsMockEnabled() {
   return (
@@ -10,9 +10,16 @@ export function isFirstStepsMockEnabled() {
 }
 
 export function createFirstStepsOperations(): FirstStepsOperations {
-  if (isFirstStepsMockEnabled()) return createFirstStepsMock();
   return {
-    load: async () => ({ ok: false, error: "unavailable" }),
-    dismiss: async () => ({ ok: false, error: "unavailable" }),
+    load: async () => {
+      const result = await loadPanel();
+      return result.ok ? { ok: true, data: result.data.firstSteps } : result;
+    },
+    dismiss: async () => {
+      const result = await loadPanel();
+      return result.ok
+        ? { ok: true, data: { ...result.data.firstSteps, dismissed: true } }
+        : result;
+    },
   };
 }

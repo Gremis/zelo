@@ -2,28 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSignupFlow } from "@/components/signup-flow";
-import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 
-export function MockConfirmationNotice() {
-  const { mockConfirmationComplete, setMockConfirmationComplete } =
-    useSignupFlow();
+export function ConfirmationNotice() {
+  const { confirmationComplete, setConfirmationComplete } = useSignupFlow();
   const [announcement, setAnnouncement] = useState(0);
   const [visible, setVisible] = useState(false);
   const timerVersion = useRef({ version: 0 });
 
   useEffect(() => {
-    if (!isRegistrationDemoEnabled() || !mockConfirmationComplete) return;
+    if (!confirmationComplete) return;
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      setMockConfirmationComplete(false);
+      setConfirmationComplete(false);
       setAnnouncement((value) => value + 1);
       setVisible(true);
     });
     return () => {
       active = false;
     };
-  }, [mockConfirmationComplete, setMockConfirmationComplete]);
+  }, [confirmationComplete, setConfirmationComplete]);
 
   useEffect(() => {
     if (announcement === 0) return;

@@ -1,10 +1,10 @@
 "use client";
 
+import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 import { useOnlineStatus } from "@/components/pwa-runtime";
 import { signupStyles } from "@/components/signup-styles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { isRegistrationDemoEnabled } from "@/lib/auth/registration";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -41,7 +41,7 @@ export function ConfirmationCodeScreen({
     recoveryEmail,
     registrationId,
     setRegistrationId,
-    setMockConfirmationComplete,
+    setConfirmationComplete,
   } = useSignupFlow();
   const email = flow === "recovery" ? recoveryEmail.trim() : draft.email.trim();
   const online = useOnlineStatus();
@@ -52,10 +52,74 @@ export function ConfirmationCodeScreen({
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [message, setMessage] = useState("");
-  const [operation, setOperation] = useState<"confirm" | "resend" | null>(null);
+  const [operation, setOperation] = useState<
+    "confirm" | "resend" | "session" | null
+  >(null);
   const [resendStatus, setResendStatus] = useState("");
   const [blocked, setBlocked] = useState(false);
+  const mockMode = isRegistrationDemoEnabled();
   const hasContext = Boolean(email);
+  const [confirmedEmail, setConfirmedEmail] = useState<string | null>(null);
+  const awaitingSession =
+    flow === "signup" && confirmedEmail === email && registrationId === null;
+
+  async function checkSession(version: number) {
+    try {
+      const response = await fetch("/api/auth/session", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (version !== screenVersion.current) return;
+      if (!response.ok) {
+        setMessage(
+          response.status === 401
+            ? "Seu e-mail foi confirmado, mas sua sessão não está ativa. Entre com sua conta."
+            : "Seu e-mail foi confirmado. Não foi possível verificar sua sessão. Tente novamente.",
+        );
+        return;
+      }
+      const data: unknown = await response.json();
+      if (version !== screenVersion.current) return;
+      const user =
+        typeof data === "object" && data !== null && "user" in data
+          ? data.user
+          : null;
+      if (
+        typeof user !== "object" ||
+        user === null ||
+        !("email" in user) ||
+        typeof user.email !== "string" ||
+        user.email.toLowerCase() !== email.toLowerCase()
+      ) {
+        setMessage(
+          "A sessão ativa não corresponde à conta confirmada. Entre com sua conta para continuar.",
+        );
+        return;
+      }
+      setConfirmationComplete(true);
+      router.replace("/fila");
+      router.refresh();
+    } catch {
+      if (version === screenVersion.current)
+        setMessage(
+          "Seu e-mail foi confirmado. Não foi possível verificar sua sessão. Tente novamente.",
+        );
+    }
+  }
+
+  async function retrySession() {
+    if (pending.current) return;
+    pending.current = true;
+    const version = screenVersion.current;
+    setOperation("session");
+    setMessage("");
+    try {
+      await checkSession(version);
+    } finally {
+      pending.current = false;
+      if (version === screenVersion.current) setOperation(null);
+    }
+  }
 
   useLayoutEffect(
     () => () => {
@@ -73,7 +137,7 @@ export function ConfirmationCodeScreen({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (pending.current || !hasContext || blocked) {
+    if (pending.current || !hasContext || blocked || awaitingSession) {
       return;
     }
 
@@ -113,11 +177,14 @@ export function ConfirmationCodeScreen({
 
       if (result.ok) {
         setCode("");
-        if (isRegistrationDemoEnabled()) {
-          setMockConfirmationComplete(true);
+        if (mockMode) {
+          setConfirmationComplete(true);
           router.replace("/fila");
         } else {
-          setMessage("Não foi possível iniciar sua sessão. Tente novamente.");
+          setConfirmedEmail(email);
+          setRegistrationId(null);
+          setOperation("session");
+          await checkSession(version);
         }
       } else if (
         result.error === "invalid-code" ||
@@ -129,7 +196,13 @@ export function ConfirmationCodeScreen({
         setCode("");
         setBlocked(true);
         setMessage(
-          "Limite de tentativas atingido. Reenvie o código ou revise o cadastro.",
+          mockMode
+            ? "Limite de tentativas atingido. Reenvie o código ou revise o cadastro."
+            : "Limite de tentativas atingido. Aguarde 15 minutos e solicite outro código.",
+        );
+      } else if (result.error === "rate-limited") {
+        setMessage(
+          "Aguarde antes de tentar novamente. O intervalo de reenvio é de 60 segundos.",
         );
       } else {
         setMessage(
@@ -151,7 +224,12 @@ export function ConfirmationCodeScreen({
   }
 
   async function handleResend() {
-    if (pending.current || !hasContext || !navigator.onLine) {
+    if (
+      pending.current ||
+      !hasContext ||
+      !navigator.onLine ||
+      awaitingSession
+    ) {
       return;
     }
 
@@ -181,10 +259,16 @@ export function ConfirmationCodeScreen({
       if (flow === "recovery" || result?.ok) {
         setCode("");
         setBlocked(false);
-        setResendStatus("Código reenviado. Confira seu e-mail.");
+        setResendStatus(
+          flow === "recovery" || mockMode
+            ? "Código reenviado. Confira seu e-mail."
+            : "Se houver cadastro pendente, o código será enviado. Confira sua caixa de entrada e o spam.",
+        );
       } else if (result && !result.ok && result.error === "attempt-limit") {
         setBlocked(true);
         setMessage("Limite de reenvios atingido. Tente novamente mais tarde.");
+      } else if (result && !result.ok && result.error === "rate-limited") {
+        setMessage("Aguarde 60 segundos entre solicitações de código.");
       } else {
         setMessage(
           result && !result.ok && result.error === "missing-registration"
@@ -207,9 +291,17 @@ export function ConfirmationCodeScreen({
   return (
     <AuthCard
       variant="signup"
-      title={flow === "recovery" ? "Digite o código" : "Confirme seu e-mail"}
+      title={
+        awaitingSession
+          ? "E-mail confirmado"
+          : flow === "recovery"
+            ? "Digite o código"
+            : "Confirme seu e-mail"
+      }
       description={
-        flow === "recovery" ? (
+        awaitingSession ? (
+          "Seu código já foi validado. Verifique sua sessão para continuar."
+        ) : flow === "recovery" ? (
           hasContext ? (
             <>
               Se houver uma conta com <strong>{email}</strong>, enviamos um
@@ -237,99 +329,129 @@ export function ConfirmationCodeScreen({
               : "Não encontramos os dados do seu cadastro nesta sessão. Volte para criar sua conta. Se você recarregou a página, será necessário informar os dados novamente."}
           </p>
         )}
-        <form
-          noValidate
-          onSubmit={handleSubmit}
-          data-slot="form"
-          className={signupStyles.form}
-          aria-busy={operation !== null}
-        >
-          <div data-slot="field" className={signupStyles.field}>
-            <label
-              htmlFor={`${id}-code`}
-              data-slot="label"
-              className={signupStyles.label}
+        {awaitingSession ? (
+          <div className="flex flex-col gap-4">
+            <button
+              type="button"
+              onClick={retrySession}
+              disabled={operation !== null}
+              className={signupStyles.submit}
             >
-              Código
-            </label>
-            <input
-              ref={codeRef}
-              id={`${id}-code`}
-              name="code"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={CODE_LENGTH}
-              disabled={!hasContext || blocked || operation !== null}
-              value={code}
-              onChange={(event) => {
-                setCode(
-                  event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH),
-                );
-                setCodeError("");
-                setMessage("");
-              }}
-              aria-invalid={Boolean(codeError)}
-              aria-describedby={codeError ? `${id}-code-error` : undefined}
-              data-slot="input code"
-              className={signupStyles.code}
-            />
-            {codeError && (
-              <p
-                id={`${id}-code-error`}
-                role="alert"
-                data-slot="error"
-                className={signupStyles.error}
+              {operation === "session"
+                ? "Verificando sessão..."
+                : "Verificar sessão novamente"}
+            </button>
+            <Link href="/login" className={signupStyles.link}>
+              Ir para o login
+            </Link>
+          </div>
+        ) : (
+          <>
+            <form
+              noValidate
+              onSubmit={handleSubmit}
+              data-slot="form"
+              className={signupStyles.form}
+              aria-busy={operation !== null}
+            >
+              <div data-slot="field" className={signupStyles.field}>
+                <label
+                  htmlFor={`${id}-code`}
+                  data-slot="label"
+                  className={signupStyles.label}
+                >
+                  Código
+                </label>
+                <input
+                  ref={codeRef}
+                  id={`${id}-code`}
+                  name="code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={CODE_LENGTH}
+                  disabled={!hasContext || blocked || operation !== null}
+                  value={code}
+                  onChange={(event) => {
+                    setCode(
+                      event.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, CODE_LENGTH),
+                    );
+                    setCodeError("");
+                    setMessage("");
+                  }}
+                  aria-invalid={Boolean(codeError)}
+                  aria-describedby={codeError ? `${id}-code-error` : undefined}
+                  data-slot="input code"
+                  className={signupStyles.code}
+                />
+                {codeError && (
+                  <p
+                    id={`${id}-code-error`}
+                    role="alert"
+                    data-slot="error"
+                    className={signupStyles.error}
+                  >
+                    {codeError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={!hasContext || blocked || operation !== null}
+                data-slot="submit"
+                className={signupStyles.submit}
               >
-                {codeError}
+                {operation === "confirm"
+                  ? flow === "recovery"
+                    ? "Continuando..."
+                    : "Confirmando..."
+                  : flow === "recovery"
+                    ? "Continuar"
+                    : "Confirmar e entrar"}
+              </button>
+            </form>
+            <div data-slot="actions" className={signupStyles.actions}>
+              <Link
+                href={flow === "recovery" ? "/recuperar-senha" : "/criar-conta"}
+                data-slot="link"
+                className={signupStyles.link}
+                onClick={
+                  flow === "signup" ? () => setRegistrationId(null) : undefined
+                }
+              >
+                {flow === "recovery"
+                  ? "Trocar e-mail"
+                  : hasContext
+                    ? "Corrigir e-mail"
+                    : "Criar conta"}
+              </Link>
+              <button
+                type="button"
+                disabled={!hasContext || operation !== null || !online}
+                onClick={handleResend}
+                data-slot="link"
+                className={signupStyles.link}
+              >
+                {operation === "resend" ? "Reenviando..." : "Reenviar código"}
+              </button>
+            </div>
+            {flow === "signup" && !mockMode && hasContext && (
+              <p className={signupStyles.help}>
+                Se já existir um cadastro para este e-mail, a senha e os dados
+                anteriores são preservados. Para alterá-los, use a recuperação
+                de senha. Corrigir o e-mail não exclui o cadastro anterior.
               </p>
             )}
-          </div>
-          <button
-            type="submit"
-            disabled={!hasContext || blocked || operation !== null}
-            data-slot="submit"
-            className={signupStyles.submit}
-          >
-            {operation === "confirm"
-              ? flow === "recovery"
-                ? "Continuando..."
-                : "Confirmando..."
-              : flow === "recovery"
-                ? "Continuar"
-                : "Confirmar e entrar"}
-          </button>
-        </form>
-        <div data-slot="actions" className={signupStyles.actions}>
-          <Link
-            href={flow === "recovery" ? "/recuperar-senha" : "/criar-conta"}
-            data-slot="link"
-            className={signupStyles.link}
-            onClick={
-              flow === "signup" ? () => setRegistrationId(null) : undefined
-            }
-          >
-            {flow === "recovery"
-              ? "Trocar e-mail"
-              : hasContext
-                ? "Corrigir e-mail"
-                : "Criar conta"}
-          </Link>
-          <button
-            type="button"
-            disabled={!hasContext || operation !== null || !online}
-            onClick={handleResend}
-            data-slot="link"
-            className={signupStyles.link}
-          >
-            {operation === "resend" ? "Reenviando..." : "Reenviar código"}
-          </button>
-        </div>
-        {flow === "signup" && (
-          <p data-slot="help" className={signupStyles.help}>
-            Não chegou? Confira a caixa de spam. A conta só é liberada depois da
-            confirmação.
-          </p>
+            {flow === "signup" && (
+              <p data-slot="help" className={signupStyles.help}>
+                O código vale por 15 minutos. Aguarde 60 segundos para reenviar.
+                Não chegou? Confira a caixa de spam. A conta só é liberada
+                depois da confirmação.
+              </p>
+            )}
+          </>
         )}
         {message && (
           <p role="alert" data-slot="error" className={signupStyles.error}>

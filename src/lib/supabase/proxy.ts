@@ -12,6 +12,7 @@ function readConfig() {
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const authHeaders = new Headers();
 
   const config = readConfig();
   if (!config) {
@@ -23,11 +24,21 @@ export async function updateSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, cacheHeaders) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
+        Object.entries(cacheHeaders).forEach(([key, value]) =>
+          authHeaders.set(key, value),
+        );
+        const previousCookies = supabaseResponse.cookies.getAll();
         supabaseResponse = NextResponse.next({ request });
+        authHeaders.forEach((value, key) =>
+          supabaseResponse.headers.set(key, value),
+        );
+        previousCookies.forEach((cookie) =>
+          supabaseResponse.cookies.set(cookie),
+        );
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options),
         );

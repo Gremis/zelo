@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { MockConfirmationNotice } from "@/components/mock-confirmation-notice";
+import { ConfirmationNotice } from "@/components/confirmation-notice";
 import SignupPage from "@/app/criar-conta/page";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
 import { SignupFlowProvider } from "@/components/signup-flow";
@@ -40,7 +40,7 @@ function ReviewFlow() {
         }
       }}
     >
-      {route === "/fila" && <MockConfirmationNotice />}
+      {route === "/fila" && <ConfirmationNotice />}
       <Activity mode={route === "/criar-conta" ? "visible" : "hidden"}>
         <SignupPage />
       </Activity>
@@ -80,6 +80,8 @@ async function finishOperation() {
 }
 async function register() {
   fillSignup();
+  if (!(screen.getByRole("checkbox") as HTMLInputElement).checked)
+    fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   await finishOperation();
 }
@@ -99,6 +101,8 @@ test("reviews signup, correction and simulated success and mock queue navigation
   expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   fillSignup();
+  if (!(screen.getByRole("checkbox") as HTMLInputElement).checked)
+    fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   expect(screen.getByRole("button", { name: "Enviando..." })).toBeDisabled();
   expect(screen.getByLabelText("Senha")).toHaveValue("");
@@ -121,7 +125,8 @@ test("reviews signup, correction and simulated success and mock queue navigation
   fireEvent.change(screen.getByLabelText("Senha"), {
     target: { value: "Example123" },
   });
-  fireEvent.click(screen.getByRole("checkbox"));
+  if (!(screen.getByRole("checkbox") as HTMLInputElement).checked)
+    fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   await finishOperation();
   expect(screen.getByText("corrigido@example.invalid")).toBeInTheDocument();
@@ -179,6 +184,8 @@ test("reviews signup, confirmation and resend failures without simulated success
   fireEvent.change(screen.getByLabelText("Senha"), {
     target: { value: "Example123" },
   });
+  if (!(screen.getByRole("checkbox") as HTMLInputElement).checked)
+    fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   await finishOperation();
   choose("confirmation-failure");

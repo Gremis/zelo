@@ -56,9 +56,6 @@ test("shows accessible required errors and focuses the first invalid field", () 
     expect(field).toHaveAttribute("aria-invalid", "true");
     expect(field).toHaveAccessibleDescription();
   }
-  expect(screen.getByRole("checkbox")).toHaveAccessibleDescription(
-    /aceite os termos/,
-  );
   expect(submitSignup).not.toHaveBeenCalled();
 });
 
@@ -85,7 +82,7 @@ test("accepts Unicode names and formatted phones while rejecting malformed input
       email: "invalid",
       phone: "123",
       password: "abcdefgh",
-      acceptedTerms: false,
+      acceptedTerms: true,
     }),
   ).toHaveProperty("fullName");
   expect(
@@ -95,13 +92,12 @@ test("accepts Unicode names and formatted phones while rejecting malformed input
       email: "invalid",
       phone: "123",
       password: "abcdefgh",
-      acceptedTerms: false,
+      acceptedTerms: true,
     }),
   ).toMatchObject({
     email: expect.any(String),
     phone: expect.any(String),
     password: expect.any(String),
-    acceptedTerms: expect.any(String),
   });
   expect(validateSignup({ ...values, password: "12345678" })).toHaveProperty(
     "password",
@@ -130,13 +126,14 @@ test("updates password requirements and supports showing and hiding the password
   expect(screen.getByLabelText("Senha")).toHaveAttribute("type", "password");
 });
 
-test("does not submit without consent and focuses the checkbox", () => {
+test("requires consent without adding legal links", () => {
   renderSignup();
   fillValidForm();
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   expect(screen.getByRole("checkbox")).toHaveFocus();
   expect(screen.getByRole("checkbox")).toBeRequired();
+  expect(screen.getByRole("alert")).toHaveTextContent("aceite os termos");
   expect(submitSignup).not.toHaveBeenCalled();
   expect(
     screen.queryByRole("link", { name: /termos|privacidade/i }),
@@ -238,4 +235,21 @@ test("retains the password when other fields fail local validation", () => {
   fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
   expect(screen.getByLabelText("Senha")).toHaveValue("Example123");
   expect(submitSignup).not.toHaveBeenCalled();
+});
+
+test("reports the existing duplicate contract without navigating or retaining the password", async () => {
+  vi.mocked(submitSignup).mockResolvedValue({
+    ok: false,
+    error: "already-registered",
+  });
+  renderSignup();
+  fillValidForm();
+  fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Este e-mail já está cadastrado. Entre ou recupere sua senha.",
+  );
+  expect(screen.getByLabelText("Senha")).toHaveValue("");
+  expect(
+    screen.getByRole("heading", { name: "Criar conta" }),
+  ).toBeInTheDocument();
 });

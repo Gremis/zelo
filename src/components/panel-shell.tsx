@@ -60,8 +60,12 @@ export function PanelShell({
   operations?: PanelOperations;
 }) {
   const router = useRouter();
-  const { setMockConfirmationComplete, setDraft, setRegistrationId } =
-    useSignupFlow();
+  const {
+    setConfirmationComplete,
+    setDraft,
+    setRegistrationId,
+    setRecoveryEmail,
+  } = useSignupFlow();
   const [service] = useState(() => operations ?? createPanelOperations());
   const [user, setUser] = useState<PanelUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,13 +121,15 @@ export function PanelShell({
     try {
       const result = await service.logout();
       if (result.ok) {
-        setMockConfirmationComplete(false);
+        setConfirmationComplete(false);
         setDraft({ fullName: "", email: "", phone: "" });
         setRegistrationId(null);
+        setRecoveryEmail("");
         setUser(null);
         setOpen(false);
         setSignedOut(true);
         router.replace("/login");
+        router.refresh();
       } else setError("Não foi possível sair. Tente novamente.");
     } catch {
       setError("Não foi possível sair. Tente novamente.");

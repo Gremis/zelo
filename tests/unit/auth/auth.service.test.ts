@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { AuthRepository } from "@/server/auth/auth.repository";
-import { createAuthService } from "@/server/auth/auth.service";
+import { createAuthService as createService } from "@/server/auth/auth.service";
 
+const guard = async () => ({
+  status: "ok" as const,
+  id: "11111111-1111-4111-8111-111111111111",
+  lease: "22222222-2222-4222-8222-222222222222",
+});
+const createAuthService = (repository: AuthRepository) =>
+  createService(repository, guard);
 const USER = { id: "user-1", email: "maria@example.com" };
 
 function createRepository(
   overrides: Partial<AuthRepository> = {},
 ): AuthRepository {
   return {
+    confirmSignup: async () => ({ status: "ok" }),
+    resendSignup: async () => ({ status: "ok" }),
+    getConfirmedUser: async () => USER,
     signUp: async () => ({ status: "created", user: USER }),
     signIn: async () => ({ status: "ok", user: USER }),
     signOut: async () => ({ status: "ok" }),
@@ -23,12 +33,21 @@ describe("AuthService.signUp", () => {
     const service = createAuthService(createRepository());
 
     const result = await service.signUp({
-      fullName: "Maria",
+      fullName: "Maria Exemplo",
       email: "maria@example.com",
       password: "codigo789",
+      phone: "21999990000",
+      acceptedTerms: true,
     });
 
-    expect(result).toEqual({ ok: true, data: { user: USER } });
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        user: USER,
+        registrationId: "11111111-1111-4111-8111-111111111111",
+        email: USER.email,
+      },
+    });
   });
 
   it("does not reach the repository when input is invalid", async () => {
@@ -51,21 +70,24 @@ describe("AuthService.signUp", () => {
     expect(result.error.code).toBe("invalid_input");
   });
 
-  it("maps a duplicate e-mail to a conflict error", async () => {
+  it("preserves the duplicate error contract for existing accounts", async () => {
     const service = createAuthService(
       createRepository({ signUp: async () => ({ status: "duplicate" }) }),
     );
-
     const result = await service.signUp({
-      fullName: "Maria",
-      email: "maria@example.com",
+      fullName: "Maria Exemplo",
+      email: USER.email,
       password: "codigo789",
+      phone: "21999990000",
+      acceptedTerms: true,
     });
-
-    if (result.ok) {
-      throw new Error("expected a failure");
-    }
-    expect(result.error.code).toBe("email_already_registered");
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "email_already_registered",
+        message: "Este e-mail já está cadastrado.",
+      },
+    });
   });
 });
 

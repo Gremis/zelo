@@ -1,31 +1,31 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, StrictMode, useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { MockConfirmationNotice } from "@/components/mock-confirmation-notice";
+import { ConfirmationNotice } from "@/components/confirmation-notice";
 import { PanelPageTitle } from "@/components/panel-page-title";
 import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
 
 const message = "E-mail confirmado. Conta criada.";
 
 function Flow({ cached = false }: { cached?: boolean }) {
-  const { setMockConfirmationComplete } = useSignupFlow();
+  const { setConfirmationComplete } = useSignupFlow();
   const [queue, setQueue] = useState(true);
   const [menu, setMenu] = useState(false);
   return (
     <>
-      <button onClick={() => setMockConfirmationComplete(true)}>Confirm</button>
+      <button onClick={() => setConfirmationComplete(true)}>Confirm</button>
       <button onClick={() => setQueue((value) => !value)}>Navigate</button>
       <button onClick={() => setMenu((value) => !value)}>Menu</button>
       {menu && <p>Menu content</p>}
       {cached ? (
         <Activity mode={queue ? "visible" : "hidden"}>
-          <MockConfirmationNotice />
+          <ConfirmationNotice />
           <PanelPageTitle>Fila de ocorrências</PanelPageTitle>
         </Activity>
       ) : (
         queue && (
           <>
-            <MockConfirmationNotice />
+            <ConfirmationNotice />
             <PanelPageTitle>Fila de ocorrências</PanelPageTitle>
           </>
         )
@@ -119,11 +119,11 @@ test("does not replay on menu changes or a new queue visit, and permits a new co
   expect(screen.queryByText(message)).not.toBeInTheDocument();
 });
 
-test("does not show a mock notice in production", async () => {
+test("announces a completed real confirmation in production", async () => {
   vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
   open();
   await confirm();
-  expect(screen.queryByText(message)).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(message);
 });
 
 test("does not replay a cached queue and gives a new completion its own eight seconds", async () => {

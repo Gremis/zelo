@@ -1,8 +1,17 @@
+import {
+  getPasswordRequirements,
+  validateSignup,
+} from "@/lib/auth/signup-validation";
 import { type Result, failure, success } from "./auth.result";
 
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 8;
 
-export type SignUpInput = { fullName: string; email: string; password: string };
+export type SignUpInput = {
+  fullName: string;
+  email: string;
+  password: string;
+  phone: string;
+};
 export type LoginInput = { email: string; password: string };
 export type EmailInput = { email: string };
 export type ResetPasswordInput = {
@@ -39,6 +48,9 @@ function passwordError(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
   }
+  if (getPasswordRequirements(password).some(({ met }) => !met)) {
+    return "A senha deve incluir uma letra de A a Z e um número.";
+  }
   return null;
 }
 
@@ -56,23 +68,16 @@ export function validateSignUp(body: unknown): Result<SignUpInput> {
   const email = readTrimmed(record.email);
   const password = readRaw(record.password);
 
-  const details: Record<string, string> = {};
-  if (!fullName) {
-    details.fullName = "Informe o nome.";
-  }
-  if (!email) {
-    details.email = "Informe o e-mail.";
-  }
-  const passwordIssue = passwordError(password);
-  if (passwordIssue) {
-    details.password = passwordIssue;
-  }
-
-  if (Object.keys(details).length > 0) {
-    return invalidInput(details);
-  }
-
-  return success({ fullName, email, password });
+  const phone = readTrimmed(record.phone).replace(/\D/g, "");
+  const details = validateSignup({
+    fullName,
+    email,
+    password,
+    phone,
+    acceptedTerms: record.acceptedTerms === true,
+  });
+  if (Object.keys(details).length > 0) return invalidInput(details);
+  return success({ fullName, email: email.toLowerCase(), password, phone });
 }
 
 export function validateLogin(body: unknown): Result<LoginInput> {
@@ -125,4 +130,32 @@ export function validateResetPassword(
   }
 
   return success({ email, code, password });
+}
+
+export function validatePendingRegistration(
+  body: unknown,
+): Result<{ email: string; registrationId: string }> {
+  const record = asRecord(body);
+  const email = readTrimmed(record.email).toLowerCase();
+  const registrationId = readTrimmed(record.registrationId);
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      registrationId,
+    )
+  ) {
+    return invalidInput({ email: "Informe um cadastro válido." });
+  }
+  return success({ email, registrationId });
+}
+
+export function validateConfirmation(
+  body: unknown,
+): Result<{ email: string; registrationId: string; code: string }> {
+  const pending = validatePendingRegistration(body);
+  if (!pending.ok) return pending;
+  const code = readTrimmed(asRecord(body).code);
+  if (!/^\d{6}$/.test(code))
+    return invalidInput({ code: "Informe o código de seis dígitos." });
+  return success({ ...pending.data, code });
 }

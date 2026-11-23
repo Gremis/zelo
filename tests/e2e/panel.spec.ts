@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./local-auth";
+
+test.use({ trace: "off", video: "off", screenshot: "off" });
 
 for (const width of [360, 1440]) {
   test(`panel navigation and modal accessibility at ${width}px`, async ({
@@ -36,21 +38,10 @@ for (const width of [360, 1440]) {
         "Esta tela ainda não está disponível.",
       );
     }
-    const mockEnabled =
-      ["local", "development"].includes(
-        process.env.NEXT_PUBLIC_APP_ENV ?? "",
-      ) && process.env.NEXT_PUBLIC_FIRST_STEPS_MOCK === "enabled";
-    if (mockEnabled) {
-      await expect(menu.getByText("Alex Exemplo")).toBeVisible();
-      await expect(
-        menu.getByText("Síndico profissional · 0 condomínios"),
-      ).toBeVisible();
-    } else {
-      await expect(menu.getByRole("alert")).toContainText(
-        "Não foi possível carregar",
-      );
-      await expect(menu.getByRole("button", { name: "Sair" })).toBeDisabled();
-    }
+    await expect(menu.getByText("Pessoa Sintética")).toBeVisible();
+    await expect(
+      menu.getByText("Síndico profissional · 0 condomínios"),
+    ).toBeVisible();
     await page.screenshot({ path: `test-results/panel-open-${width}.png` });
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press("Tab");
@@ -74,7 +65,7 @@ for (const width of [360, 1440]) {
     await trigger.click();
     await menu.getByRole("button", { name: "Fechar", exact: true }).click();
     await expect(trigger).toBeFocused();
-    if (mockEnabled) {
+    {
       await expect(page.getByRole("button", { name: "Dispensar" })).toHaveCSS(
         "cursor",
         "pointer",

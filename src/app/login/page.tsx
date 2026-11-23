@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -29,6 +30,7 @@ const linkClasses =
   "rounded text-sm font-medium text-teal-300 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
 
 export default function LoginPage() {
+  const router = useRouter();
   const emailId = useId();
   const emailErrorId = useId();
   const passwordId = useId();
@@ -78,6 +80,8 @@ export default function LoginPage() {
         password,
         keepSignedIn,
       });
+      router.replace("/fila");
+      router.refresh();
     } catch {
       setCredentialsError(true);
       emailInputRef.current?.focus();

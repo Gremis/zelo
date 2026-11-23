@@ -23,3 +23,14 @@ test("navigates between the login and password recovery screens", async ({
     page.getByRole("heading", { level: 1, name: "Entrar" }),
   ).toBeVisible();
 });
+
+test("rejects direct access to queue and private API without a session", async ({
+  page,
+}) => {
+  await page.goto("/fila");
+  await expect(page).toHaveURL("/login");
+  expect([401, 503]).toContain((await page.request.get("/api/panel")).status());
+  expect([401, 500]).toContain(
+    (await page.request.post("/api/auth/logout")).status(),
+  );
+});

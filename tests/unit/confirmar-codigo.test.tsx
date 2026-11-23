@@ -11,10 +11,17 @@ import {
   submitResendConfirmationCode,
 } from "@/lib/auth/submit";
 
-const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  refresh: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 vi.mock("@/lib/auth/submit", () => ({
   submitConfirmationCode: vi.fn(async () => {
@@ -144,7 +151,7 @@ test("shows the email in memory, filters code input and focuses linked validatio
   expect(screen.getByText("pessoa@example.invalid")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
+      "O código vale por 15 minutos. Aguarde 60 segundos para reenviar. Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
     ),
   ).toBeInTheDocument();
   const code = screen.getByLabelText("Código");
@@ -188,15 +195,16 @@ test("does not redirect a confirmation without a valid session outside mock mode
   vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
   vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", "enabled");
   vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+  );
   renderConfirmation();
   submitCode();
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Não foi possível iniciar sua sessão",
+    "sua sessão não está ativa",
   );
   expect(navigation.replace).not.toHaveBeenCalled();
-  expect(
-    screen.queryByRole("heading", { name: "Conta criada." }),
-  ).not.toBeInTheDocument();
 });
 
 test("locks confirmation and resend during a pending request", async () => {
@@ -231,7 +239,7 @@ test("reports resend failure without an invented countdown or success", async ()
   );
   expect(submitResendConfirmationCode).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "Reenviar código" })).toBeEnabled();
-  expect(screen.queryByText(/30s|15 minutos/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/30s/)).not.toBeInTheDocument();
 });
 
 test("renders the recovery code step with preserved e-mail and six-digit input", () => {
@@ -437,4 +445,109 @@ test("does not resend while offline and restores the existing action after recon
   } finally {
     connection.mockRestore();
   }
+});
+
+test("navigates to the queue only after server session validation", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  const request = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        user: { id: "synthetic", email: "pessoa@example.invalid" },
+      }),
+      {
+        status: 200,
+      },
+    ),
+  );
+  vi.stubGlobal("fetch", request);
+  vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  renderConfirmation();
+  submitCode();
+  await vi.waitFor(() =>
+    expect(navigation.replace).toHaveBeenCalledWith("/fila"),
+  );
+  expect(request).toHaveBeenCalledWith("/api/auth/session", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  expect(navigation.refresh).toHaveBeenCalled();
+});
+
+test.each(["unavailable", "offline"])(
+  "retries the session after %s without reusing the consumed code",
+  async (failure) => {
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+    const request = vi.fn();
+    if (failure === "offline")
+      request.mockRejectedValueOnce(new TypeError("offline"));
+    else request.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    let finish!: (response: Response) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", request);
+    vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+    renderConfirmation();
+    submitCode();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Seu e-mail foi confirmado. Não foi possível verificar sua sessão.",
+    );
+    expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reenviar código" }),
+    ).not.toBeInTheDocument();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Verificar sessão novamente" }),
+    );
+    const pendingButton = screen.getByRole("button", {
+      name: "Verificando sessão...",
+    });
+    expect(pendingButton).toBeDisabled();
+    fireEvent.click(pendingButton);
+    expect(request).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish(
+        new Response(
+          JSON.stringify({
+            user: { id: "synthetic", email: "pessoa@example.invalid" },
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    expect(submitConfirmationCode).toHaveBeenCalledTimes(1);
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+    expect(navigation.replace).toHaveBeenCalledWith("/fila");
+    expect(navigation.refresh).toHaveBeenCalled();
+  },
+);
+
+test("does not navigate when the active session belongs to a different confirmed account", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          user: { id: "other", email: "other@example.invalid" },
+        }),
+      ),
+    ),
+  );
+  vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  renderConfirmation();
+  submitCode();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "A sessão ativa não corresponde à conta confirmada",
+  );
+  expect(navigation.replace).not.toHaveBeenCalled();
+  expect(screen.getByRole("link", { name: "Ir para o login" })).toHaveAttribute(
+    "href",
+    "/login",
+  );
+  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
 });
