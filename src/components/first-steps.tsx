@@ -149,9 +149,13 @@ export function FirstSteps({
                         : ""
                     }
                   >
-                    {step.id === "condominium" ? (
+                    {step.id === "condominium" || step.id === "employees" ? (
                       <Link
-                        href="/condominios?novo=1"
+                        href={
+                          step.id === "employees"
+                            ? "/funcionarios?novo=1"
+                            : "/condominios?novo=1"
+                        }
                         className="font-semibold text-[#0b5e58] underline"
                       >
                         {step.title}
@@ -174,7 +178,7 @@ export function FirstSteps({
                 ))}
               </ol>
               <p id="first-steps-availability" className="sr-only">
-                Cadastros e formulário ainda indisponíveis.
+                O atalho do formulário ainda está indisponível.
               </p>
             </>
           )}

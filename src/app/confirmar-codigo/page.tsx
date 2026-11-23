@@ -28,7 +28,7 @@ function validateCode(code: string): string | null {
   return null;
 }
 
-export function ConfirmationCodeScreen() {
+function ConfirmationCodeScreen() {
   const router = useRouter();
   const {
     draft,
