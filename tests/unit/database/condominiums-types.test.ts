@@ -51,6 +51,7 @@ async function createCondominium(
 }
 
 const stored: Tables<"condominiums"> = {
+  demo_dataset: null,
   id: "29000000-0000-4000-8000-000000000099",
   name: "Synthetic condominium",
   address: "Synthetic street 100",

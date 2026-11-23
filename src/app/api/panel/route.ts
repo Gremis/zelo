@@ -29,7 +29,8 @@ export async function GET() {
     const { count, error } = await supabase
       .from("condominiums")
       .select("id", { count: "exact", head: true })
-      .eq("manager_id", user.id);
+      .eq("manager_id", user.id)
+      .is("demo_dataset", null);
     if (error) throw new Error("Panel unavailable.");
     const name = profile.full_name || "Sua conta";
     return NextResponse.json(
