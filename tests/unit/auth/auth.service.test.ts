@@ -156,7 +156,10 @@ describe("AuthService.resetPassword", () => {
   it("rejects an invalid recovery code", async () => {
     const service = createAuthService(
       createRepository({
-        verifyRecoveryCode: async () => ({ status: "error" }),
+        verifyRecoveryCode: async () => ({
+          status: "error",
+          reason: "invalid_code",
+        }),
       }),
     );
 
@@ -170,6 +173,28 @@ describe("AuthService.resetPassword", () => {
       throw new Error("expected a failure");
     }
     expect(result.error.code).toBe("invalid_recovery_code");
+  });
+
+  it("maps a rate limit on the code to its own error, not invalid code", async () => {
+    const service = createAuthService(
+      createRepository({
+        verifyRecoveryCode: async () => ({
+          status: "error",
+          reason: "rate_limited",
+        }),
+      }),
+    );
+
+    const result = await service.resetPassword({
+      email: "maria@example.com",
+      code: "123456",
+      password: "codigo789",
+    });
+
+    if (result.ok) {
+      throw new Error("expected a failure");
+    }
+    expect(result.error.code).toBe("rate_limited");
   });
 
   it("reports a failure when the password update fails", async () => {
