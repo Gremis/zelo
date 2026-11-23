@@ -60,7 +60,7 @@ from (values (''), ('   '), (E'\t\n\r')) as invalid(value);
 
 select matches(
   (select slug from public.condominiums where name = 'Edifício São João'),
-  '^edificio-sao-joao-[0-9a-f]{32}$',
+  '^sao-joao-[a-z0-9]{4}$',
   'Slug contains the normalized initial name and a random code'
 );
 
@@ -137,7 +137,7 @@ select lives_ok(
 
 select matches(
   (select slug from public.condominiums where name = '東京'),
-  '^condominium-[0-9a-f]{32}$',
+  '^condominio-[a-z0-9]{4}$',
   'An empty normalized name uses a stable fallback prefix'
 );
 
@@ -276,7 +276,7 @@ select throws_ok(
 );
 select matches(
   (select slug from public.condominiums where name = 'A edited'),
-  '^a-created-[0-9a-f]{32}$',
+  '^a-created-[a-z0-9]{4}$',
   'An authenticated edit preserves the slug generated from the initial name'
 );
 select is(
