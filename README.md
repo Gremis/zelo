@@ -1914,3 +1914,178 @@ The loader needs ORI-64/74 registration, and the verification/queue demonstratio
 needs ORI-75's endpoint; these dependencies are inherited through #28. Integrate
 prerequisite PRs first. The develop comparison includes inherited work until then;
 recheck ancestry/content if prerequisites are squash-merged.
+
+### Desktop occurrence queue and per-account examples (ORI-77)
+
+The protected `/fila` renders the real `GET /api/occurrences/queue` response.
+`OccurrenceQueue` is a presentation component accepting loading, retryable error
+or successful `PortfolioQueue` data. `ConnectedOccurrenceQueue` owns authenticated
+requests, timeouts, cancellation and retry. The existing parser, session guards,
+backend order, effective priority and snapshot counts are reused; the client
+never sorts, reclassifies or recomputes totals. HTTP 401 redirects to login, 403
+shows access denial, and other failures show a sanitized retry action. Fixtures
+exist only in tests and are never a fallback. URL preview modes are not supported.
+
+The existing Inter/Space Grotesk panel shell contains four desktop columns, with
+basic stacked/two-column fallback on narrow screens. Cards show priority,
+conditional suggested state, right-aligned number, condominium/unit, a two-line
+report with accessible keyboard expansion, New-only suggestion reason, and a
+reporter/date footer. The location remains in the DTO but has no dedicated card
+row. Demo provenance appears as a small header badge with a complete accessible
+label. No fixed card height, shared/global style change, search, Sprint badge,
+new detail route, mobile tabs or business action is introduced. An optional
+functional detail callback remains available; no callback means no fake action.
+
+Dates use the Sao Paulo calendar and Brazilian 24-hour time: hoje/ontem, then
+DD/MM with a year when different. Accessible labels/titles retain the complete
+date, time and timezone, and dateTime retains the original ISO timestamp. A
+single presentation clock updates relative labels each minute, including
+midnight, without making requests. At the same 1728×900 viewport and 100% zoom,
+the first unchanged real demo card decreased from about 240px to 189px. Reports,
+reasons and all persisted content were preserved.
+
+![Desktop queue with persisted synthetic examples](docs/ori-77-desktop-queue.png)
+
+The protected queue and condominium shells are keyed by verified user ID and
+last-sign-in timestamp. A new login resets the signed-out client state instead
+of returning a blank panel. Confirmation still shows First Steps; normal logout
+and login do not show it again. Existing confirmation notices, navigation and
+first-step interactions remain in use.
+
+#### Server-controlled demonstration data
+
+`ACCOUNT_DEMO_ENABLED=true` enables authenticated `POST /api/demo/prepare` for
+confirmed managers, including accounts created before this feature. The queue's
+client effect prepares examples before reading the real queue. Neither rendering,
+GET, login, email verification nor application startup creates examples. The POST
+independently validates confirmed email, active session, manager profile and
+origin, rejects query parameters, and derives the account solely from the session.
+The browser never supplies another manager's ID or receives a privileged key.
+
+Each account gets separate IDs for two synthetic condominiums and four New
+occurrences: hall lamp and garden tap Normal; gas and electrical shock Urgent.
+The manual ORI-76 loader and server share one versioned dataset in
+`src/lib/demo/data.json`; its existing script export is only a compatibility
+wrapper. The application never invokes that CLI, Docker or local fixture SQL.
+Existing manual `local_demo` data/manifests remain independent and unchanged.
+
+The server reuses `createOccurrenceEventService`, `detectRisk` and the existing
+transactional registration RPC. It does not assign priorities manually, duplicate
+keyword rules, falsify timestamps or change registration origin, reporter
+snapshots, global numbering, secure tracking codes, original suggestion
+immutability or initial event creation. No human priority decisions or statuses
+are invented. The server-only RPCs are executable only by service_role and also
+validate the confirmed manager profile.
+
+The durable private manifest records dataset version, stable case keys,
+condominium/occurrence IDs and calculated registration fingerprints. Its account
+lock serializes first-time and repeated concurrent requests. Condominium creation
+and mapping share a transaction; each occurrence, suggestion, initial event and
+manifest entry share another transaction. A timeout or failure can leave earlier
+cases committed. Retrying returns their existing receipts and creates only
+missing cases, without replacing events or overwriting real data. Changed
+fingerprints fail rather than silently modifying the dataset. Preserve populated
+manifests and their restrictive foreign keys; never delete them to rerun samples.
+Empty manifest rows follow profile deletion without blocking empty-account cleanup.
+
+`condominiums.demo_dataset` identifies synthetic containers without client write
+permission; optional queue `isDemo` metadata labels their cards. Exact occurrence
+IDs remain in the private manifest for future safe handling. The panel excludes
+these condominiums from its real count and from completing the first-condominium
+step. Queue totals still include every visible occurrence. Creating a real
+condominium continues to complete that step. Failed preparation is visible and
+retryable; success immediately refetches cards without a new login. Obsolete
+ineligible responses also fail visibly instead of appearing to be an empty queue.
+
+#### Migrations and configuration
+
+Apply the inherited migrations followed by these additive migrations, in order:
+
+1. `20261122150000_account_demo_occurrences.sql`: demo marker, private manifest,
+   narrowly scoped RPCs and additive queue metadata.
+2. `20261122151000_preserve_empty_demo_account_deletion.sql`: preserves deletion
+   behavior for accounts with only an empty manifest.
+3. `20261122152000_prepare_demo_for_existing_managers.sql`: removes the temporary
+   signup hook and creates/locks manifests on demand through the authenticated
+   POST, allowing old and new confirmed managers.
+
+All three are required and were applied only locally. Historical applied files
+were not edited, existing business records were not backfilled, and there is no
+reset, remote seed or bulk sample load. Regenerated public database types come
+from the actual local schema. The existing deployment workflow remains unchanged:
+its build precedes migration dry-run/application and prebuilt publication. Build
+time does not query the pending schema; new columns/RPCs are used at request time.
+
+The flag is server-only and defaults to false/unset. It is enabled in this
+checkout's ignored `.env.local`. For shared demonstration provisioning, configure
+`ACCOUNT_DEMO_ENABLED=true` in Vercel project **zelo-dev**, environment
+**Production**, before the next deployment. Keep it unset/false in zelo-prod.
+The existing matching Supabase public settings and server-only
+`SUPABASE_SERVICE_ROLE_KEY` are reused. `.env.example` and `.env.local` do not
+configure Vercel; do not commit secrets or local environment files. No shared
+configuration was changed in this delivery.
+
+To stop provisioning when real registration is available, unset the flag or set
+it to false and restart/redeploy the corresponding server. Existing samples and
+manifests remain; disabling never deletes data. Any future removal or conversion
+must use the recorded IDs through a separately reviewed operation. The flag
+controls real persisted examples, not the older visual registration mock mode.
+
+#### Verification and manual review
+
+1. With the local Supabase stack/migrations ready and the flag enabled, create a
+   synthetic manager through registration and confirm its email. Visit `/fila`:
+   expect four labeled New cards, two Urgent/two Normal, in two condominiums.
+   First Steps should be visible with the first real condominium still pending.
+2. Reload or open parallel tabs: the same sample IDs remain. A different manager
+   gets a separate portfolio. Existing confirmed accounts can also prepare their
+   own examples on visiting the queue.
+3. Sign out through the menu and sign in again: the four cards remain, with no
+   duplicated occurrences/events and no repeated First Steps prompt.
+4. After a preparation failure, restore the unavailable service and choose
+   Tentar novamente. The same page finishes missing cases and reloads the real
+   queue. Never delete the manifest/events to retry.
+5. Disable the flag and restart the server: an unprepared account gets no samples;
+   previously persisted examples remain. Real condominium registration still
+   counts independently of samples.
+
+Local checks passed: 559 unit tests; nine actual database/HTTP/browser integration
+cases; 53 production browser tests with 15 existing opt-in skips; formatting,
+ESLint, route types/TypeScript, isolated Node 24 production build and production
+dependency audit (zero vulnerabilities). Browser checks cover different priorities,
+long text expansion, demo labels, accessible dates, keyboard navigation and 200%
+zoom. Date cases cover midnight, year rollover and leap day.
+
+`npm run test:db:account-demo` is explicit and opt-in, requiring the verified
+project-local Supabase stack and the application at localhost:3000 with the flag
+enabled. It creates only synthetic test identities and removes only their records.
+It verifies isolation, real queue ordering/counts/reasons, one initial event per
+case, repetition/concurrency, injected event failure/resume, configuration off,
+old/new accounts, preserved real data and same-tab logout/login. It does not send
+SMTP. A separate local onboarding check used an admin-generated signup code and
+a test-only signup-response bridge; confirmation, session, demo preparation,
+queue, logout and login used real endpoints. This validates that UI/session flow,
+not email delivery. No personal browser session was inspected or impersonated.
+Production build/browser checks run in a credential-free temporary checkout with
+its own .next and port-3100 server, preserving the local dev server on port 3000.
+
+#### Review base and exclusive diff
+
+ORI-77 starts directly from published ORI-76 head
+`f919d718294b877c3bc5a0ff442ae4eea836222e`, inherited through PR #29, and targets
+`develop`. The exclusive delivery diff is:
+
+```sh
+git diff f919d718294b877c3bc5a0ff442ae4eea836222e...HEAD
+```
+
+PR #29 remains open and inherits #28 (ORI-75), #27 (ORI-74), #26 (ORI-94), #25
+(ORI-64), #24/#23 (history access/model), #22 (condominium integration), #21/#20/#19
+(auth/session/confirmation), #18 and #15. These open prerequisites are in this
+branch's ancestry, so the develop comparison includes inherited work until they
+are integrated. PR #30 is not a dependency. Merge prerequisites first and recheck
+ancestry/content after any squash merges; do not rewrite this branch or modify
+other PRs to hide inherited work. Temporary deployment checker/workflow changes
+were removed; Node, Vercel Git configuration and the deployment process remain
+as inherited. No manual deployment or shared database operation accompanies
+publishing this feature PR.
