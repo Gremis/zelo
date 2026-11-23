@@ -59,7 +59,11 @@ async function ProtectedCondominiums() {
       </main>
     );
   return (
-    <PanelShell title="Condomínios" currentPath="/condominios">
+    <PanelShell
+      key={`${identity.user.id}:${identity.user.last_sign_in_at ?? ""}`}
+      title="Condomínios"
+      currentPath="/condominios"
+    >
       <Condominiums />
     </PanelShell>
   );

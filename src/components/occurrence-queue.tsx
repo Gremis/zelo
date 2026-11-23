@@ -1,0 +1,384 @@
+"use client";
+
+import { useEffect, useId, useRef, useState } from "react";
+import { PanelPageTitle } from "./panel-page-title";
+import type {
+  PortfolioQueue,
+  QueueCard,
+  QueuePriority,
+  QueueStatus,
+} from "@/server/occurrences/queue.contract";
+
+export type QueuePresentation =
+  | { status: "loading" }
+  | { status: "error"; onRetry: () => void; message?: string }
+  | { status: "success"; data: PortfolioQueue };
+
+const columns: { status: QueueStatus; title: string; empty: string }[] = [
+  { status: "new", title: "Novo", empty: "Nenhuma ocorrência nova." },
+  {
+    status: "in_progress",
+    title: "Em andamento",
+    empty: "Nenhuma ocorrência em andamento.",
+  },
+  {
+    status: "delegated",
+    title: "Delegado",
+    empty: "Nenhuma ocorrência delegada.",
+  },
+  {
+    status: "completed",
+    title: "Concluído",
+    empty: "Nenhuma ocorrência concluída.",
+  },
+];
+const priorities: Record<
+  QueuePriority | "unclassified",
+  { title: string; badge: string; border: string; dot: string }
+> = {
+  urgent: {
+    title: "Urgente",
+    badge: "bg-[#fee4e2] text-[#b42318]",
+    border: "border-l-[#b42318]",
+    dot: "bg-[#b42318]",
+  },
+  normal: {
+    title: "Normal",
+    badge: "bg-[#dbeafe] text-[#175cd3]",
+    border: "border-l-[#175cd3]",
+    dot: "bg-[#175cd3]",
+  },
+  low: {
+    title: "Baixa",
+    badge: "bg-[#eef0f3] text-[#475467]",
+    border: "border-l-[#475467]",
+    dot: "bg-[#475467]",
+  },
+  unclassified: {
+    title: "Sem classificação",
+    badge: "bg-[#f2f4f7] text-[#475467]",
+    border: "border-l-[#98a2b3]",
+    dot: "bg-[#98a2b3]",
+  },
+};
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+const calendarFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function calendarDate(date: Date) {
+  const parts = calendarFormatter.formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)!.value);
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+export function formatQueueDate(value: string, now?: Date) {
+  const date = new Date(value);
+  const current = now ? calendarDate(now) : null;
+  const recorded = calendarDate(date);
+  if (current) {
+    const day = (parts: typeof recorded) =>
+      Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000;
+    const difference = day(current) - day(recorded);
+    if (difference === 0) return `hoje ${timeFormatter.format(date)}`;
+    if (difference === 1) return `ontem ${timeFormatter.format(date)}`;
+  }
+  const day = String(recorded.day).padStart(2, "0");
+  const month = String(recorded.month).padStart(2, "0");
+  const year = current?.year === recorded.year ? "" : `/${recorded.year}`;
+  return `${day}/${month}${year} ${timeFormatter.format(date)}`;
+}
+
+function Report({ text }: { text: string }) {
+  const id = useId();
+  const element = useRef<HTMLHeadingElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const node = element.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    let active = true;
+    const measure = () => {
+      if (active && !expanded)
+        setClipped(node.scrollHeight > node.clientHeight + 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    void document.fonts?.ready.then(measure);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [expanded, text]);
+  return (
+    <div>
+      <h3
+        ref={element}
+        id={id}
+        className={`text-sm leading-[1.45] font-semibold [overflow-wrap:anywhere] ${expanded ? "" : "line-clamp-2"}`}
+      >
+        {text}
+      </h3>
+      {clipped && (
+        <button
+          type="button"
+          aria-controls={id}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 cursor-pointer text-xs font-medium text-[#0b5e58] underline underline-offset-2 hover:text-[#0f766e]"
+        >
+          {expanded ? "Recolher relato" : "Ler relato completo"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function OccurrenceCard({
+  item,
+  onOpen,
+  now,
+}: {
+  item: QueueCard;
+  now?: Date;
+  onOpen?: (id: string) => void;
+}) {
+  const style = priorities[item.effectivePriority ?? "unclassified"];
+  const fullDate = `${dateFormatter.format(new Date(item.registeredAt))} — Horário de Brasília`;
+  const id = useId();
+  return (
+    <article
+      aria-labelledby={id}
+      className={`flex min-w-0 flex-col gap-[5px] rounded-[10px] border border-[#e5e7eb] border-l-4 ${style.border} bg-white px-3 py-[11px]`}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span
+          className={`rounded-full px-[9px] py-1 text-xs leading-[1.45] font-bold ${style.badge}`}
+        >
+          {style.title}
+        </span>
+        {item.suggestionPending && (
+          <span className="text-[11px] font-medium text-[#6b7280]">
+            sugerida
+          </span>
+        )}
+        {item.isDemo && (
+          <span
+            title="Dados de demonstração"
+            className="rounded border border-[#e5e7eb] px-1 text-[10px] leading-4 font-medium text-[#6b7280]"
+          >
+            <span aria-hidden="true">Demo</span>
+            <span className="sr-only">Dados de demonstração</span>
+          </span>
+        )}
+        <span
+          id={id}
+          className="ml-auto font-mono text-[11.5px] font-medium text-[#6b7280]"
+        >
+          #{item.number}
+        </span>
+      </div>
+      <p className="text-xs leading-[1.45] text-[#4b5563] [overflow-wrap:anywhere]">
+        {item.condominium.name}
+        {item.reporterUnitOrRole && <> · {item.reporterUnitOrRole}</>}
+      </p>
+      <Report text={item.description} />
+      {item.status === "new" && item.suggestionReason && (
+        <p className="text-xs leading-[1.45] text-[#4b5563] [overflow-wrap:anywhere]">
+          {item.suggestionReason}
+        </p>
+      )}
+      <footer className="mt-0.5 border-t border-[#e5e7eb] pt-1.5 text-xs leading-[1.45] text-[#6b7280] [overflow-wrap:anywhere]">
+        {item.reporterName && <>{item.reporterName} · </>}
+        <time
+          dateTime={item.registeredAt}
+          title={fullDate}
+          aria-label={fullDate}
+        >
+          {formatQueueDate(item.registeredAt, now)}
+        </time>
+      </footer>
+      {onOpen && (
+        <button
+          type="button"
+          onClick={() => onOpen(item.id)}
+          className="cursor-pointer text-xs font-semibold text-[#0b5e58] underline underline-offset-2"
+        >
+          Abrir ocorrência #{item.number}
+        </button>
+      )}
+    </article>
+  );
+}
+
+export function OccurrenceQueue({
+  state,
+  onOpenOccurrence,
+}: {
+  state: QueuePresentation;
+  onOpenOccurrence?: (id: string) => void;
+}) {
+  const [now, setNow] = useState<Date>();
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setNow(new Date());
+    });
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const id = useId();
+  const data = state.status === "success" ? state.data : null;
+  const empty =
+    data && columns.every(({ status }) => data.columns[status].count === 0);
+  return (
+    <section aria-label="Fila de ocorrências" className="min-w-0">
+      <PanelPageTitle className="focus:outline-none font-[family-name:var(--font-panel-heading)] text-2xl leading-[1.45] font-bold tracking-[-0.01em]">
+        Fila de ocorrências
+      </PanelPageTitle>
+      <p className="mt-1.5 max-w-[600px] text-sm leading-[1.45] text-[#4b5563]">
+        Acompanhe as ocorrências de todos os seus condomínios. Nas colunas
+        abertas, as prioridades e os relatos mais antigos vêm primeiro. Confira
+        a sugestão e o motivo dos novos relatos.
+      </p>
+      {data && (
+        <dl
+          aria-label="Ocorrências abertas por prioridade"
+          className="mt-[18px] flex flex-wrap items-center gap-x-3.5 gap-y-2 text-sm text-[#4b5563]"
+        >
+          {(
+            [
+              "urgent",
+              "normal",
+              "low",
+              ...(data.openByPriority.unclassified
+                ? ["unclassified" as const]
+                : []),
+            ] as const
+          ).map((key) => (
+            <div key={key} className="flex items-center gap-1">
+              <dt className="flex items-center gap-1.5">
+                <span
+                  aria-hidden="true"
+                  className={`size-2 shrink-0 rounded-full ${priorities[key].dot}`}
+                />
+                {priorities[key].title}
+              </dt>
+              <dd className="font-bold text-[#111827]">
+                {data.openByPriority[key]}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {state.status === "loading" && (
+        <p role="status" className="mt-[18px] text-sm text-[#475467]">
+          Carregando ocorrências…
+        </p>
+      )}
+      {state.status === "error" ? (
+        <div
+          role="alert"
+          className="mt-[18px] rounded-[10px] border border-[#fecdca] bg-white p-4"
+        >
+          <p className="font-semibold text-[#b42318]">
+            {state.message ?? "Não foi possível carregar a fila."}
+          </p>
+          <p className="mt-1 text-sm text-[#4b5563]">
+            Tente novamente para consultar as ocorrências.
+          </p>
+          <button
+            type="button"
+            onClick={state.onRetry}
+            className="mt-3 cursor-pointer rounded-lg border border-[#d0d5dd] bg-white px-3 py-2 text-sm font-semibold text-[#111827] hover:border-[#6b7280]"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : (
+        <>
+          {empty && (
+            <div className="mt-[18px] rounded-[10px] border border-[#e5e7eb] bg-white p-4">
+              <h2 className="text-sm font-semibold">
+                Nenhuma ocorrência por enquanto
+              </h2>
+              <p className="mt-1 text-sm text-[#6b7280]">
+                Os novos relatos da sua carteira aparecerão aqui.
+              </p>
+            </div>
+          )}
+          <div
+            aria-busy={state.status === "loading"}
+            className="mt-[18px] grid min-w-0 grid-cols-1 items-start gap-3 min-[700px]:grid-cols-2 min-[1001px]:grid-cols-4"
+          >
+            {columns.map(({ status, title, empty: message }) => (
+              <section
+                key={status}
+                aria-labelledby={`${id}-${status}`}
+                className="flex min-w-0 flex-col gap-2 rounded-xl bg-[#eef0f3] p-2.5"
+              >
+                <div className="flex min-w-0 items-center gap-2 px-1 pt-0.5 pb-1">
+                  <h2
+                    id={`${id}-${status}`}
+                    className="min-w-0 font-[family-name:var(--font-panel-heading)] text-[14.5px] leading-[1.45] font-bold"
+                  >
+                    {title}
+                  </h2>
+                  <span
+                    aria-label={`${data ? data.columns[status].count : "Carregando"} em ${title}`}
+                    className="rounded-full border border-[#e5e7eb] bg-white px-2 text-xs leading-5 font-semibold"
+                  >
+                    {data ? data.columns[status].count : "—"}
+                  </span>
+                </div>
+                {data ? (
+                  data.columns[status].items.length ? (
+                    data.columns[status].items.map((item) => (
+                      <OccurrenceCard
+                        key={item.id}
+                        item={item}
+                        now={now}
+                        onOpen={onOpenOccurrence}
+                      />
+                    ))
+                  ) : (
+                    <p className="px-1.5 py-4 text-center text-[12.5px] leading-[1.45] text-[#475467]">
+                      {message}
+                    </p>
+                  )
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="h-32 rounded-[10px] border border-[#e5e7eb] bg-white motion-safe:animate-pulse"
+                  />
+                )}
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}

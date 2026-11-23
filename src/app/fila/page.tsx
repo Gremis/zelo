@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { confirmedIdentity } from "@/server/auth/identity";
 import { Inter, Space_Grotesk } from "next/font/google";
-import { PanelPageTitle } from "@/components/panel-page-title";
+import { accountDemoEnabled } from "@/server/demo/prepare";
+import { ConnectedOccurrenceQueue } from "@/components/occurrence-queue-connected";
 import { PanelShell } from "@/components/panel-shell";
 import { PanelAccessLoading } from "@/components/panel-access-loading";
 import { ConfirmationNotice } from "@/components/confirmation-notice";
@@ -51,25 +52,14 @@ async function ProtectedQueue() {
       </main>
     );
   return (
-    <PanelShell title="Fila de ocorrências" currentPath="/fila">
+    <PanelShell
+      key={`${identity.user.id}:${identity.user.last_sign_in_at ?? ""}`}
+      title="Fila de ocorrências"
+      currentPath="/fila"
+    >
       <ConfirmationNotice />
       <SignupFirstSteps />
-      <PanelPageTitle
-        className={`${heading.className} mt-[18px] text-2xl font-bold tracking-[-0.01em]`}
-      >
-        Fila de ocorrências
-      </PanelPageTitle>
-      <section
-        aria-labelledby="empty-queue-title"
-        className="py-16 text-center"
-      >
-        <h2 id="empty-queue-title" className="text-lg font-semibold">
-          Nenhuma ocorrência por enquanto
-        </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-          As ocorrências recebidas aparecerão aqui.
-        </p>
-      </section>
+      <ConnectedOccurrenceQueue prepareDemo={accountDemoEnabled()} />
     </PanelShell>
   );
 }
