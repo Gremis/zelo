@@ -64,7 +64,7 @@ export function PanelShell({
     setConfirmationComplete,
     setDraft,
     setRegistrationId,
-    setRecoveryEmail,
+    setShowFirstSteps,
   } = useSignupFlow();
   const [service] = useState(() => operations ?? createPanelOperations());
   const [user, setUser] = useState<PanelUser | null>(null);
@@ -122,9 +122,9 @@ export function PanelShell({
       const result = await service.logout();
       if (result.ok) {
         setConfirmationComplete(false);
+        setShowFirstSteps(false);
         setDraft({ fullName: "", email: "", phone: "" });
         setRegistrationId(null);
-        setRecoveryEmail("");
         setUser(null);
         setOpen(false);
         setSignedOut(true);

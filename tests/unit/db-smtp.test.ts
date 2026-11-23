@@ -63,6 +63,18 @@ if (process.env.ZELO_SMTP_TEST_FAIL === "yes" && process.env.ZELO_LOCAL_DB_PROFI
 `,
   );
   writeFileSync(
+    join(root, "scripts/auth-template-readiness.mjs"),
+    `import { appendFileSync } from "node:fs";
+export class AuthTemplateReadinessError extends Error {}
+export async function waitForAuthTemplates(expected) {
+  appendFileSync("readiness.jsonl", JSON.stringify(Object.keys(expected)) + "\\n");
+  if (!Object.values(expected).every((value) => value.includes("{{ .Token }}"))) throw new Error("Invalid fixture templates");
+  if (process.env.ZELO_SMTP_TEST_READINESS === "failed") throw new AuthTemplateReadinessError("Templates not loaded by Auth.");
+  if (process.env.ZELO_SMTP_TEST_READINESS === "private") throw new Error("synthetic-private-output");
+}
+`,
+  );
+  writeFileSync(
     join(root, "bin/docker"),
     `#!/usr/bin/env node
 if (process.argv[2] === "ps") console.log("synthetic-container");
@@ -139,6 +151,12 @@ test("activation targets only this project and suppresses provider output", () =
   fillSyntheticCredentials(root);
   const result = run(root, "start");
   expect(result.status).toBe(0);
+  expect(result.stdout).toContain(
+    "Auth loaded the custom signup and recovery OTP templates",
+  );
+  expect(readFileSync(join(root, "readiness.jsonl"), "utf8")).toContain(
+    '["confirmation","recovery"]',
+  );
   expect(result.stdout + result.stderr).not.toContain(
     "synthetic-private-output",
   );
@@ -179,4 +197,34 @@ test("rejects unsafe ownership or private-file permissions before stopping conta
   chmodSync(join(root, ".env.smtp.local"), 0o600);
   expect(run(root, "start", { ZELO_SMTP_TEST_UNSAFE: "yes" }).status).toBe(1);
   expect(existsSync(join(root, "operations.jsonl"))).toBe(false);
+});
+
+test.each(["start", "restore"])(
+  "does not announce %s readiness or clear the marker when templates are unconfirmed",
+  (command) => {
+    const root = fixture();
+    fillSyntheticCredentials(root);
+    const result = run(root, command, { ZELO_SMTP_TEST_READINESS: "failed" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(
+      "SMTP is not ready: Templates not loaded by Auth.",
+    );
+    expect(existsSync(join(root, "supabase/.smtp-manual/active"))).toBe(true);
+    expect(existsSync(join(root, "supabase/.smtp-manual/operation.lock"))).toBe(
+      false,
+    );
+  },
+);
+
+test("suppresses unexpected readiness diagnostics and still permits restoration", () => {
+  const root = fixture();
+  fillSyntheticCredentials(root);
+  const result = run(root, "start", { ZELO_SMTP_TEST_READINESS: "private" });
+  expect(result.status).toBe(1);
+  expect(result.stdout + result.stderr).not.toContain(
+    "synthetic-private-output",
+  );
+  expect(result.stderr).toContain("provider output suppressed");
+  expect(run(root, "restore").status).toBe(0);
 });

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { PERSISTENCE_COOKIE, sessionCookieOptions } from "./persistence";
 import { getSupabaseConfig } from "./config";
 
 function readConfig() {
@@ -13,6 +14,8 @@ function readConfig() {
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
   const authHeaders = new Headers();
+  const persistent =
+    request.cookies.get(PERSISTENCE_COOKIE)?.value !== "session";
 
   const config = readConfig();
   if (!config) {
@@ -40,7 +43,11 @@ export async function updateSession(request: NextRequest) {
           supabaseResponse.cookies.set(cookie),
         );
         cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options),
+          supabaseResponse.cookies.set(
+            name,
+            value,
+            sessionCookieOptions(name, options, persistent),
+          ),
         );
       },
     },

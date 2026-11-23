@@ -89,7 +89,7 @@ describe("validateEmailOnly", () => {
     if (result.ok) {
       throw new Error("expected a validation failure");
     }
-    expect(result.error.message).toBe("Informe o e-mail.");
+    expect(result.error.message).toBe("Informe um e-mail válido.");
   });
 });
 

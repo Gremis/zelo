@@ -66,9 +66,8 @@ for (const width of [360, 1440]) {
     await menu.getByRole("button", { name: "Fechar", exact: true }).click();
     await expect(trigger).toBeFocused();
     {
-      await expect(page.getByRole("button", { name: "Dispensar" })).toHaveCSS(
-        "cursor",
-        "pointer",
+      await expect(page.getByRole("button", { name: "Dispensar" })).toHaveCount(
+        0,
       );
       await trigger.click();
       await expect(menu.getByRole("button", { name: "Sair" })).toHaveCSS(

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { FirstSteps } from "@/components/first-steps";
+import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
+import { FirstSteps, SignupFirstSteps } from "@/components/first-steps";
 import { createFirstStepsMock } from "@/lib/first-steps/mock";
 import {
   createFirstStepsOperations,
@@ -110,3 +111,37 @@ test.each(["production", "preview", "", "local", "development"])(
     });
   },
 );
+
+function FirstStepsFlow({ operations }: { operations: FirstStepsOperations }) {
+  const { setShowFirstSteps } = useSignupFlow();
+  return (
+    <>
+      <button onClick={() => setShowFirstSteps(true)}>Complete signup</button>
+      <button onClick={() => setShowFirstSteps(false)}>
+        Enter through login
+      </button>
+      <SignupFirstSteps operations={operations} />
+    </>
+  );
+}
+
+test("shows first steps only after signup and removes them for the login entry", async () => {
+  const operations = service();
+  render(
+    <SignupFlowProvider>
+      <FirstStepsFlow operations={operations} />
+    </SignupFlowProvider>,
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Primeiros passos" }),
+  ).not.toBeInTheDocument();
+  expect(operations.load).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Complete signup"));
+  expect(
+    await screen.findByRole("button", { name: "Dispensar" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Enter through login"));
+  expect(
+    screen.queryByRole("heading", { name: "Primeiros passos" }),
+  ).not.toBeInTheDocument();
+});

@@ -1,6 +1,6 @@
 import { BrandMark } from "@/components/brand-mark";
 import { signupStyles } from "@/components/signup-styles";
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 
 const signupUi = Inter({
@@ -34,6 +34,7 @@ type AuthCardProps = {
   children: ReactNode;
   variant?: "default" | "signup";
   focusTitle?: boolean;
+  verticalAlign?: "start" | "center";
 };
 
 function SindicondoMark() {
@@ -61,15 +62,25 @@ export function AuthCard({
   children,
   variant = "default",
   focusTitle = false,
+  verticalAlign = "start",
 }: AuthCardProps) {
+  const titleRef = useCallback(
+    (element: HTMLHeadingElement | null) => {
+      if (focusTitle) element?.focus();
+    },
+    [focusTitle],
+  );
   if (variant === "signup") {
     return (
       <main
         lang="pt-BR"
         data-slot="screen"
-        className={`${signupStyles.screen} ${signupUi.variable} ${signupHeading.variable} ${signupCode.variable}`}
+        className={`${signupStyles.screen} ${verticalAlign === "center" ? signupStyles["screen-centered"] : signupStyles["screen-start"]} ${signupUi.variable} ${signupHeading.variable} ${signupCode.variable}`}
       >
-        <div data-slot="card" className={signupStyles.card}>
+        <div
+          data-slot="card"
+          className={`${signupStyles.card} ${verticalAlign === "center" ? "my-auto" : ""}`}
+        >
           <header data-slot="header" className={signupStyles.header}>
             <div data-slot="brand" className={signupStyles.brand}>
               <span
@@ -82,16 +93,11 @@ export function AuthCard({
               Sindicondo
             </div>
             <h1
+              key={title}
               data-slot="title"
               className={signupStyles.title}
               tabIndex={focusTitle ? -1 : undefined}
-              ref={
-                focusTitle
-                  ? (element) => {
-                      element?.focus();
-                    }
-                  : undefined
-              }
+              ref={titleRef}
               aria-live={focusTitle ? "polite" : undefined}
             >
               {title}

@@ -3,7 +3,6 @@ import type {
   AuthRepository,
   AuthUser,
   SignInErrorReason,
-  VerifyRecoveryErrorReason,
 } from "./auth.repository";
 import { type AuthError, type Result, failure, success } from "./auth.result";
 import {
@@ -31,22 +30,6 @@ const LOGIN_ERRORS: Record<SignInErrorReason, AuthError> = {
   unknown: {
     code: "unknown",
     message: "Não foi possível fazer login. Tente novamente mais tarde.",
-  },
-};
-
-const RECOVERY_CODE_ERRORS: Record<VerifyRecoveryErrorReason, AuthError> = {
-  invalid_code: {
-    code: "invalid_recovery_code",
-    message: "Código inválido ou expirado.",
-  },
-  rate_limited: {
-    code: "rate_limited",
-    message:
-      "Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.",
-  },
-  unknown: {
-    code: "unknown",
-    message: "Não foi possível validar o código. Tente novamente mais tarde.",
   },
 };
 
@@ -83,6 +66,7 @@ function guardFailure(status: GuardStatus) {
 export function createAuthService(
   repository: AuthRepository,
   guard: ConfirmationGuard,
+  recoveryRepository: AuthRepository = repository,
 ): AuthService {
   return {
     async signUp(body) {
@@ -251,7 +235,17 @@ export function createAuthService(
         return validation;
       }
 
-      await repository.sendRecoveryEmail(validation.data.email);
+      const outcome = await recoveryRepository.sendRecoveryEmail(
+        validation.data.email,
+      );
+      if (outcome.status === "error")
+        return failure({
+          code: outcome.reason === "rate_limited" ? "rate_limited" : "unknown",
+          message:
+            outcome.reason === "rate_limited"
+              ? "Aguarde antes de solicitar outro código."
+              : "Não foi possível solicitar o código. Tente novamente.",
+        });
 
       return success({ message: RECOVERY_MESSAGE });
     },
@@ -262,23 +256,51 @@ export function createAuthService(
         return validation;
       }
 
-      const verification = await repository.verifyRecoveryCode({
-        email: validation.data.email,
-        code: validation.data.code,
-      });
-      if (verification.status === "error") {
-        return failure(RECOVERY_CODE_ERRORS[verification.reason]);
-      }
-
-      const update = await repository.updatePassword(validation.data.password);
-      if (update.status === "error") {
-        return failure({
-          code: "update_failed",
-          message: "Não foi possível atualizar a senha.",
+      let verified = false;
+      try {
+        const verification = await recoveryRepository.verifyRecoveryCode({
+          email: validation.data.email,
+          code: validation.data.code,
         });
+        if (verification.status === "error") {
+          const reason = verification.reason ?? "invalid_code";
+          return failure({
+            code:
+              reason === "rate_limited"
+                ? "rate_limited"
+                : reason === "unknown"
+                  ? "unknown"
+                  : "invalid_recovery_code",
+            message:
+              reason === "rate_limited"
+                ? "Muitas tentativas. Aguarde antes de tentar novamente."
+                : reason === "unknown"
+                  ? "Não foi possível conferir o código. Solicite um novo código."
+                  : "Código incorreto, expirado ou já utilizado. Solicite outro código.",
+          });
+        }
+        verified = true;
+        const update = await recoveryRepository.updatePassword(
+          validation.data.password,
+        );
+        if (update.status === "error")
+          return failure({
+            code: "update_failed",
+            message:
+              "O código foi utilizado, mas não foi possível confirmar a alteração da senha. Solicite um novo código.",
+          });
+        return success({ success: true });
+      } catch {
+        return failure({
+          code: verified ? "update_failed" : "unknown",
+          message:
+            "Não foi possível confirmar a alteração da senha. Solicite um novo código antes de tentar novamente.",
+        });
+      } finally {
+        try {
+          await recoveryRepository.signOut("local");
+        } catch {}
       }
-
-      return success({ success: true });
     },
   };
 }

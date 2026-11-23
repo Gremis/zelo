@@ -1,3 +1,7 @@
+import {
+  AuthTemplateReadinessError,
+  waitForAuthTemplates,
+} from "./auth-template-readiness.mjs";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -203,11 +207,30 @@ try {
       ...env,
       ZELO_LOCAL_DB_PROFILE: profile,
     });
+    try {
+      await waitForAuthTemplates(
+        Object.fromEntries(
+          ["confirmation", "recovery"].map((type) => [
+            type,
+            readFileSync(
+              join(directory, profile, "supabase/templates", `${type}.html`),
+              "utf8",
+            ),
+          ]),
+        ),
+      );
+    } catch (error) {
+      const diagnostic =
+        error instanceof AuthTemplateReadinessError
+          ? error.message
+          : "Local Auth template readiness could not be verified; provider output suppressed.";
+      throw new ProfileError(`SMTP is not ready: ${diagnostic}`);
+    }
     if (command === "restore") unlinkSync(marker);
     console.log(
       command === "start"
-        ? "Manual Gmail profile active. Only run the intended manual signup, then restore Mailpit."
-        : "Default Mailpit routing restored. Local data volumes were preserved.",
+        ? "Manual Gmail profile ready: Auth loaded the custom signup and recovery OTP templates. Only run the intended manual email test, then restore Mailpit."
+        : "Default Mailpit routing restored: Auth loaded the custom signup and recovery OTP templates. Local data volumes were preserved.",
     );
   }
 } catch (error) {

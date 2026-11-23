@@ -23,11 +23,9 @@ export type SignInOutcome =
   | { status: "ok"; user: AuthUser }
   | { status: "error"; reason: SignInErrorReason };
 
-export type VerifyRecoveryErrorReason =
-  "invalid_code" | "rate_limited" | "unknown";
-
-export type VerifyRecoveryOutcome =
-  { status: "ok" } | { status: "error"; reason: VerifyRecoveryErrorReason };
+export type RecoveryOutcome =
+  | { status: "ok" }
+  | { status: "error"; reason?: "invalid_code" | "rate_limited" | "unknown" };
 
 export type SimpleOutcome = { status: "ok" } | { status: "error" };
 
@@ -42,8 +40,8 @@ export type AuthRepository = {
   signUp(params: SignUpParams): Promise<SignUpOutcome>;
   signIn(params: SignInParams): Promise<SignInOutcome>;
   signOut(scope?: "local" | "global"): Promise<SimpleOutcome>;
-  sendRecoveryEmail(email: string): Promise<SimpleOutcome>;
-  verifyRecoveryCode(params: EmailCodeParams): Promise<VerifyRecoveryOutcome>;
+  sendRecoveryEmail(email: string): Promise<RecoveryOutcome>;
+  verifyRecoveryCode(params: EmailCodeParams): Promise<RecoveryOutcome>;
   updatePassword(password: string): Promise<SimpleOutcome>;
 };
 
@@ -90,18 +88,6 @@ function isOtpInvalid(error: AuthError): boolean {
   }
   const message = error.message.toLowerCase();
   return message.includes("invalid") || message.includes("expired");
-}
-
-function classifyVerifyRecoveryError(
-  error: AuthError,
-): VerifyRecoveryErrorReason {
-  if (isRateLimited(error)) {
-    return "rate_limited";
-  }
-  if (isOtpInvalid(error)) {
-    return "invalid_code";
-  }
-  return "unknown";
 }
 
 export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
@@ -210,18 +196,38 @@ export function createAuthRepository(supabase: SupabaseClient): AuthRepository {
 
     async sendRecoveryEmail(email) {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
-      return error ? { status: "error" } : { status: "ok" };
+      return error
+        ? {
+            status: "error",
+            reason: isRateLimited(error) ? "rate_limited" : "unknown",
+          }
+        : { status: "ok" };
     },
 
     async verifyRecoveryCode({ email, code }) {
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: "recovery",
       });
-      if (error) {
-        return { status: "error", reason: classifyVerifyRecoveryError(error) };
-      }
+      if (error)
+        return {
+          status: "error",
+          reason: isRateLimited(error)
+            ? "rate_limited"
+            : isOtpInvalid(error)
+              ? "invalid_code"
+              : "unknown",
+        };
+      if (!data.session) return { status: "error", reason: "unknown" };
+      const { data: identity, error: identityError } =
+        await supabase.auth.getUser();
+      if (
+        identityError ||
+        !identity.user?.email_confirmed_at ||
+        identity.user.email?.toLowerCase() !== email.toLowerCase()
+      )
+        return { status: "error", reason: "unknown" };
       return { status: "ok" };
     },
 

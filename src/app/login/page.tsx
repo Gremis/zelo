@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { AuthCard } from "@/components/auth-card";
+import { signupStyles } from "@/components/signup-styles";
+import { AuthRequestError } from "@/lib/auth/request";
+import { useSignupFlow } from "@/components/signup-flow";
+import { useRecoveryFlow } from "@/components/recovery-flow";
 import { submitLogin } from "@/lib/auth/submit";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,14 +27,13 @@ function validateEmail(email: string): string | null {
   return null;
 }
 
-const inputClasses =
-  "w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-zinc-50 transition-colors placeholder:font-medium placeholder:text-zinc-300 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
+const inputClasses = signupStyles.input;
+const linkClasses = signupStyles.link;
 
-const linkClasses =
-  "rounded text-sm font-medium text-teal-300 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none";
-
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const recovery = useRecoveryFlow();
+  const { setShowFirstSteps } = useSignupFlow();
   const emailId = useId();
   const emailErrorId = useId();
   const passwordId = useId();
@@ -39,19 +42,34 @@ export default function LoginPage() {
 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(
+    recovery?.state.passwordChanged ? recovery.state.email : "",
+  );
   const [password, setPassword] = useState("");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [credentialsError, setCredentialsError] = useState(false);
+  const [credentialsError, setCredentialsError] = useState("");
+  const pending = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const version = useRef(0);
+  useLayoutEffect(
+    () => () => {
+      version.current += 1;
+      pending.current = false;
+      setPassword("");
+      setIsSubmitting(false);
+      if (passwordInputRef.current) passwordInputRef.current.value = "";
+    },
+    [],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (isSubmitting) {
+    if (pending.current) {
       return;
     }
 
@@ -61,7 +79,7 @@ export default function LoginPage() {
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
-    setCredentialsError(false);
+    setCredentialsError("");
 
     if (nextEmailError || nextPasswordError) {
       if (nextEmailError) {
@@ -72,6 +90,8 @@ export default function LoginPage() {
       return;
     }
 
+    const currentVersion = version.current;
+    pending.current = true;
     setIsSubmitting(true);
 
     try {
@@ -80,31 +100,49 @@ export default function LoginPage() {
         password,
         keepSignedIn,
       });
+      if (currentVersion !== version.current) return;
+      setShowFirstSteps(false);
+      recovery?.setState({ email: "", code: "", passwordChanged: false });
       router.replace("/fila");
       router.refresh();
-    } catch {
-      setCredentialsError(true);
+    } catch (error) {
+      if (currentVersion !== version.current) return;
+      setCredentialsError(
+        error instanceof AuthRequestError
+          ? error.message
+          : "Serviço temporariamente indisponível. Tente novamente.",
+      );
       emailInputRef.current?.focus();
     } finally {
-      setIsSubmitting(false);
+      if (currentVersion === version.current) {
+        pending.current = false;
+        setIsSubmitting(false);
+      }
     }
   }
 
   return (
-    <AuthCard title="Entrar" description="Painel do síndico profissional.">
+    <AuthCard
+      variant="signup"
+      verticalAlign="center"
+      title="Entrar"
+      description="Painel do síndico profissional."
+    >
+      {recovery?.state.passwordChanged && (
+        <p role="status" className="rounded-lg bg-green-100 p-3 text-green-800">
+          Senha alterada. Entre com a nova senha.
+        </p>
+      )}
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
         {credentialsError ? (
-          <p
-            role="alert"
-            className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200"
-          >
-            E-mail ou senha incorretos. Confira os dados ou recupere a senha.
+          <p role="alert" className={signupStyles.error}>
+            {credentialsError}
           </p>
         ) : null}
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor={emailId}
-            className="text-sm font-medium text-zinc-200"
+            className="text-sm font-medium text-[#111827]"
           >
             E-mail
           </label>
@@ -119,14 +157,18 @@ export default function LoginPage() {
             onChange={(event) => {
               setEmail(event.target.value);
               setEmailError(null);
-              setCredentialsError(false);
+              setCredentialsError("");
             }}
             aria-invalid={emailError ? true : undefined}
             aria-describedby={emailError ? emailErrorId : undefined}
             className={inputClasses}
           />
           {emailError ? (
-            <p id={emailErrorId} role="alert" className="text-xs text-red-300">
+            <p
+              id={emailErrorId}
+              role="alert"
+              className="text-xs text-[#b42318]"
+            >
               {emailError}
             </p>
           ) : null}
@@ -135,7 +177,7 @@ export default function LoginPage() {
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor={passwordId}
-            className="text-sm font-medium text-zinc-200"
+            className="text-sm font-medium text-[#111827]"
           >
             Senha
           </label>
@@ -150,7 +192,7 @@ export default function LoginPage() {
               onChange={(event) => {
                 setPassword(event.target.value);
                 setPasswordError(null);
-                setCredentialsError(false);
+                setCredentialsError("");
               }}
               aria-invalid={passwordError ? true : undefined}
               aria-describedby={passwordError ? passwordErrorId : undefined}
@@ -161,7 +203,7 @@ export default function LoginPage() {
               onClick={() => setShowPassword((visible) => !visible)}
               aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
               aria-pressed={showPassword}
-              className="absolute inset-y-0 right-0 flex items-center rounded pr-3 text-xs font-medium text-teal-300 hover:text-teal-200 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:outline-none"
+              className={signupStyles["password-toggle"]}
             >
               {showPassword ? "Ocultar" : "Mostrar"}
             </button>
@@ -170,7 +212,7 @@ export default function LoginPage() {
             <p
               id={passwordErrorId}
               role="alert"
-              className="text-xs text-red-300"
+              className="text-xs text-[#b42318]"
             >
               {passwordError}
             </p>
@@ -180,7 +222,7 @@ export default function LoginPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label
             htmlFor={keepSignedInId}
-            className="flex items-center gap-2 text-sm text-zinc-300"
+            className="flex items-center gap-2 text-sm text-[#4b5563]"
           >
             <input
               id={keepSignedInId}
@@ -188,7 +230,7 @@ export default function LoginPage() {
               type="checkbox"
               checked={keepSignedIn}
               onChange={(event) => setKeepSignedIn(event.target.checked)}
-              className="size-4 rounded border-white/25 bg-white/5 accent-teal-600 focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:outline-none"
+              className="size-4 accent-teal-700"
             />
             Manter conectado
           </label>
@@ -200,17 +242,34 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600 focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#121a18] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          className={signupStyles.submit}
         >
           {isSubmitting ? "Entrando..." : "Entrar"}
         </button>
       </form>
-      <p className="mt-5 text-center text-sm text-zinc-300">
+      <p className={signupStyles.help}>
+        Desmarque para usar cookies de sessão. O navegador pode restaurar a
+        sessão ao reabrir.
+      </p>
+      <p className={signupStyles.footer}>
         Ainda não tem conta?{" "}
         <Link href="/criar-conta" className={linkClasses}>
           Criar conta
         </Link>
       </p>
     </AuthCard>
+  );
+}
+
+export default function LoginPage() {
+  const recovery = useRecoveryFlow();
+  return (
+    <LoginForm
+      key={
+        recovery?.state.passwordChanged
+          ? `${recovery.state.email}-changed`
+          : "login"
+      }
+    />
   );
 }

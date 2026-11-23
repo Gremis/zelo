@@ -98,8 +98,11 @@ export function validateLogin(body: unknown): Result<LoginInput> {
 export function validateEmailOnly(body: unknown): Result<EmailInput> {
   const email = readTrimmed(asRecord(body).email);
 
-  if (!email) {
-    return failure({ code: "invalid_input", message: "Informe o e-mail." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return failure({
+      code: "invalid_input",
+      message: "Informe um e-mail válido.",
+    });
   }
 
   return success({ email });
@@ -114,10 +117,10 @@ export function validateResetPassword(
   const password = readRaw(record.password);
 
   const details: Record<string, string> = {};
-  if (!email) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     details.email = "Informe o e-mail.";
   }
-  if (!code) {
+  if (!/^\d{6}$/.test(code)) {
     details.code = "Informe o código.";
   }
   const passwordIssue = passwordError(password);

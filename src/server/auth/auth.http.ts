@@ -85,7 +85,13 @@ export async function authRequest(
     );
   const execute = async (body: unknown) => {
     const { getAuthService } = await import("./auth.factory");
-    return handler(await getAuthService(headers), body);
+    const persistence =
+      url.pathname === "/api/auth/login" &&
+      typeof body === "object" &&
+      body !== null
+        ? (body as { keepSignedIn?: unknown }).keepSignedIn !== false
+        : undefined;
+    return handler(await getAuthService(headers, persistence), body);
   };
   let response: NextResponse;
   try {
