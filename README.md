@@ -2197,3 +2197,38 @@ transaction rollback, cross-portfolio role IDs, keyboard input and 360px/desktop
 layout. Unit tests separately exercise whitespace validation, backend field
 errors and pending/failed submissions. No role editing, removal, activation or
 task-delegation UI is included.
+
+## Employee activation controls (ORI-53)
+
+The employee list uses the existing authenticated `PATCH /api/funcionarios/[id]`
+contract with `{ ativo: false }` for deactivation and `{ ativo: true }` for direct
+reactivation. It does not change backend permissions, session checks or portfolio
+isolation. Deactivation requires a native modal dialog, with initial focus on
+Cancel, keyboard containment and an inert background. Cancel and Escape perform
+no write; both are disabled while an operation is pending. Duplicate submissions
+are blocked for both actions.
+
+A successful operation reloads the authoritative list, preserving its existing
+active-first and name ordering. Inactive employees retain their information, have
+a `Desativado` badge and a `Reativar` action. Focus follows the same employee after
+reordering. Mutation failures preserve the previous presentation and expose a
+retry. A saved mutation followed by a failed read has a separate warning and a
+read-only retry; status controls remain disabled until that read succeeds, as the
+visible list may be stale.
+
+The existing repository updates only `funcionarios.ativo`; the database trigger
+also refreshes `updated_at`. There is no task reassignment, link invalidation or
+history rewrite in this operation. The confirmation copy follows the requested
+design and mentions delegation and link invalidation, but these effects still
+require the future backend integration.
+The affected-task warning is hidden until that integration exists. No backend or
+schema changes are required for ORI-53.
+
+Run the local browser scenario with `ORI53_LOCAL_TESTS=enabled` and the local
+Supabase credentials, alongside the ORI-51/52 opt-ins. It creates and removes only
+synthetic accounts and their data. Coverage includes persistence, ordering,
+foreign employee IDs in both directions, keyboard and focus behavior, 360 px
+layout, rejected writes, duplicate prevention and recovery after a saved mutation
+whose list refresh fails. Component tests supplement these checks without a
+backend. The existing offline PWA registration test requires its separate demo
+build flag.

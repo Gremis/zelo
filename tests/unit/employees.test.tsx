@@ -81,7 +81,7 @@ test("exposes role loading failures with a working retry and never invents optio
   expect(screen.getByLabelText("Função").children).toHaveLength(2);
 });
 
-test("identifies inactive employees without status controls and preserves labels", async () => {
+test("identifies inactive employees with reactivation controls and preserves labels", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
@@ -102,9 +102,9 @@ test("identifies inactive employees without status controls and preserves labels
   );
   render(<Employees />);
   await screen.findByText("Funcionário Sintético");
-  expect(screen.getByText("Inativo")).toBeVisible();
+  expect(screen.getByText("Desativado")).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: /[Rr]eativar|[Dd]esativar/ }),
-  ).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Reativar Funcionário Sintético" }),
+  ).toBeEnabled();
   expect(screen.getByText("—")).toBeInTheDocument();
 });
