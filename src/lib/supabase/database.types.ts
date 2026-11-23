@@ -12,6 +12,7 @@ export type Database = {
       condominiums: {
         Row: {
           address: string;
+          demo_dataset: string | null;
           id: string;
           manager_id: string;
           name: string;
@@ -20,6 +21,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           address: string;
+          demo_dataset?: string | null;
           id?: string;
           manager_id: string;
           name: string;
@@ -27,6 +29,7 @@ export type Database = {
         };
         Update: {
           address?: string;
+          demo_dataset?: string | null;
           id?: string;
           manager_id?: string;
           name?: string;
@@ -353,6 +356,7 @@ export type Database = {
         Args: { p_address: string; p_name: string };
         Returns: {
           address: string;
+          demo_dataset: string | null;
           id: string;
           manager_id: string;
           name: string;
@@ -382,6 +386,22 @@ export type Database = {
       portfolio_occurrence_queue: {
         Args: Record<PropertyKey, never>;
         Returns: Json;
+      };
+      prepare_account_demo: {
+        Args: { fixtures: Json; target_manager: string };
+        Returns: Json;
+      };
+      register_account_demo: {
+        Args: {
+          fixture_key: string;
+          registration: Json;
+          target_manager: string;
+        };
+        Returns: {
+          number: number;
+          occurrence_id: string;
+          tracking_code: string;
+        }[];
       };
       register_public_occurrence: {
         Args: {

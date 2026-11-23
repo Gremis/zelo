@@ -11,6 +11,7 @@ export type QueuePriority = (typeof QUEUE_PRIORITIES)[number];
 export type QueueCard = {
   id: string;
   number: number;
+  isDemo?: boolean;
   status: QueueStatus;
   condominium: { id: string; name: string };
   reporterUnitOrRole: string | null;
@@ -71,6 +72,7 @@ function card(value: unknown, status: QueueStatus): QueueCard {
   const row = record(value);
   const condominium = record(row.condominium);
   if (
+    (row.isDemo !== undefined && typeof row.isDemo !== "boolean") ||
     row.status !== status ||
     typeof row.suggestionPending !== "boolean" ||
     ![null, "rules", "ai"].includes(row.suggestionSource as string | null)
@@ -79,6 +81,7 @@ function card(value: unknown, status: QueueStatus): QueueCard {
   const result: QueueCard = {
     id: string(row.id),
     number: count(row.number),
+    ...(row.isDemo === undefined ? {} : { isDemo: row.isDemo as boolean }),
     status,
     condominium: { id: string(condominium.id), name: string(condominium.name) },
     reporterUnitOrRole: nullableString(row.reporterUnitOrRole),
