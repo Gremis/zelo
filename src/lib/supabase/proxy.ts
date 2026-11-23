@@ -14,6 +14,17 @@ function readConfig() {
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
   const authHeaders = new Headers();
+  if (
+    request.nextUrl.pathname === "/fila" ||
+    request.nextUrl.pathname.startsWith("/api/")
+  ) {
+    authHeaders.set("Cache-Control", "private, no-store, max-age=0");
+    authHeaders.set("Pragma", "no-cache");
+    authHeaders.set("Expires", "0");
+    authHeaders.forEach((value, key) =>
+      supabaseResponse.headers.set(key, value),
+    );
+  }
   const persistent =
     request.cookies.get(PERSISTENCE_COOKIE)?.value !== "session";
 
