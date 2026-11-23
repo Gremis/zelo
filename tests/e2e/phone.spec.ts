@@ -6,7 +6,7 @@ test("phone supports progressive typing, selection and deletion in the middle", 
   await page.goto("/criar-conta");
   const phone = page.getByRole("textbox", { name: "Celular" });
   await expect(phone).toHaveValue("");
-  await expect(phone).toHaveAttribute("placeholder", "(31) 9____-____");
+  await expect(phone).toHaveAttribute("placeholder", "(00) 90000-0000");
   await expect(phone).toHaveAttribute("type", "tel");
   await expect(phone).toHaveAttribute("inputmode", "tel");
   await expect(phone).toHaveAttribute("autocomplete", "tel");
