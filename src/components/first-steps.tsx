@@ -21,8 +21,10 @@ const steps: { id: StepId; title: string }[] = [
 
 export function FirstSteps({
   operations,
+  onDismissed,
 }: {
   operations?: FirstStepsOperations;
+  onDismissed?: () => void;
 }) {
   const [service] = useState(() => operations ?? createFirstStepsOperations());
   const [data, setData] = useState<FirstStepsState | null>(null);
@@ -65,8 +67,13 @@ export function FirstSteps({
     setError(null);
     try {
       const result = await service.dismiss();
-      if (result.ok) setData(result.data);
-      else setError("Não foi possível dispensar o quadro. Tente novamente.");
+      if (result.ok && result.data.dismissed) {
+        setData((previous) => ({
+          completed: previous?.completed ?? [],
+          dismissed: true,
+        }));
+        onDismissed?.();
+      } else setError("Não foi possível dispensar o quadro. Tente novamente.");
     } catch {
       setError("Não foi possível dispensar o quadro. Tente novamente.");
     } finally {
@@ -189,6 +196,11 @@ export function SignupFirstSteps({
 }: {
   operations?: FirstStepsOperations;
 }) {
-  const { showFirstSteps } = useSignupFlow();
-  return showFirstSteps ? <FirstSteps operations={operations} /> : null;
+  const { showFirstSteps, setShowFirstSteps } = useSignupFlow();
+  return showFirstSteps ? (
+    <FirstSteps
+      operations={operations}
+      onDismissed={() => setShowFirstSteps(false)}
+    />
+  ) : null;
 }

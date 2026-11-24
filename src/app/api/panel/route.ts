@@ -17,7 +17,7 @@ export async function GET() {
     const { supabase, user } = identity;
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("full_name, is_sindico")
+      .select("full_name, is_sindico, first_steps_dismissed_at")
       .eq("id", user.id)
       .single();
     if (profileError) throw new Error("Profile unavailable.");
@@ -48,7 +48,7 @@ export async function GET() {
         },
         firstSteps: {
           completed: count ? ["condominium"] : [],
-          dismissed: false,
+          dismissed: profile.first_steps_dismissed_at !== null,
         },
       },
       { headers },

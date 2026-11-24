@@ -207,9 +207,10 @@ Panel identity and first steps use the protected API even when development mock
 flags are present. Component mocks remain available as explicit test fixtures.
 A simulated signup is not an authenticated session and cannot unlock `/fila`.
 First steps are shown only in the current post-signup flow. Login, logout and
-a fresh page load do not show this card. First-step dismissal affects only the
-current rendered panel; per-account
-persistence belongs to ORI-48. Only the condominium step can be derived from the
+a fresh page load do not show this card. First-step dismissal is persisted per
+account in `profiles.first_steps_dismissed_at` through an authenticated RPC, and
+successful dismissal also clears the current signup presentation flag. Dismissal
+does not complete real steps. Only the condominium step can be derived from the
 existing database. Employee registration, resident-link delivery, occurrence
 history and their navigation destinations remain unavailable.
 
@@ -2095,3 +2096,350 @@ other PRs to hide inherited work. Temporary deployment checker/workflow changes
 were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
+
+### Occurrence detail card and priority decision (ORI-70)
+
+`/fila` opens the occurrence card from a queue card or its "Abrir ocorrência"
+button. On desktop the card is a modal over the dimmed queue: page scroll is
+locked, focus moves to "Fechar", Tab is trapped inside the panel, and the card
+closes on the X, Escape or a backdrop click. At 1000px and below the panel
+expands in place inside the current tab as a single column, the queue content is
+hidden while it is open, and the previous page scroll is restored on close. The
+X is always the first control and exposes the accessible name "Fechar".
+
+The header shows number, condominium, status, the report as title, and unit,
+location and registration time in the Sao Paulo calendar. The case column keeps
+the priority select (Urgente/Normal/Baixa), the suggestion state ("Sugerida pelo
+Sindicondo" until a decision exists, then "Sugerida: <prioridade>"), the
+suggestion reason, the category, and "Registrada por" with the reporter name,
+phone and unit or role. "Por que mudou? (opcional)" appears only when the final
+priority differs from the suggested one, and stores the reason immediately.
+
+`GET /api/occurrences/[id]` reads the card through the `occurrence_detail` RPC.
+Only confirmed managers of the occurrence's condominium can read it; another
+portfolio returns no row, so HTTP 404 is indistinguishable from a missing
+occurrence. `PATCH /api/occurrences/[id]/priority` calls
+`decide_occurrence_priority`, which requires an active confirmed session, locks
+completed occurrences with 409, keeps the original suggested priority immutable,
+stores the final priority and change reason as occurrence data and never writes
+a history row.
+
+Activity stays open, newest first, with date, time and author, and shows the
+viewer as "(síndico, você)" while the stored event keeps the author name. The
+text-only update box sits above the history, is hidden for completed occurrences
+and posts to `POST /api/occurrences/[id]/updates`, which reuses the existing
+append-only occurrence event service. Empty text returns "Escreva a
+atualização.", a successful insert clears the box and adds the newest row, and
+updates never change status or priority. Attachments (ORI-66) and
+responsible/deadline/completion (ORI-72) remain out of scope, as do editing or
+deleting an update.
+
+Migration `20261123120000_occurrence_detail_priority.sql` adds both functions
+with fixed search paths, explicit grants and no service_role bypass. Local
+validation passed: formatting, ESLint, route types/TypeScript, 615 unit tests,
+the nine database test files (598 assertions, including the new
+`occurrence-detail.test.sql`) and the 13 occurrence queue browser cases covering
+desktop, 360px mobile, priority change, reason selection, manager updates,
+empty-update validation, Esc/backdrop closing and another-portfolio 404. The
+local database required `npm run db:stop` and `npm run db:start` after
+`npm run db:reset` because the reset left storage unhealthy on this host; the
+reset itself applied every migration before the failed health check.
+
+### Public occurrence registration (ORI-59)
+
+The existing stable `/c/{slug}` condominium link identifies the public form's
+condominium. No login is required. `GET /api/public/condominiums/{slug}` returns
+only `{"name":"Condomínio Exemplo","address":"Endereço de exemplo"}`. A missing
+link or a condominium whose manager is no longer a manager returns HTTP 404 with
+`code: "not_found"`; infrastructure failures return 503 with `code: "unavailable"`.
+There is no additional condominium activation flag. Responses use `no-store`.
+
+`POST /api/public/condominiums/{slug}/occurrences` accepts JSON and requires an
+`Idempotency-Key` header containing a UUID. Example body:
+
+```json
+{
+  "reporterName": "Ana",
+  "reporterUnitOrRole": "Porteiro",
+  "reporterPhone": "11900000000",
+  "location": "Hall de entrada",
+  "description": "Lâmpada apagada"
+}
+```
+
+The response is HTTP 200 with `{"number":123}` for both creation and replay,
+only after the database transaction commits. No personal data, internal ID or
+tracking token is returned. Only the five listed fields are accepted. Name,
+unit/role and location allow up to 200 characters; description allows 10,000.
+All require nonblank strings and reject NUL. Phone requires 11 digits: DDD plus
+a mobile number beginning with 9. Text is trimmed before persistence. A single
+name and self-declared roles such as `Porteiro` are valid. No employee lookup is
+performed. Cookies do not select the condominium or author; the public API skips
+session refresh and uses the route slug, anonymous resolution and server-only
+service credentials for registration.
+
+Validation failures return HTTP 400 with `code: "invalid_input"` and a `fields`
+object keyed by input field, `attemptKey`, or `body`. Unexpected fields are a
+`body` error. Reusing a key with changed normalized content returns HTTP 409 with
+`code: "conflict"`. Errors contain no database diagnostics or submitted values.
+
+The frontend must generate `crypto.randomUUID()` once per submission attempt,
+keep the key together with the exact payload while the outcome is uncertain,
+and reuse both after timeouts, connection loss or retry. Keep the pending attempt
+across navigation/reload if retry recovery is offered, and clear it after confirmed
+success or explicit abandonment. Do not generate a new key merely because the
+response was lost. A deliberate new report or edited payload needs a new key;
+a 409 must not silently submit another report. Identical reports with independent
+keys are allowed. The server trims surrounding whitespace, so this normalization
+does not change attempt identity. No time-based expiry is currently applied.
+
+The incremental migration stores a SHA-256 content fingerprint and the committed
+occurrence reference in a private table keyed by condominium and attempt UUID.
+A transaction-scoped advisory lock serializes concurrent requests for the same
+pair. Fingerprint conflicts return no receipt. The wrapper calls the existing
+`register_public_occurrence_with_suggestion` RPC, preserving the central service's
+risk classification, global database sequence and shared initial event writer.
+Occurrence, initial event and attempt are committed or rolled back together.
+Sequence gaps after rollback remain possible. Existing history is never rewritten.
+No anonymous table permissions are added.
+
+Run `npx vitest run --config vitest.db.config.mts tests/db/public-registration.integration.test.ts`
+against the project-local running stack after `supabase migration up --local`.
+These tests exercise the route handlers against real local Supabase, concurrency,
+rollback injection and authenticated queue isolation with synthetic fixtures.
+ORI-60 and ORI-61 now deliver the resident form, field error presentation,
+in-memory retry recovery and confirmed-number presentation directly on
+`/c/{slug}`, using these existing endpoints. See the joint delivery below for
+recovery limits and local browser validation.
+
+### ORI-59 publication review
+
+The integrated comparison baseline is `a82798b` (ORI-70 plus the ORI-50 merge,
+which already contains ORI-49), before the ORI-59 implementation. Both this
+baseline and the current application passed the standard `npm run build` with
+Turbopack after fresh `npm ci` in separate disposable `node:24-alpine` containers
+(the installed image reports Node 24.22.2). Each container used a temporary copy
+from a read-only source mount, excluding environment files, Git metadata,
+dependencies, build output and provider state. No ports were published, and no
+existing container, bundler, deployment or security configuration was changed.
+The resulting production outputs were served separately on host Node 24.22.3 by
+Playwright's exclusive loopback server.
+
+The earlier 31 browser failures were validation-environment failures from the
+Webpack fallback, not demonstrated ORI-59 or integration regressions. That output
+retained `@tailwind utilities` without generating `.flex` or `.grid`; the project's
+Tailwind loader is configured under `turbopack.rules`. Visual fixtures also discover
+CSS under `.next/static/chunks`, while the fallback emitted CSS under
+`.next/static/css`. These differences invalidated the layout and interaction
+results. No application layout or existing assertion was changed to obtain approval.
+
+| Previously failing group     | Cases | Integrated baseline, standard build | ORI-59, standard build |
+| ---------------------------- | ----: | ----------------------------------- | ---------------------- |
+| Authentication layout        |    14 | Passed                              | Passed                 |
+| Login/recovery accessibility |     2 | Passed                              | Passed                 |
+| Signup/confirmation          |     4 | Passed                              | Passed                 |
+| Condominium visual fixtures  |     5 | Passed                              | Passed                 |
+| Queue layout/expansion       |     4 | Passed                              | Passed                 |
+| Detail card interaction      |     2 | Passed                              | Passed                 |
+
+The recorded 31 failure IDs from the previous run were matched individually to
+passing results in both new JSON reports. The full baseline run passed 56 tests
+with 15 existing opt-in skips; ORI-59 passed the same 56 with those 15 skips plus
+the new local database test's explicit opt-in. Neither run had failures or flaky
+results. The public HTTP test was then enabled separately against the real local
+stack and the standard container output and passed. Prior failure traces remain
+in the ignored `test-results` directory. Comparison build logs and JSON reports
+were retained locally in the temporary review directory.
+
+Coverage review retained the existing rollback, content-conflict and independent
+attempt cases. It strengthened the same-attempt concurrent test with an explicit
+single persisted attempt/occurrence and single initial event assertion, checked
+both receipts against their condominium IDs when sharing a key, and verified
+anonymous read denial on private occurrence/history tables. The HTTP test now
+forwards a real browser submission, waits for its committed server response,
+discards that response with a simulated connection reset, verifies the committed
+number in the local database and recovers exactly that number by retrying. Both
+initial and recovered responses are checked for an exact number-only contract;
+public resolution is name/address-only, and unauthenticated private detail/queue
+requests return only an error. No resident frontend was implemented.
+
+After these additions, all nine targeted real database tests and the enabled HTTP
+browser test passed. Existing approved checks were not repeated without a related
+change. These local results establish no remaining ORI-59 publication blocker;
+remote Quality execution must be verified on the published PR. Publication is
+handled separately through the feature branch and a reviewed PR to develop; no
+merge, deployment or shared-environment operation is part of this task.
+
+### ORI-57 attachment metadata and tracking schema acceptance
+
+ORI-57 is based on `feature/ori-59-public-occurrence-registration` at `b6c4e59`.
+The starting tree was clean. Inspection of ORI-62/63/64/59 found that all requested
+schema criteria were already implemented; this task adds acceptance evidence and
+missing validation without another migration, table, writer or application path.
+
+| Criterion                                                  | Existing implementation                                                                                                                                                                             | Validation                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Long, random, nonsequential tracking code                  | ORI-62 `occurrences.tracking_code`: nonnull default `encode(extensions.gen_random_bytes(32), 'hex')`, 64 hexadecimal characters, unique constraint; separate identity `number`                      | Existing occurrence SQL and concurrency tests cover persistence, format and duplicate rejection; ORI-57 verifies the default and its dependency on the pgcrypto function                                                                               |
+| Private file identification                                | ORI-62 `occurrence_attachments`: UUID, occurrence/event IDs, bucket/path, original filename, MIME type, positive byte size and database timestamp; unique bucket/path; URL-only references rejected | Existing SQL tests cover required/nonblank fields, MIME, positive size, URL and duplicate-path rejection; generated-type assertions cover required inputs and defaulted identity/time                                                                  |
+| Attachment belongs to its introducing event and occurrence | Composite FK `(occurrence_id, event_id)` references `occurrence_events(occurrence_id, id)`, with restricted deletion/update                                                                         | Existing SQL tests reject mismatched association and destructive deletion; ORI-57 additionally rejects a mismatched INSERT between occurrences in the same portfolio                                                                                   |
+| History integrity                                          | ORI-63 append-only update/delete/truncate triggers and restricted references                                                                                                                        | Existing history-access SQL tests cover application roles and accidental grants; ORI-57 verifies that metadata insertion and an idempotent retry leave the original event and metadata unchanged                                                       |
+| Private reads and portfolio isolation                      | Forced RLS, authenticated portfolio SELECT policies and no anonymous private-table grants; no direct application-role writes                                                                        | Existing SQL tests cover both portfolios and anonymous reads; ORI-57 explicitly verifies that knowing the tracking code grants neither foreign-portfolio reads nor administrative writes                                                               |
+| Creation and retry compatibility                           | ORI-64 shared initial event writer, existing suggestion-aware atomic creator and ORI-59 private attempt record/transaction lock                                                                     | Existing public-registration integration tests cover rollback, concurrent idempotency and number-only responses; ORI-57 checks that retry after metadata persistence returns the same internal occurrence/code and still has exactly one initial event |
+
+`npm run db:types` was executed against the already running local stack and
+produced no diff: generated occurrence/tracking and attachment relationship types
+already match the schema. Existing codes and historical migrations are unchanged.
+No database reset, migration application or remote/shared-environment operation is
+needed for this acceptance-only change. New SQL fixtures run inside a transaction
+that is rolled back, using the existing local database and central RPCs.
+
+Changes are limited to `supabase/tests/database/attachments-tracking.test.sql`,
+additional contract assertions in `tests/unit/database/occurrences-types.test.ts`
+and this README. Existing tests are reused rather than duplicated. The schema
+represents persisted metadata only: no bucket, Storage policy, upload, download,
+file processing, resident form, visual confirmation or public tracking page/API
+is implemented. A tracking code is not an administrative credential. The ORI-59
+HTTP response remains number-only, and condominium resolution remains name/address-only.
+
+Local validation on Node 24.22.3 passed: `npm run test:db` (687 assertions across
+12 suites, including 13 new ORI-57 assertions), the nine existing public-registration
+integration cases, all 669 unit tests, formatting/write and check, ESLint, route
+type generation/TypeScript and the production dependency audit (zero
+vulnerabilities). Build and browser suites were not repeated because no application
+code, schema, generated output, configuration or dependency changed. All database
+validation remained local. Publication is handled separately through a reviewed
+PR to develop that depends on ORI-59; no merge, deployment or shared-environment
+change is part of this task.
+
+### ORI-60 and ORI-61 joint public form delivery
+
+ORI-60 and ORI-61 are delivered together on
+`feature/ori-60-61-public-occurrence-form`, based on ORI-57 at `585faf6`.
+The resident interface uses real ORI-59 persistence from the first delivery;
+there is no simulated persistence, application demo flag or alternate writer.
+
+`/c/{slug}` mounts `PublicOccurrenceForm`. Typed contracts, HTTP operations and
+client validation live in `src/lib/public-occurrences`; components do not issue
+HTTP requests directly. Lookup uses the existing public GET and presents real
+name/address, loading, unavailable-link and retryable technical-error states.
+Registration uses the existing public POST with exactly the five declared fields
+and `Idempotency-Key`; browser credentials are omitted by both operations. Existing
+sessions never supply reporter values or authorship. Backend, migrations, types,
+priority classification and queue contracts are unchanged.
+
+The form reuses `PhoneInput` and its progressive Brazilian DDD mask, accepts a
+single name and self-declared roles such as `Porteiro`, and validates the existing
+200/10,000-character limits and 11-digit mobile contract without truncating input.
+All fields have labels, associated errors, invalid/described-by attributes and
+visible keyboard focus. Invalid submission focuses the first invalid field in
+visual order; editing does not move focus unexpectedly. Successful confirmation
+focuses its heading and displays only the real returned number. `Registrar outra`
+clears the fields/errors/completed attempt and keeps the same condominium.
+
+A UUID and normalized immutable payload are created only for a valid attempt.
+A synchronous processing guard prevents duplicate submits. Timeouts, network
+failures, 5xx responses and malformed success receipts retain an uncertain outcome:
+fields become read-only, no success is displayed, and `Recuperar envio original`
+reuses exactly the same key and payload. HTTP 400 maps known server field errors
+and permits correction with a new attempt; HTTP 404 presents link unavailability.
+HTTP 409 is explicit and never triggers an automatic new key or submission.
+Starting another report while the prior outcome is uncertain/conflicting requires
+explicit confirmation of the potential duplication risk. There are no automatic
+submission retries.
+
+Attempts and personal input exist only in component memory. Reloading, closing or
+navigating away loses this recovery state; the interface warns users to keep the
+page open after an uncertain outcome. No cross-reload recovery is promised. No
+personal values are written to localStorage, sessionStorage, URLs or logs. The
+backend idempotency record remains persistent, but the browser cannot recover an
+attempt once it has discarded its key/payload. A malformed response never becomes
+a fictitious confirmation.
+
+Public links still come from the existing condominium service's validated
+`PUBLIC_APP_ORIGIN`; no request-header origin override or fixed production domain
+was introduced. Local review explicitly supplied `http://127.0.0.1:3100` to the
+review server. The real condominium test asserts the generated URL and navigates
+to that exact URL, while the existing condominium flow verifies link copying.
+
+Validation on Node 24.22.3 passed formatting/write and check, ESLint, route types
+and TypeScript, 692 unit tests (including 23 new public-operation/component cases),
+687 SQL assertions, nine existing public-registration integration cases and the
+production audit with zero vulnerabilities. The standard `npm run build` passed
+after fresh `npm ci` in a disposable `node:24-alpine` container (Node 24.22.2),
+without environment files, provider state or published ports. Its production
+output was served on the host with the exact same application source.
+
+The browser suite passed 62 tests, with 16 unchanged/local opt-in skips and zero
+failures. New interface tests exercise 360/768/1280px, long content, keyboard,
+phone typing/paste, server errors, pending-submit blocking, uncertainty and 409.
+Then the local database options were enabled explicitly for
+`public-registration-local.spec.ts` and `condominiums-local.spec.ts`: both passed
+against real backend/database, without a fixture fallback. They verify creation
+through the condominium API, anonymous resident submission, a real confirmed
+number, `new` status, the initial reporter event, queue refresh and other-portfolio
+isolation. A signed-in other manager submits `Porteiro`; its server response is
+dropped after commit, and recovery through the interface uses the same key/body
+and returns the same number with one initial event. `Registrar outra` also clears
+the resident form while retaining its condominium.
+
+A retained synthetic local review at `/c/de-revisao-xx28` produced occurrence
+`#3727`: database status `new`, exactly one initial event, no authenticated author
+and visibility in the responsible manager's queue after reload. This fixture is
+local-only and is not seeded, configured or recreated by application code. To
+verify the complete flow in an existing reviewer account, create/use a condominium
+in that account and copy its own public link; the retained review fixture belongs
+to a separate synthetic account.
+
+Comparison captures from the real local interface are in `docs/`:
+`ori-60-61-public-form-360.png`, `ori-60-61-public-form-desktop.png`,
+`ori-60-61-public-errors-360.png`, `ori-60-61-public-confirmation-360.png`,
+`ori-60-61-public-confirmation-desktop.png` and `ori-60-61-owner-queue.png`.
+
+Attachments, public tracking, manager-panel registration, phone-based limits,
+notifications and realtime queue updates remain outside this delivery. No backend
+contract change, database reset, remote configuration, shared-environment operation
+or deployment was performed for this local implementation. Publication is handled
+separately through the feature branch and a reviewed PR to develop.
+
+The final visual refinement reduces inputs to 40px, buttons to 44px and the
+spacing between fields, with a smaller header and report area. Its standard
+Turbopack container build, affected component tests and 360/1280px browser
+inspection passed; the final form/error captures reflect this compact layout.
+
+### Onboarding and condominium-state corrections
+
+Migration `20261124140000_persist_first_steps_dismissal.sql` adds the nullable
+profile preference and `dismiss_first_steps()`. The RPC requires an active
+confirmed manager session, accepts no account parameter and preserves the first
+database-generated timestamp on retries. Anonymous/service-role execution and
+direct authenticated column updates are not granted. Existing profile RLS
+isolates reads. `POST /api/panel/first-steps/dismiss` confirms the write; the panel
+GET reads the saved preference independently of actual completed steps.
+
+The green signup notice is removed from the DOM after its existing eight visible
+seconds, removing its height and margin. Condominium loading retains distinct
+loading/error/success-empty states. A successful empty response presents
+`Nenhum condomínio por enquanto` and `Cadastre seu primeiro condomínio para começar.`
+using the queue's existing card pattern; real failures retain retry.
+
+Local validation passed: 706 unit tests, 703 SQL assertions, formatting/write and
+check, ESLint, route types/TypeScript, production audit with zero vulnerabilities,
+and the standard Turbopack build in a disposable Node 24 container. Browser
+validation passed 62 tests with 17 local opt-in skips; four enabled real local
+tests then passed, including signup, notice layout collapse, dismissal,
+navigation, reload, another login/device and isolation from another account.
+Types were regenerated from the running local database after applying only the
+new incremental migration, without reset.
+
+The published condominium failure remains unconfirmed and is not claimed as
+fixed. The real local empty-account GET returned HTTP 200 with
+`{"condominiums":[]}`. In the published browser's Network panel, inspect the
+authenticated `GET /api/condominiums` status and Response after reload. Distinguish
+that successful empty response from 401/403/503 or network/response failures;
+record only sanitized diagnostics, without cookies or tokens. A generic error
+alone does not establish a `PUBLIC_APP_ORIGIN` problem. Its environment
+configuration will be applied with the next authorized deployment; no environment
+value, deployment workflow or remote setting was changed here. The existing
+pipeline will apply the pending versioned migration before publishing the
+matching server. No new variable or manual backfill is required. Copy/paste-assisted
+form filling remains a future improvement and is not implemented.

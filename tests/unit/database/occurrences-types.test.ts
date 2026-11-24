@@ -69,3 +69,38 @@ test("generated attachment relationships preserve the composite event and occurr
     TablesInsert<"occurrence_attachments">
   >();
 });
+
+test("tracking code is a required persisted string with a database insert default", () => {
+  expectTypeOf<
+    Tables<"occurrences">["tracking_code"]
+  >().toEqualTypeOf<string>();
+  expectTypeOf<TablesInsert<"occurrences">["tracking_code"]>().toEqualTypeOf<
+    string | undefined
+  >();
+});
+
+test("attachment insert requires event linkage and private file identification while identity and time default in the database", () => {
+  type Insert = TablesInsert<"occurrence_attachments">;
+  type Required = Pick<
+    Insert,
+    | "occurrence_id"
+    | "event_id"
+    | "storage_bucket"
+    | "storage_path"
+    | "file_name"
+    | "content_type"
+    | "size_bytes"
+  >;
+  expectTypeOf<Required>().toEqualTypeOf<{
+    occurrence_id: string;
+    event_id: number;
+    storage_bucket: string;
+    storage_path: string;
+    file_name: string;
+    content_type: string;
+    size_bytes: number;
+  }>();
+  expectTypeOf<Required>().toExtend<Insert>();
+  expectTypeOf<Insert["id"]>().toEqualTypeOf<string | undefined>();
+  expectTypeOf<Insert["created_at"]>().toEqualTypeOf<string | undefined>();
+});

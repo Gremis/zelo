@@ -9,11 +9,15 @@ import {
 
 function databaseFailure(code: unknown): never {
   throw new OccurrenceWriteError(
-    code === "22023"
-      ? "invalid_input"
-      : code === "42501"
-        ? "access_denied"
-        : "unavailable",
+    code === "P0002"
+      ? "not_found"
+      : code === "P0003"
+        ? "conflict"
+        : code === "22023"
+          ? "invalid_input"
+          : code === "42501"
+            ? "access_denied"
+            : "unavailable",
   );
 }
 
@@ -40,7 +44,9 @@ export function createOccurrenceEventRepository(
           };
         const response = await fetch(
           new URL(
-            "/rest/v1/rpc/register_public_occurrence_with_suggestion",
+            input.attemptKey
+              ? "/rest/v1/rpc/register_public_occurrence_attempt"
+              : "/rest/v1/rpc/register_public_occurrence_with_suggestion",
             url,
           ),
           {
@@ -50,7 +56,10 @@ export function createOccurrenceEventRepository(
               Authorization: `Bearer ${key}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify({
+              ...body,
+              ...(input.attemptKey ? { attempt_key: input.attemptKey } : {}),
+            }),
             cache: "no-store",
             signal: AbortSignal.timeout(15_000),
           },

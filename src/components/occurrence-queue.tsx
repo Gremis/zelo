@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { PanelPageTitle } from "./panel-page-title";
+import { OccurrenceDetailPanel } from "./occurrence-detail";
 import type {
   PortfolioQueue,
   QueueCard,
@@ -252,9 +253,15 @@ export function OccurrenceCard({
 export function OccurrenceQueue({
   state,
   onOpenOccurrence,
+  detail,
 }: {
   state: QueuePresentation;
   onOpenOccurrence?: (id: string) => void;
+  detail?: {
+    id: string;
+    onClose: () => void;
+    onChanged?: () => void;
+  } | null;
 }) {
   const [selected, setSelected] = useState<QueueStatus>("new");
   const mobile = useSyncExternalStore(
@@ -345,6 +352,13 @@ export function OccurrenceQueue({
           Carregando ocorrências…
         </p>
       )}
+      {detail && (
+        <OccurrenceDetailPanel
+          occurrenceId={detail.id}
+          onClose={detail.onClose}
+          onChanged={detail.onChanged}
+        />
+      )}
       {state.status === "error" ? (
         <div
           role="alert"
@@ -365,7 +379,7 @@ export function OccurrenceQueue({
           </button>
         </div>
       ) : (
-        <>
+        <div className={detail ? "max-[1000px]:hidden" : undefined}>
           {empty && (
             <div className="mt-[18px] rounded-[10px] border border-[#e5e7eb] bg-white p-4">
               <h2 className="text-sm font-semibold">
@@ -472,7 +486,7 @@ export function OccurrenceQueue({
               </section>
             ))}
           </div>
-        </>
+        </div>
       )}
     </section>
   );
