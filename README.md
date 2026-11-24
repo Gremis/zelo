@@ -207,9 +207,10 @@ Panel identity and first steps use the protected API even when development mock
 flags are present. Component mocks remain available as explicit test fixtures.
 A simulated signup is not an authenticated session and cannot unlock `/fila`.
 First steps are shown only in the current post-signup flow. Login, logout and
-a fresh page load do not show this card. First-step dismissal affects only the
-current rendered panel; per-account
-persistence belongs to ORI-48. Only the condominium step can be derived from the
+a fresh page load do not show this card. First-step dismissal is persisted per
+account in `profiles.first_steps_dismissed_at` through an authenticated RPC, and
+successful dismissal also clears the current signup presentation flag. Dismissal
+does not complete real steps. Only the condominium step can be derived from the
 existing database. Employee registration, resident-link delivery, occurrence
 history and their navigation destinations remain unavailable.
 
@@ -2404,3 +2405,41 @@ The final visual refinement reduces inputs to 40px, buttons to 44px and the
 spacing between fields, with a smaller header and report area. Its standard
 Turbopack container build, affected component tests and 360/1280px browser
 inspection passed; the final form/error captures reflect this compact layout.
+
+### Onboarding and condominium-state corrections
+
+Migration `20261124140000_persist_first_steps_dismissal.sql` adds the nullable
+profile preference and `dismiss_first_steps()`. The RPC requires an active
+confirmed manager session, accepts no account parameter and preserves the first
+database-generated timestamp on retries. Anonymous/service-role execution and
+direct authenticated column updates are not granted. Existing profile RLS
+isolates reads. `POST /api/panel/first-steps/dismiss` confirms the write; the panel
+GET reads the saved preference independently of actual completed steps.
+
+The green signup notice is removed from the DOM after its existing eight visible
+seconds, removing its height and margin. Condominium loading retains distinct
+loading/error/success-empty states. A successful empty response presents
+`Nenhum condomínio por enquanto` and `Cadastre seu primeiro condomínio para começar.`
+using the queue's existing card pattern; real failures retain retry.
+
+Local validation passed: 706 unit tests, 703 SQL assertions, formatting/write and
+check, ESLint, route types/TypeScript, production audit with zero vulnerabilities,
+and the standard Turbopack build in a disposable Node 24 container. Browser
+validation passed 62 tests with 17 local opt-in skips; four enabled real local
+tests then passed, including signup, notice layout collapse, dismissal,
+navigation, reload, another login/device and isolation from another account.
+Types were regenerated from the running local database after applying only the
+new incremental migration, without reset.
+
+The published condominium failure remains unconfirmed and is not claimed as
+fixed. The real local empty-account GET returned HTTP 200 with
+`{"condominiums":[]}`. In the published browser's Network panel, inspect the
+authenticated `GET /api/condominiums` status and Response after reload. Distinguish
+that successful empty response from 401/403/503 or network/response failures;
+record only sanitized diagnostics, without cookies or tokens. A generic error
+alone does not establish a `PUBLIC_APP_ORIGIN` problem. Its environment
+configuration will be applied with the next authorized deployment; no environment
+value, deployment workflow or remote setting was changed here. The existing
+pipeline will apply the pending versioned migration before publishing the
+matching server. No new variable or manual backfill is required. Copy/paste-assisted
+form filling remains a future improvement and is not implemented.
