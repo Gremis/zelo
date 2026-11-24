@@ -2443,3 +2443,311 @@ value, deployment workflow or remote setting was changed here. The existing
 pipeline will apply the pending versioned migration before publishing the
 matching server. No new variable or manual backfill is required. Copy/paste-assisted
 form filling remains a future improvement and is not implemented.
+
+## Private occurrence upload backend (ORI-58)
+
+Branch `feature/ori-58-private-occurrence-uploads` continues from the integrated
+ORI-60/61 branch with explicit authorization. This delivery adds backend routes
+only. The public form remains text-only and its five-field registration contract
+works without preparation or upload credentials. No attachment UI, manager
+downloads, update attachments, completion attachments or public tracking is added.
+
+### Limits and inspection
+
+| File            | Extensions and MIME                                                           | Maximum                  |
+| --------------- | ----------------------------------------------------------------------------- | ------------------------ |
+| Static JPEG     | `.jpg`, `.jpeg`; `image/jpeg`                                                 | 8 MiB, 50,000,000 pixels |
+| Static PNG      | `.png`; `image/png`                                                           | 8 MiB, 50,000,000 pixels |
+| Static WebP     | `.webp`; `image/webp`                                                         | 8 MiB, 50,000,000 pixels |
+| Unencrypted PDF | `.pdf`; `application/pdf`                                                     | 10 MiB                   |
+| MP4             | `.mp4`; `video/mp4`; one H.264 video track and at most one AAC-LC audio track | 25 MiB                   |
+
+Each upload attempt has 1–5 files and at most 40 MiB in total. Attachments are
+optional: use the unchanged registration endpoint directly when there are none.
+HEIC/HEIF, MOV, WebM, GIF, SVG and other types are rejected. This limits uploads
+from native iPhone libraries; the browser is not assumed to convert originals.
+
+The server checks extension, declared MIME, actual byte length, detected format
+and parser output. `file-type` detects signatures, `sharp` decodes images with
+pixel/frame limits, `pdf-lib` loads PDF structure without ignoring encryption,
+and `mp4box` inspects tracks, codecs and sample ranges. Video inspection does not
+decode every frame, and PDF parsing does not remove active content. These checks
+are format validation, not antivirus, sanitization or a malware-free guarantee.
+The parsers do not compress, convert or rewrite stored originals.
+
+Inspection runs in a separate Node process with a 96 MiB V8 old-generation limit,
+512 KiB stack setting, a 15-second execution deadline, disabled libvips cache and
+one libvips thread. Input is bounded to the reserved size and 25 MiB before parsing;
+the download deadline is 20 seconds. Validation I/O and inspection share a
+40-second deadline, leaving room for recording a retry before the route's
+60-second limit. There is at most one inspection per application process and one
+active inspection lease per condominium across instances. Leases expire after
+90 seconds and stale completions are refused. The child receives no Supabase or
+Cron secrets.
+
+On Linux, including Vercel, and macOS, the parent samples child RSS on a 50 ms
+timer and kills it above 384 MiB, using `/proc` or `ps` respectively. This is a
+sampled application limit, not an OS-enforced memory sandbox; transient native
+allocations can exceed it between samples. A file that exceeds parser resource limits can be rejected even when
+its upload size is allowed. Next.js file tracing explicitly includes the child
+script and its runtime dependencies for the validation route.
+
+### Private objects and atomic registration
+
+Migration `20261124160000_private_occurrence_uploads.sql` provisions the private
+`occurrence-evidence` bucket with a 25 MiB object limit and the five exact MIME
+types above. It adds private upload sessions and reservations with no direct
+application table grants, service-only operation RPCs, and an incremental
+replacement of the idempotent registration RPC with an optional upload secret.
+Existing occurrence, event and attachment tables and the central event writer
+are reused. The generated database types come from the local database.
+
+Only the server creates paths. A signed upload token allows insertion at one
+`incoming/{attempt}/{file}` path with upsert disabled. The server copies the
+object to a different `evidence/{attempt}/{file}` path and inspects that copy.
+No upload authorization is issued for the evidence path. The evidence copy is
+never overwritten on retries. Consequently a still-valid incoming token cannot
+change validated or linked evidence, even if the client changes `x-upsert` or
+substitutes a destination path. Local Storage integration tests exercise these
+replays and compare hashes of the stored evidence.
+
+There are no general anonymous or authenticated object policies for this bucket.
+Knowing a slug or object path grants no download or listing rights. Only server
+code uses the existing `SUPABASE_SERVICE_ROLE_KEY`. Future manager downloads must
+authorize an active confirmed manager through the occurrence's condominium
+before granting short-lived read access; that endpoint is not part of this delivery.
+
+The session is scoped to its condominium, a UUID attempt key and the SHA-256 hash
+of a separate 32-byte random secret. Preparation freezes the file manifest.
+All files must have verified contents and stored hashes before finalization.
+One database transaction creates the occurrence through the existing service,
+finds its unique initial `registered` event, inserts the attachment metadata,
+records the idempotent receipt and links the session. The existing composite
+foreign key enforces the event/occurrence relationship. The idempotency hash
+includes normalized report fields and verified file identities, sizes and hashes.
+Concurrent finalizations and retries after a lost response return the same number.
+A prepared attempt cannot silently fall back to registration without its files.
+
+Storage and PostgreSQL do not share a transaction. Transfer/inspection failure
+leaves no occurrence; registration failure leaves private temporary objects for
+retry or cleanup. No file is silently discarded. A transient validation failure
+can be retried with the same file ID. Invalid content is terminal for that
+reservation: explicitly cancel the unlinked attempt and prepare a new key and
+manifest to replace or remove files. First recover an uncertain registration
+result; never automatically create a new key after an uncertain finalization.
+
+### HTTP contract
+
+All routes return `Cache-Control: no-store`. Upload credentials must not enter
+query parameters, logs or persistent browser storage. Generate the UUID and a
+64-character lowercase hexadecimal secret in the client before preparation;
+retain both in memory so preparation can be recovered after a lost response.
+
+| Operation                          | Route relative to `/api/public/condominiums/{slug}`    |
+| ---------------------------------- | ------------------------------------------------------ |
+| Prepare                            | `POST /upload-attempts`                                |
+| Recover state/number               | `GET /upload-attempts/{key}`                           |
+| Cancel                             | `DELETE /upload-attempts/{key}`                        |
+| Authorize one reserved file        | `POST /upload-attempts/{key}/files/{fileId}/authorize` |
+| Validate one uploaded file         | `POST /upload-attempts/{key}/files/{fileId}/validate`  |
+| Register all files with the report | Existing `POST /occurrences`                           |
+
+Every upload operation requires `Upload-Token: <secret>`. Preparation also
+requires `Idempotency-Key: <uuid>`. Registration with files uses those same two
+headers. Registration without files continues to require only `Idempotency-Key`.
+
+Preparation accepts a JSON array, for example:
+
+```json
+[{ "name": "photo.jpg", "contentType": "image/jpeg", "size": 12345 }]
+```
+
+It returns `{ id, state, expiresAt, number, files }`. File entries include `id`,
+`name`, `contentType`, `size`, `state` and `failure`. Match reservations to local
+files by returned metadata, not array position. Identical metadata reservations
+are interchangeable before transfer. Preparation is repeatable with the same
+key, secret and manifest; changing the manifest returns 409. Its JSON body is
+limited to 16 KiB and five seconds.
+
+Authorization returns `{ bucket, path, token, signedUrl, tusEndpoint,
+expiresIn: 7200, upsert: false }`. Use `uploadToSignedUrl(path, token, file)` for
+standard uploads. Future TUS clients must use the returned signed endpoint
+`/storage/v1/upload/resumable/sign`, the token as `x-signature`, and the exact
+bucket/path as TUS metadata. They must not request upsert. Local integration
+tests perform real signed TUS creation and PATCH upload without a user account.
+`tus-js-client` is deliberately not installed until the frontend delivery.
+
+Validation returns `{ fileId, state: "valid" }`, or 422 with `invalid_content`.
+Transient provider failures return 503; closed attempts, conflicting requests or
+busy inspection leases return 409. Wrong credentials, condominium or file
+associations return 404. Malformed input returns 400. Persisted operational
+budgets allow at most 20 prepared sessions per condominium per hour and ten
+authorizations per reserved file; reservation exhaustion returns 429. These
+budgets limit abuse but do not replace future traffic protection.
+
+The final registration body remains:
+
+```json
+{
+  "reporterName": "Synthetic reporter",
+  "reporterUnitOrRole": "Synthetic unit",
+  "reporterPhone": "11900000000",
+  "location": "Synthetic hall",
+  "description": "Synthetic report"
+}
+```
+
+Success remains `{ "number": 123 }`, without tracking codes or download links.
+The protected state endpoint also returns the linked number for recovery.
+
+### Cancellation, cleanup and future deployment configuration
+
+Attempts are open for 24 hours. Cancellation is repeatable, immediately prevents
+finalization and new authorizations, and does not revoke already-issued Storage
+tokens. Cancellation after linking returns a conflict and never deletes history.
+The Storage signed token lasts two hours; TUS sessions can remain active longer.
+Cleanup conservatively waits 48 hours after the last authorization, inspection
+activity or successful association, and never renews a closed session.
+
+`GET /api/internal/attachments/cleanup` requires
+`Authorization: Bearer <CRON_SECRET>` and refuses missing configuration. The
+proxy bypasses session refresh for this exact route. The job claims up to 25
+sessions at a time, closes unlinked sessions against finalization, and removes
+only paths not referenced by `occurrence_attachments`, using the Storage API.
+For linked sessions it removes only incoming copies. Repeated or concurrent runs
+are safe; failed deletion retains the cleanup work. Metadata tombstones remain
+to prevent reopening cancelled or cleaned keys. The loop has a time budget and
+returns `{ cleaned, failed, pending }`; failed work returns 503 and all remaining
+work is eligible on the next run. Monitor failures and pending backlog.
+
+`vercel.json` schedules this route with `0 6 * * *` (06:00 UTC, 03:00 Sao Paulo).
+On Hobby the daily execution can occur within the provider's scheduling window;
+48 hours is eligibility, not an exact deletion deadline. Storage includes incoming
+and evidence copies until cleanup, so temporary usage can approach twice accepted
+file sizes. A forged upload can reach the bucket's 25 MiB physical ceiling even
+when its manifest claims less; the server rejects it before attachment creation.
+
+Before a future authorized deployment, configure a different cryptographically
+random `CRON_SECRET` in the **Production** environment of each Vercel project,
+`zelo-dev` and `zelo-prod`. Both projects use Production internally. Keep it
+server-only and retain the existing matching Supabase URL, anon key and server
+service-role key. `.env.example` contains a placeholder only. The secret takes
+effect in the next deployment; do not expose the cleanup endpoint unauthenticated.
+
+Use the existing pipeline: build without querying pending schema, dry-run and
+apply versioned migrations, then publish prepared output. The bucket is created
+by that migration; no separate dashboard setup, public object policies, remote
+link, remote reset, new workflow or Edge Function is needed. Confirm the remote
+global Storage limit permits 25 MiB before deployment. No remote operation or
+secret configuration is authorized by local validation.
+
+### Local verification
+
+Use Node 24.22.3 and the CLI-managed loopback stack. Apply pending migrations with
+`node_modules/.bin/supabase migration up --local`, without reset, then generate
+types with `npm run db:types`.
+
+`npm run test:db:uploads` uses real local Storage and PostgreSQL, including signed
+standard/TUS uploads, exact formats and limits, mismatched content, encrypted PDF,
+pixel limits, immutable evidence, isolation, partial failures, rollback, lost
+responses, concurrent registration, cancellation and concurrent/repeated cleanup.
+It requires an initially empty upload-session table to avoid cleaning unrelated
+local sessions, creates synthetic fixtures, and deletes only those fixtures.
+The 32x32 H.264 MP4 fixture was generated from a solid-color canvas using local
+Chromium; it contains no external or personal content.
+
+The optional production HTTP test is `tests/e2e/attachments-local.spec.ts` with
+`ORI58_LOCAL_TESTS=enabled`, loopback Supabase configuration and the local server
+service-role key. Its trace/video/screenshots are disabled to avoid recording
+upload credentials. Normal CI skips this local-only test and needs no secrets.
+The existing browser suite and all standard quality checks still apply.
+
+Local validation used host Node 24.22.3: formatting, ESLint, route-type
+generation/TypeScript, 714 unit tests, 15 real upload integration tests and nine
+existing public-registration integration tests passed. The earlier 703 SQL
+assertions passed without schema changes in this review. The production dependency
+audit reported zero vulnerabilities.
+
+Publication review repeated the standard `npm run build` with Turbopack after
+fresh `npm ci` in disposable `node:24-alpine` containers (Node 24.22.2). Both the
+ORI-58 worktree and its integrated baseline `8fc5a58` passed. Source mounts were
+read-only copies excluding environment files, Git/provider metadata, dependencies
+and generated output; no ports were published or existing containers changed.
+The outputs were copied to separate source directories and served sequentially
+on host Node 24.22.3 by Playwright's exclusive `127.0.0.1:3100` server. Both runs
+used the same local Supabase configuration and public-registration opt-in.
+
+The baseline passed 63 browser cases with 16 existing opt-in skips. ORI-58 passed
+the same cases plus its real attachment HTTP case: 64 passed, 16 skipped, zero
+failures and zero flaky results. All 33 IDs retained from the earlier Webpack
+fallback failures matched passing cases in both standard-build reports. The
+fallback omitted the project's Turbopack Tailwind processing and emitted CSS in
+a different location from the visual fixtures' discovery path. Its failures were
+not accepted as successful validation; original failure traces remain retained.
+No layout, existing assertion, test timeout or discovery rule was weakened.
+
+Review found that the compiler could fold platform checks to the build machine's
+OS, breaking a Linux-built inspector when served on macOS. The monitor now probes
+the Node builtin dynamically at runtime, and the emitted code was checked for
+both Linux and macOS branches. Missing/unreadable active-process RSS data stops
+inspection with a retryable service failure instead of permanently rejecting the
+file. Normal process exit, a disappearing proc entry and zombie state are handled
+without falsely failing a completed inspection. Unit tests cover invalid RSS,
+unavailable monitoring, exited processes and enforcement of the memory budget.
+
+A separate clean standard build passed in `node:24-bookworm-slim`, Linux x64/glibc
+with Node 24.22.3. A closed artifact assembled only from the validation route's
+`.nft.json` included the inspector script, file-type, MP4Box, PDF-LIB, sharp and
+the Linux x64 sharp/libvips native libraries, including their musl alternatives.
+The traced files total approximately 63.4 MiB. PNG, PDF and H.264 MP4 inspection
+passed from that artifact without access to the build's node_modules. The actual
+controller also passed those inspections with live Linux `/proc` RSS monitoring.
+
+This checks Next.js tracing and isolated Linux execution, not the final Vercel
+Build Output API artifact or a hosted function. Vercel CLI packaging, native
+library loading, child-process execution and access to `/proc/<pid>/status` must
+still be verified in the future authorized deployment process. An inaccessible
+monitor returns a retryable 503; it never silently disables the RSS limit. The
+sampled limit is not an OS memory sandbox. Hosted Cron authentication/scheduling
+and private Storage access likewise require a controlled deployment to verify.
+No remote build, migration, cleanup, secret configuration or deployment was run
+by this review.
+
+### Controlled zelo-dev validation after deployment
+
+This procedure is pending and must run only after an explicitly authorized
+deployment to `zelo-dev`, against its corresponding development Supabase project.
+The project owner reports that `CRON_SECRET` is configured as a Secret in Vercel
+Production for `zelo-dev` and that its global Storage limit is 50 MB. These values
+were not retrieved or independently verified remotely by this review. Production
+promotion requires its own matching configuration.
+
+1. Verify the deployed commit and successful migration history. Inspect the actual
+   `.vercel/output` function artifact from the authorized build for the inspector,
+   parsers and Linux sharp/libvips binaries. Confirm the private bucket and its
+   exact size/MIME restrictions without modifying preexisting buckets or policies.
+2. Use a dedicated synthetic condominium and generated JPEG/PNG/WebP, unencrypted
+   PDF and H.264 MP4 files. From a local HTTP client, prepare, authorize, upload,
+   validate and finalize a report. Keep attempt credentials only in memory and
+   never log signed URLs or privileged keys. Confirm one initial event and its
+   attachment metadata; repeat finalization and recover the same occurrence number.
+   Also submit one report without attachments using the unchanged contract.
+3. Exercise wrong secrets, another synthetic condominium, incompatible bytes and
+   expired/cancelled attempts. Verify refusal of reads/listing and token replay
+   against evidence paths. Inspect only the known synthetic object IDs through
+   authorized provider tooling; no card download endpoint is implemented yet.
+4. Confirm native loading and subprocess execution in the actual Function. Verify
+   live child RSS monitoring through `/proc/<pid>/status` with controlled runtime
+   diagnostics; a successful local container is not proof of hosted compatibility.
+   An unavailable monitor must remain retryable, without creating attachment rows.
+5. Check that missing or incorrect Cron authorization returns 401. Observe the
+   normal scheduled run and its sanitized status/counts. Leave a synthetic attempt
+   abandoned and observe its objects after natural 48-hour eligibility and the
+   next scheduled run; verify that a linked synthetic evidence object survives.
+   Do not invoke global cleanup manually, backdate records or delete user objects
+   to accelerate this check. Destructive cleanup experiments require an entirely
+   isolated fixture-only environment.
+6. Record outcomes and any 503/native/process/monitor errors without credentials
+   or user data. Hosted Storage, Cron and runtime compatibility remain unverified
+   until these checks pass. This runbook does not authorize deployment or changes
+   to remote configuration.
