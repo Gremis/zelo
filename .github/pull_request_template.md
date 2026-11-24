@@ -20,7 +20,7 @@ Describe migrations, local data impact, environment variable names and setup ste
 
 ## Review checklist
 
-- [ ] The base branch is correct: feature branches target develop; releases target main.
+- [ ] The base branch is correct: feature branches target develop; releases target production.
 - [ ] The change is scoped and follows AGENTS.md conventions.
 - [ ] Relevant checks passed; unverified checks and limitations are documented.
 - [ ] Documentation and tests reflect the resulting behavior where relevant.

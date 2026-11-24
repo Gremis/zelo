@@ -11,7 +11,7 @@ const context = {
   GITHUB_TOKEN: "test-only-token",
 };
 
-test.each(["develop", "main"])(
+test.each(["develop", "production"])(
   "accepts the current %s commit",
   async (branch) => {
     const request = vi.fn().mockResolvedValue({
@@ -32,6 +32,7 @@ test.each(["develop", "main"])(
 );
 
 test.each([
+  { GITHUB_REF: "refs/heads/main" },
   { GITHUB_EVENT_NAME: "pull_request" },
   { GITHUB_EVENT_NAME: "workflow_dispatch" },
   { GITHUB_REF: "refs/heads/chore/deployment-pipeline" },

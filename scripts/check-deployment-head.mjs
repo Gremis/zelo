@@ -11,7 +11,9 @@ export async function checkDeploymentHead(env = process.env, request = fetch) {
   } = env;
   if (
     GITHUB_EVENT_NAME !== "push" ||
-    !["refs/heads/develop", "refs/heads/main"].includes(GITHUB_REF ?? "") ||
+    !["refs/heads/develop", "refs/heads/production"].includes(
+      GITHUB_REF ?? "",
+    ) ||
     !/^[a-f0-9]{40}$/.test(GITHUB_SHA ?? "") ||
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(GITHUB_REPOSITORY ?? "") ||
     !GITHUB_TOKEN
