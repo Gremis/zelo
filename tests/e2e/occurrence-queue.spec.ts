@@ -440,6 +440,19 @@ test("detail card saves priority, records a reason and appends manager updates",
   await page.getByRole("button", { name: "Abrir ocorrência #7704" }).click();
   const dialog = page.getByRole("dialog", { name: /cheiro de gás/ });
   await expect(dialog).toBeVisible();
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const copyLink = dialog.getByRole("button", {
+    name: "Copiar link de acompanhamento",
+  });
+  await copyLink.focus();
+  expect(
+    await copyLink.evaluate((node) => node === document.activeElement),
+  ).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByText("Link copiado")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `https://sindicondo.app/o/${occurrenceDetailFixture().trackingCode}`,
+  );
   await expect(dialog.getByLabel("Prioridade")).toHaveValue("urgent");
   await expect(dialog.getByText("Sugerida pelo Sindicondo")).toBeVisible();
   await expect(dialog.getByText("Por quê:")).toBeVisible();
@@ -473,9 +486,7 @@ test("detail card saves priority, records a reason and appends manager updates",
     .getByLabel("Escreva uma atualização")
     .fill("Visita marcada para amanhã.");
   await dialog.getByRole("button", { name: "Adicionar" }).click();
-  await expect(dialog.getByRole("status")).toHaveText(
-    "Atualização adicionada.",
-  );
+  await expect(dialog.getByText("Atualização adicionada.")).toBeVisible();
   await expect(dialog.getByLabel("Escreva uma atualização")).toHaveValue("");
   await expect(history.getByRole("listitem").first()).toContainText(
     "Visita marcada para amanhã.",
@@ -519,10 +530,10 @@ test("detail card expands in place on mobile and closes with the X", async ({
   await expect(dialog.getByRole("button", { name: "Fechar" })).toBeFocused();
   await dialog.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(7);
+  await expect(page.getByRole("article")).toHaveCount(4);
   await expect(
-    page.getByRole("heading", { name: "Novo", exact: true }),
-  ).toBeVisible();
+    page.getByRole("tab", { name: "Novo 4", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test("a detail outside the manager portfolio is presented as not found", async ({

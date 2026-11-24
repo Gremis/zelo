@@ -9,7 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import { CopyTrackingLink } from "@/components/copy-tracking-link";
 import { formatPhone } from "@/lib/auth/phone";
+import { trackingLink } from "@/lib/occurrences/tracking-link";
 import {
   addOccurrenceUpdate,
   loadOccurrenceDetail,
@@ -520,6 +522,12 @@ export function OccurrenceDetailPanel({
                   {detail.reporterUnitOrRole}
                 </p>
               )}
+              <CopyTrackingLink
+                link={trackingLink(detail.trackingCode)}
+                label="Copiar link de acompanhamento"
+                variant="link"
+                className="mt-1.5"
+              />
             </div>
           </aside>
           <section aria-labelledby={`${titleId}-activity`} className="min-w-0">

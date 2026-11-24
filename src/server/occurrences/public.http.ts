@@ -132,7 +132,10 @@ export async function registerPublicRequest(request: Request, slug: string) {
       condominiumSlug: slug,
       attemptKey: attemptKey!,
     } as PublicRegistration);
-    return publicReply({ number: receipt.number });
+    return publicReply({
+      number: receipt.number,
+      trackingCode: receipt.trackingCode,
+    });
   } catch (error) {
     return publicFailure(error);
   }

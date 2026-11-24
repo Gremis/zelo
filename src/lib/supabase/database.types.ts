@@ -541,6 +541,7 @@ export type Database = {
         Returns: boolean;
       };
       occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
+      occurrence_tracking: { Args: { p_code: string }; Returns: Json };
       portfolio_occurrence_queue: {
         Args: Record<PropertyKey, never>;
         Returns: Json;

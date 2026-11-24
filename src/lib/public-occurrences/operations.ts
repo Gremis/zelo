@@ -3,6 +3,7 @@ import type {
   RegistrationErrors,
   RegistrationResult,
 } from "./contract";
+import { TRACKING_CODE_PATTERN } from "@/lib/occurrences/tracking-link";
 import { registrationFields } from "./validation";
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -72,12 +73,18 @@ export function createPublicOccurrenceOperations(): PublicOccurrenceOperations {
         if (
           !response.ok ||
           !record(data) ||
-          Object.keys(data).length !== 1 ||
+          Object.keys(data).length !== 2 ||
           !Number.isSafeInteger(data.number) ||
-          (data.number as number) <= 0
+          (data.number as number) <= 0 ||
+          typeof data.trackingCode !== "string" ||
+          !TRACKING_CODE_PATTERN.test(data.trackingCode)
         )
           return { ok: false, error: "uncertain" };
-        return { ok: true, number: data.number as number };
+        return {
+          ok: true,
+          number: data.number as number,
+          trackingCode: data.trackingCode,
+        };
       } catch {
         return { ok: false, error: "uncertain" };
       }

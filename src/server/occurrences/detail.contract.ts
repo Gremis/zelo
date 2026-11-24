@@ -12,6 +12,7 @@ import {
   type QueuePriority,
   type QueueStatus,
 } from "./queue.contract";
+import { TRACKING_CODE_PATTERN } from "../../lib/occurrences/tracking-link";
 
 export const OCCURRENCE_EVENT_TYPES = [
   "registered",
@@ -53,6 +54,7 @@ export type OccurrenceEvent = {
 export type OccurrenceDetail = {
   id: string;
   number: number;
+  trackingCode: string;
   status: QueueStatus;
   condominium: { id: string; name: string };
   description: string;
@@ -125,9 +127,13 @@ export function parseOccurrenceDetail(value: unknown): OccurrenceDetail {
   const condominium = record(row.condominium);
   if (!Array.isArray(row.events))
     throw new Error("Invalid occurrence history.");
+  const trackingCode = string(row.trackingCode);
+  if (!TRACKING_CODE_PATTERN.test(trackingCode))
+    throw new Error("Invalid tracking code.");
   const result: OccurrenceDetail = {
     id: string(row.id),
     number: integer(row.number),
+    trackingCode,
     status: status(row.status),
     condominium: { id: string(condominium.id), name: string(condominium.name) },
     description: string(row.description),

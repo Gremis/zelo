@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { CopyTrackingLink } from "@/components/copy-tracking-link";
 import { PhoneInput } from "@/components/phone-input";
+import { trackingLink } from "@/lib/occurrences/tracking-link";
 import type {
   CondominiumResult,
   PublicOccurrenceOperations,
@@ -45,7 +47,10 @@ export function PublicOccurrenceForm({
   const [sending, setSending] = useState(false);
   const [blocked, setBlocked] = useState<"uncertain" | "conflict" | null>(null);
   const [abandon, setAbandon] = useState(false);
-  const [number, setNumber] = useState<number | null>(null);
+  const [receipt, setReceipt] = useState<{
+    number: number;
+    trackingCode: string;
+  } | null>(null);
   const busy = useRef(false);
   const form = useRef<HTMLFormElement>(null);
   const confirmation = useRef<HTMLHeadingElement>(null);
@@ -68,7 +73,7 @@ export function PublicOccurrenceForm({
   }, [slug, operations, loadVersion]);
 
   useLayoutEffect(() => {
-    if (number !== null) confirmation.current?.focus();
+    if (receipt !== null) confirmation.current?.focus();
     else if (blocked) recovery.current?.focus();
     else if (!sending) {
       const first = registrationFields.find((field) => errors[field.name]);
@@ -84,7 +89,7 @@ export function PublicOccurrenceForm({
       }
       errorFocus.current = false;
     }
-  }, [number, blocked, sending, errors]);
+  }, [receipt, blocked, sending, errors]);
 
   function reset() {
     setFields(emptyRegistration());
@@ -93,7 +98,7 @@ export function PublicOccurrenceForm({
     setAttempt(null);
     setBlocked(null);
     setAbandon(false);
-    setNumber(null);
+    setReceipt(null);
     resetFocus.current = true;
   }
 
@@ -119,7 +124,10 @@ export function PublicOccurrenceForm({
       setAttempt(currentAttempt);
       const result = await operations.register(slug, currentAttempt);
       if (result.ok) {
-        setNumber(result.number);
+        setReceipt({
+          number: result.number,
+          trackingCode: result.trackingCode,
+        });
         setAttempt(null);
         setBlocked(null);
         setFields(emptyRegistration());
@@ -156,7 +164,7 @@ export function PublicOccurrenceForm({
   return (
     <main className="min-h-dvh flex-1 bg-[#f6f7f9] px-4 py-2 text-sm leading-[1.45] text-[#111827] [color-scheme:light] [font-family:var(--font-geist-sans),system-ui,sans-serif] [overflow-wrap:anywhere] [&_:is(input,textarea,button):focus-visible]:outline-2 [&_:is(input,textarea,button):focus-visible]:outline-offset-2 [&_:is(input,textarea,button):focus-visible]:outline-[#0f766e] sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-xl">
-        {number !== null ? (
+        {receipt ? (
           <section
             className="pt-6 text-center sm:pt-10"
             aria-labelledby={`${id}-confirmed`}
@@ -170,15 +178,41 @@ export function PublicOccurrenceForm({
               Ocorrência registrada
             </h1>
             <p className="mt-3 font-mono text-4xl font-bold text-[#0f766e]">
-              #{number}
+              #{receipt.number}
             </p>
             <p className="mt-4 text-[#4b5563]">
               O síndico já recebeu e vai decidir o que fazer.
             </p>
+            <section
+              aria-labelledby={`${id}-tracking`}
+              className="mt-6 rounded-xl border border-[#e5e7eb] bg-white p-4 text-left"
+            >
+              <h2 id={`${id}-tracking`} className="font-bold">
+                Acompanhe por este link
+              </h2>
+              <p className="mt-1.5 text-sm text-[#4b5563]">
+                Guarde o link. É por ele que você vê o andamento, sem precisar
+                de conta.
+              </p>
+              <p className="mt-3 rounded-lg bg-[#f2f4f7] px-3 py-2 font-mono text-xs text-[#344054] [overflow-wrap:anywhere]">
+                {trackingLink(receipt.trackingCode)}
+              </p>
+              <CopyTrackingLink
+                link={trackingLink(receipt.trackingCode)}
+                label="Copiar"
+                className="mt-3"
+              />
+            </section>
+            <a
+              href={trackingLink(receipt.trackingCode)}
+              className={`${buttonStyle} mt-4 block`}
+            >
+              Abrir acompanhamento
+            </a>
             <button
               type="button"
               onClick={reset}
-              className={`${secondaryStyle} mt-6`}
+              className={`${secondaryStyle} mt-3`}
             >
               Registrar outra
             </button>

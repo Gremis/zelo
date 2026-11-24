@@ -77,6 +77,11 @@ test("renders the header, priority suggestion, reporter and activity", async () 
   expect(within(caseData).getByText("Registrada por")).toBeInTheDocument();
   expect(within(caseData).getByText("Pessoa Sintética Um")).toBeInTheDocument();
   expect(within(caseData).getByText("(31) 99812-4410")).toBeInTheDocument();
+  expect(
+    within(caseData).getByRole("button", {
+      name: "Copiar link de acompanhamento",
+    }),
+  ).toBeInTheDocument();
   expect(screen.getByText("Pessoa Síndica Sintética")).toBeInTheDocument();
   expect(screen.getByText(/síndico, você/)).toBeInTheDocument();
   expect(screen.getByText(/\(quem registrou\)/)).toBeInTheDocument();

@@ -6,6 +6,8 @@ export function occurrenceDetailFixture(
   return {
     id: "77000000-0000-4000-8000-000000007704",
     number: 7704,
+    trackingCode:
+      "7700a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e",
     status: "new",
     condominium: {
       id: "77000000-0000-4000-9000-000000000001",

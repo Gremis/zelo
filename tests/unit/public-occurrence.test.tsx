@@ -14,13 +14,18 @@ import {
   publicCondominiumFixture,
   publicRegistrationFixture,
 } from "../fixtures/public-occurrence";
+import { trackingCodeFixture } from "../fixtures/tracking";
 
 function operations(): PublicOccurrenceOperations {
   return {
     load: vi
       .fn()
       .mockResolvedValue({ ok: true, data: publicCondominiumFixture }),
-    register: vi.fn().mockResolvedValue({ ok: true, number: 123 }),
+    register: vi.fn().mockResolvedValue({
+      ok: true,
+      number: 123,
+      trackingCode: trackingCodeFixture,
+    }),
   };
 }
 
@@ -100,6 +105,21 @@ test("uses the confirmed number and a new attempt only after Registrar outra", a
   });
   expect(title).toHaveFocus();
   expect(screen.getByText("#123")).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Acompanhe por este link" }),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      "Guarde o link. É por ele que você vê o andamento, sem precisar de conta.",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText(`https://sindicondo.app/o/${trackingCodeFixture}`),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Copiar" })).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Abrir acompanhamento" }),
+  ).toHaveAttribute("href", `https://sindicondo.app/o/${trackingCodeFixture}`);
   const firstAttempt = vi.mocked(api.register).mock.calls[0][1];
   expect(firstAttempt.fields).toEqual(publicRegistrationFixture);
   expect(firstAttempt.key).toMatch(/^[0-9a-f-]{36}$/i);

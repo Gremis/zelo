@@ -23,6 +23,10 @@ test.each([null, undefined, {}, []])(
 
 test.each([
   ["negative number", (row: Record<string, unknown>) => (row.number = 0)],
+  [
+    "invalid tracking code",
+    (row: Record<string, unknown>) => (row.trackingCode = "private"),
+  ],
   ["unknown status", (row: Record<string, unknown>) => (row.status = "late")],
   [
     "unknown suggested priority",

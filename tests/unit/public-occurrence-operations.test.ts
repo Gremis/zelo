@@ -6,6 +6,7 @@ import {
 } from "../fixtures/public-occurrence";
 
 const api = createPublicOccurrenceOperations();
+const trackingCode = "a".repeat(64);
 const attempt = {
   key: "60000000-0000-4000-8000-000000000001",
   fields: publicRegistrationFixture,
@@ -40,12 +41,15 @@ test.each([404, 503])("lookup distinguishes HTTP %i", async (status) => {
   });
 });
 
-test("POST sends exactly the attempt payload and key and accepts only a number receipt", async () => {
-  const fetcher = vi.fn().mockResolvedValue(Response.json({ number: 123 }));
+test("POST sends exactly the attempt payload and key and accepts only the receipt", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(Response.json({ number: 123, trackingCode }));
   vi.stubGlobal("fetch", fetcher);
   expect(await api.register("review-abcd", attempt)).toEqual({
     ok: true,
     number: 123,
+    trackingCode,
   });
   expect(fetcher).toHaveBeenCalledWith(
     "/api/public/condominiums/review-abcd/occurrences",
@@ -64,9 +68,12 @@ test("POST sends exactly the attempt payload and key and accepts only a number r
 test.each([
   { number: 0 },
   { number: "123" },
+  { number: 1 },
   { number: 1, trackingCode: "private" },
+  { number: 1, trackingCode: "A".repeat(64) },
   {},
-  { number: Number.MAX_SAFE_INTEGER + 1 },
+  { number: Number.MAX_SAFE_INTEGER + 1, trackingCode },
+  { number: 1, trackingCode, extra: "ignored" },
 ])("malformed successful responses remain uncertain: %j", async (body) => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
   expect(await api.register("review-abcd", attempt)).toEqual({

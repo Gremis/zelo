@@ -2506,3 +2506,69 @@ as are resident-side reopening and conversations with the manager.
 not exist yet. They are the subject of ORI-65 and ORI-100. The confirmation
 screen already shows the number and the manager card already shows "Registrada
 por"; their tracking-link actions are pending in ORI-101 and ORI-102.
+
+### Tracking lookup and public page (ORI-65 and ORI-100)
+
+Migration `20261124160000_occurrence_tracking_lookup.sql` adds
+`public.occurrence_tracking(p_code text)`, a stable security-definer function
+with a fixed empty `search_path` and execute granted only to `anon` and
+`authenticated`. It accepts the 64-character lowercase hexadecimal
+`tracking_code` already generated at registration by
+`20261122100000_occurrences_history_model.sql` with 32 random bytes, independent
+from the sequential number and from personal data. There is no listing,
+prefix lookup or enumeration: with a malformed, unknown or missing code the
+function returns `null`, and the page answers with the single generic message
+"Não encontramos esta ocorrência. Confira o link que você recebeu." The link
+never expires.
+
+The payload contains only `condominiumName`, `number`, `registeredAt`,
+`description`, `unit`, `location`, `situation` and `updates`. The situation is
+translated in the backend: `new` becomes "Recebida pelo síndico",
+`in_progress` and `delegated` become "Em andamento", and `completed` becomes
+"Concluída". Updates keep only the authorized events, newest first: the
+registration text, the first responsibility/delegation event, deadline placement
+as "Atendimento previsto para dd/mm.", deadline removal, completion and a
+reopening marker. Manager updates, employee messages, responsibility changes and
+names, priority changes, comments, attachments, the reporter phone and the code
+itself are never selected, so the response is filtered before it leaves the
+database.
+
+The public page is `/o/[code]`, rendered on the server through the anonymous
+client and the restricted RPC. It shows the condominium name and
+"Ocorrência #<number> · registrada <when>", the report with unit and location,
+the three-step "Situação" block with reached steps marked and the current step
+highlighted through `aria-current="step"` and visually hidden text, the
+"Atualizações" list with date and time, and the footer "Este link mostra só esta
+ocorrência. Para registrar outra, use o link do condomínio." The segment exports
+`instant = false` because Cache Components forbids `dynamic = "force-dynamic"`
+and the uncached lookup cannot be prerendered; the route is streamed, so an
+invalid code renders the generic not-found boundary with HTTP 200 rather than 404. Layout is mobile first from 360px.
+
+The task code mentioned by ORI-65 is not modeled here: it belongs to ORI-104 and
+is generated only when the employee task feature requires it. The tracking
+lookup never reads it, so it can be issued, revoked or replaced independently
+without changing this contract.
+
+### Tracking link on the confirmation and manager card (ORI-101 and ORI-102)
+
+`POST /api/public/condominiums/[slug]/occurrences` now replies with exactly
+`{ number, trackingCode }`; the browser accepts only a positive number and a
+64-character code and treats any other success shape as an uncertain submission.
+The confirmation block "Acompanhe por este link" shows the guidance text, the
+full link, a "Copiar" button with the "Link copiado" status, the primary
+"Abrir acompanhamento" link to `/o/<code>` and the existing "Registrar outra".
+The link format is `https://sindicondo.app/o/<code>`.
+
+Migration `20261124170000_occurrence_detail_tracking_code.sql` recreates
+`occurrence_detail` with `trackingCode` for the authenticated manager. The
+"Registrada por" area of the card shows "Copiar link de acompanhamento", a native
+button that copies the link, keeps keyboard activation and announces
+"Link copiado" through a live status region.
+
+Local validation after these changes: formatting, ESLint, route types and
+TypeScript, production build, production dependency audit with zero
+vulnerabilities, 732 unit tests and the 14 database test files (738 assertions,
+including `tracking.test.sql`). The tracking not-found, public form at 360/768/
+1280px and queue detail browser cases passed with Playwright. A valid tracking
+page was not opened in a browser because that requires seeded local data; it is
+covered by the contract and component tests.

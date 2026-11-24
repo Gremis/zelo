@@ -3,8 +3,10 @@ import {
   publicCondominiumFixture,
   publicRegistrationFixture,
 } from "../fixtures/public-occurrence";
+import { trackingCodeFixture } from "../fixtures/tracking";
 
 const path = "/api/public/condominiums/review-abcd";
+const trackingPath = `https://sindicondo.app/o/${trackingCodeFixture}`;
 async function mockLink(page: Page) {
   await page.route(`**${path}`, (route) =>
     route.fulfill({ json: publicCondominiumFixture }),
@@ -37,7 +39,12 @@ for (const width of [360, 768, 1280]) {
     const attempts: string[] = [];
     await page.route(`**${path}/occurrences`, async (route) => {
       attempts.push(route.request().headers()["idempotency-key"]);
-      await route.fulfill({ json: { number: 1234 + attempts.length } });
+      await route.fulfill({
+        json: {
+          number: 1234 + attempts.length,
+          trackingCode: trackingCodeFixture,
+        },
+      });
     });
     await page.goto("/c/review-abcd");
     await expect(
@@ -86,6 +93,18 @@ for (const width of [360, 768, 1280]) {
       page.getByRole("heading", { name: "Ocorrência registrada" }),
     ).toBeFocused();
     await expect(page.getByText("#1235")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Acompanhe por este link" }),
+    ).toBeVisible();
+    await expect(page.getByText(trackingPath)).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Abrir acompanhamento" }),
+    ).toHaveAttribute("href", trackingPath);
+    await page.getByRole("button", { name: "Copiar", exact: true }).click();
+    await expect(page.getByRole("status")).toHaveText("Link copiado");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      trackingPath,
+    );
     await page.screenshot({
       path: info.outputPath(`confirmation-${width}.png`),
       fullPage: true,

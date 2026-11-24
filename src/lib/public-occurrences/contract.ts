@@ -18,7 +18,7 @@ export type CondominiumResult =
   | { ok: false; error: "not_found" | "unavailable" };
 
 export type RegistrationResult =
-  | { ok: true; number: number }
+  | { ok: true; number: number; trackingCode: string }
   | { ok: false; error: "invalid_input"; fields: RegistrationErrors }
   | { ok: false; error: "not_found" | "conflict" | "uncertain" };
 
