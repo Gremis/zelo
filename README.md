@@ -2443,3 +2443,66 @@ value, deployment workflow or remote setting was changed here. The existing
 pipeline will apply the pending versioned migration before publishing the
 matching server. No new variable or manual backfill is required. Copy/paste-assisted
 form filling remains a future improvement and is not implemented.
+
+## Resident tracking link (ORI-67)
+
+ORI-67 starts on the branch `geovannijdazevedo/ori-67-link-de-acompanhamento-do-morador`,
+created from `develop` and merged with
+`origin/feature/ori-60-61-public-occurrence-form` at commit `8fc5a58`. That merge
+brings the connected public registration form (ORI-59/60/61), the occurrence
+detail card and priority decision (ORI-70), employee management, onboarding
+persistence and the supporting migrations and tests. The develop-side queue
+implementation (ORI-77/78 mobile tabs) is preserved; the imported detail panel
+is layered onto it. No ORI-67 business code is implemented yet.
+
+The parent issue is delivered through four sub-issues whose prompts arrive
+separately: ORI-65 (restricted public lookup), ORI-100 (tracking page), ORI-101
+(link on the form confirmation) and ORI-102 ("Copiar link de acompanhamento" on
+the manager card). This section records the agreed rules they must implement.
+
+### Link contract
+
+Each occurrence already owns a `tracking_code`: 64 lowercase hexadecimal
+characters (32 random bytes) generated at insert by migration
+`20261122100000_occurrences_history_model.sql`, independent from the sequential
+number and from personal data. The resident link is `sindicondo.app/o/<code>`,
+resolves only that occurrence, never expires and requires no account. An invalid
+or unknown code returns the single generic message "Não encontramos esta
+ocorrência. Confira o link que você recebeu." without enumerating occurrences.
+The registration receipt `{ occurrenceId, number, trackingCode }` already returns
+the code to the confirmation screen, and the manager card query already carries
+the code for the copy action.
+
+### Resident-visible content
+
+The tracking page shows the condominium name, "Ocorrência #<number> · registrada
+<when>", what happened with unit and location, a three-step "Situação" block, the
+"Atualizações" block newest first with date and time, and the footer "Este link
+mostra só esta ocorrência. Para registrar outra, use o link do condomínio."
+Steps already reached are marked and the current one is highlighted; the current
+step is exposed to screen readers rather than by colour alone. The layout must
+work from 360px to desktop without horizontal scrolling.
+
+Status translation: `new` becomes "Recebida pelo síndico"; `in_progress` and
+`delegated` become "Em andamento"; `completed` becomes "Concluída". Reopening a
+completed occurrence returns it to `new`, so the page shows "Recebida pelo
+síndico" again.
+
+History translation, applied in the backend so the public response is already
+filtered: registration becomes "Ocorrência registrada. O síndico já recebeu.";
+the first responsibility assignment, provider definition or delegation becomes
+"O síndico está cuidando da ocorrência."; a deadline becomes "Atendimento previsto para dd/mm."; removing
+the deadline becomes "A previsão de atendimento foi retirada."; completion
+becomes "Ocorrência concluída."; reopening becomes "A ocorrência foi reaberta.".
+Internal manager updates, responsible-party changes and names, priority changes,
+comments, completion attachments and the reopening reason never appear, and the
+public response never includes the reporter phone, employee names or internal
+notes. Attachments and proactive WhatsApp/email notices are outside this story,
+as are resident-side reopening and conversations with the manager.
+
+### Current gaps
+
+`/o/[code]`, the public lookup endpoint and the resident-facing translations do
+not exist yet. They are the subject of ORI-65 and ORI-100. The confirmation
+screen already shows the number and the manager card already shows "Registrada
+por"; their tracking-link actions are pending in ORI-101 and ORI-102.
