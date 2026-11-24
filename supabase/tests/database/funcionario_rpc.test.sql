@@ -16,9 +16,13 @@ set local search_path = public, extensions;
 
 select no_plan();
 
-insert into auth.users (id, email, raw_user_meta_data) values
-  ('a1400000-0000-4000-8000-000000000001', 'rpc-a@example.invalid', '{"is_sindico": true}'),
-  ('a1400000-0000-4000-8000-000000000002', 'rpc-b@example.invalid', '{"is_sindico": true}');
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('a1400000-0000-4000-8000-000000000001', 'rpc-a@example.invalid', now(), '{"is_sindico": true}'),
+  ('a1400000-0000-4000-8000-000000000002', 'rpc-b@example.invalid', now(), '{"is_sindico": true}');
+
+insert into auth.sessions (id, user_id)
+select replace(id::text, '-8000-', '-9000-')::uuid, id from auth.users
+where id in ('a1400000-0000-4000-8000-000000000001', 'a1400000-0000-4000-8000-000000000002' );
 
 insert into public.condominiums (manager_id, name, address) values
   ('a1400000-0000-4000-8000-000000000001', 'Cond A', 'Rua A, 1'),

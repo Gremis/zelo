@@ -21,10 +21,14 @@ select no_plan();
 
 -- Síndico A, Síndico B e um não-síndico C. O metadata controla is_sindico,
 -- que o trigger de profiles usa e que dispara o seed das funções padrão.
-insert into auth.users (id, email, raw_user_meta_data) values
-  ('51400000-0000-4000-8000-000000000001', 's14-a@example.invalid', '{"is_sindico": true}'),
-  ('51400000-0000-4000-8000-000000000002', 's14-b@example.invalid', '{"is_sindico": true}'),
-  ('51400000-0000-4000-8000-000000000003', 's14-c@example.invalid', '{"is_sindico": false}');
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('51400000-0000-4000-8000-000000000001', 's14-a@example.invalid', now(), '{"is_sindico": true}'),
+  ('51400000-0000-4000-8000-000000000002', 's14-b@example.invalid', now(), '{"is_sindico": true}'),
+  ('51400000-0000-4000-8000-000000000003', 's14-c@example.invalid', now(), '{"is_sindico": false}');
+
+insert into auth.sessions (id, user_id)
+select replace(id::text, '-8000-', '-9000-')::uuid, id from auth.users
+where id in ('51400000-0000-4000-8000-000000000001', '51400000-0000-4000-8000-000000000002' , '51400000-0000-4000-8000-000000000003');
 
 select has_table('public', 'funcoes', 'Tabela funcoes existe');
 select has_table('public', 'funcionarios', 'Tabela funcionarios existe');
@@ -52,8 +56,8 @@ select is(
 );
 
 -- Seed quando um perfil existente passa a ser síndico (trigger de UPDATE).
-insert into auth.users (id, email, raw_user_meta_data) values
-  ('51400000-0000-4000-8000-000000000004', 's14-virou@example.invalid',
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('51400000-0000-4000-8000-000000000004', 's14-virou@example.invalid', now(),
    '{"is_sindico": false}');
 select is(
   (select count(*) from public.funcoes
@@ -441,6 +445,21 @@ select is(
   (select count(*) from public.funcionarios where nome = 'Funcionário do B'),
   1::bigint, 'Síndico B enxerga o próprio funcionário'
 );
+
+reset role;
+update auth.sessions set not_after = now() - interval '1 second'
+where id = '51400000-0000-4000-9000-000000000002';
+set local role authenticated;
+select ok(not public.has_active_session(), 'Expired employee session is rejected');
+select is((select count(*) from public.funcionarios), 0::bigint, 'Expired session cannot list employees');
+select is((select count(*) from public.funcoes), 0::bigint, 'Expired session cannot list roles');
+select throws_ok($$select public.create_funcionario(
+  (select condo_b from s14_refs), 'Zelador', 'Synthetic blocked employee', '11900000003')$$,
+  '42501', null, 'Expired session cannot create an employee');
+reset role;
+delete from auth.sessions where id = '51400000-0000-4000-9000-000000000002';
+set local role authenticated;
+select is((select count(*) from public.funcionarios), 0::bigint, 'Revoked session cannot list employees with unchanged JWT claims');
 
 -- Não-síndico: sem acesso.
 select set_config(

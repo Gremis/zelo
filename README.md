@@ -2751,3 +2751,140 @@ promotion requires its own matching configuration.
    or user data. Hosted Storage, Cron and runtime compatibility remain unverified
    until these checks pass. This runbook does not authorize deployment or changes
    to remote configuration.
+
+## Employee UI integration review (ORI-51)
+
+The employee page reuses the ORI-49 tables and ORI-50 repository, validation and
+RPCs. The additive `funcaoId` request field is resolved only against the current
+manager's RLS-filtered roles; a caller-supplied role name cannot replace that
+selection. The original name-based backend contract remains available. New role
+creation and employee activation controls remain outside this UI task.
+
+Employee endpoints now use `confirmedIdentity`, including its active-session
+probe, instead of accepting `getUser()` alone. The new page receives the same
+private/no-store proxy headers as the existing panel pages; employee JSON success
+and error responses also prohibit caching. Supabase cookie refresh and persistence
+semantics are unchanged. `ConfirmationCodeScreen` remains a local function in
+its page module: removing its named export satisfies Next's page-export whitelist
+without changing the default page component or confirmation behavior.
+
+### SQL provenance and fixture corrections
+
+The original employee tests pass against the original ORI-49 (`44b0c5d`) and
+ORI-50 (`43bf26f`) migration histories in disposable local databases. Their
+unconfirmed accounts and JWTs without session IDs are incompatible with the
+active-session policies inherited from ORI-78. The integrated fixtures now create
+confirmed users and real session rows, assert that the session is active before
+the positive authorization cases, and explicitly reject expired/revoked sessions.
+No application policy, grant or historical migration was relaxed.
+
+The unchanged ORI-78 (`9f56c79`) event/history tests pass on an empty schema but
+reproduce their failures with preexisting synthetic records and that branch's
+`scripts/demo-occurrences.sql`. Event queries previously counted unrelated
+history or selected multiple registrations. They now scope fixture assertions by
+occurrence ID and compare the total history count before/after the intentionally
+failed write. The optional `local_demo.occurrences` foreign key adds a dependency
+to `TRUNCATE ... CASCADE`; its denied privilege previously stopped the test before
+the evidence trigger. The accidental-grant test now grants/revokes TRUNCATE for
+that dependency closure inside its rolled-back transaction, still requiring the
+exact append-only trigger error. Runtime permissions and history stay unchanged.
+
+### Demo and real-browser verification
+
+The Demo preparation route previously compared the browser's Origin with Next's
+internal request hostname: `127.0.0.1:3100` was rejected when Next reported
+`localhost:3100`. It now compares Origin with the request Host, following the
+existing condominium endpoint convention. Foreign origins, a different port and
+untrusted forwarded-host values remain rejected before authentication or writes.
+The request still derives the manager only from the confirmed active session.
+Preparation ownership, eligibility and idempotence are unchanged.
+
+Run browser validation with `ACCOUNT_DEMO_ENABLED=true`,
+`ORI47_LOCAL_AUTH_TESTS=enabled`, `ORI51_LOCAL_TESTS=enabled` and the local Supabase
+test credentials available only to the test process. `npm run test:e2e` builds and
+manages its own production server at `127.0.0.1:3100`; that port must be free.
+The local Mailpit profile must already be active for signup confirmation. Tests
+cover confirmation through captured local email, existing sessions, re-login,
+Demo IDs remaining stable, Demo not completing real first steps, real employee
+persistence after re-login, selected ownership/role IDs, cross-portfolio HTTP and
+direct Data API attacks, duplicate phones, free-text/empty schedules, field
+retention on errors, keyboard focus and responsive layouts. Synthetic cleanup is
+restricted to the created account IDs at the local API and removes their Demo
+records before account deletion.
+
+`npm run test:db:account-demo` now targets the same `127.0.0.1:3100` production
+server instead of an unrelated server on port 3000. Run it with Demo enabled and
+no concurrent writers: it verifies snapshots of all preexisting portfolio data.
+`npm run test:db` runs the transaction-isolated SQL suite against the existing
+local stack without reset. No remote execution or publication is implied by these
+local checks.
+
+## Inline employee role creation (ORI-52)
+
+The native employee-role selector now ends with `+ Criar nova função`. Choosing it
+reveals the required `Nome da nova função` field below that selector. Switching
+back to an existing role removes the field, its error and its discarded value.
+Existing roles are still submitted by `funcaoId`; creation submits `funcaoNome`
+instead, with no selector sentinel or stale role name in the existing-ID request.
+
+The form reuses `validateCreateFuncionario` and sends a single employee POST.
+Selection, typing, blur and cancellation never call the standalone role-creation
+endpoint. ORI-50's `create_funcionario` RPC creates or reuses the role and employee
+in the same transaction, including rollback of a new role when the employee is
+rejected. No migration, endpoint, normalization rule or backend permission is
+added. Canonical names and IDs come from the joined employee list and a fresh
+`GET /api/funcoes` when opening the next form; the frontend does not maintain its
+own matching or deduplication policy. A portfolio with no roles can use creation
+after its authorized condominium choices have loaded.
+
+The conditional field preserves native select keyboard behavior, associated
+inline errors, form-order validation focus, duplicate-submit prevention and field
+retention after a failed save. The field stays in the Função column on desktop
+and precedes Condomínio in the mobile form. The ORI-51 list, sessions, Demo and
+other panel flows remain in place.
+
+Run the local browser suite with `ORI52_LOCAL_TESTS=enabled` alongside the existing
+ORI-51/auth opt-ins and `ACCOUNT_DEMO_ENABLED=true`. It uses only the local stack,
+confirmed synthetic accounts and account-scoped cleanup. Coverage includes
+creation and availability of Jardineira in the next form without page reload,
+real persistence after reload, canonical Porteiro reuse for a lowercase name,
+cancel/switch without orphan roles, duplicate/foreign-condominium rejection with
+transaction rollback, cross-portfolio role IDs, keyboard input and 360px/desktop
+layout. Unit tests separately exercise whitespace validation, backend field
+errors and pending/failed submissions. No role editing, removal, activation or
+task-delegation UI is included.
+
+## Employee activation controls (ORI-53)
+
+The employee list uses the existing authenticated `PATCH /api/funcionarios/[id]`
+contract with `{ ativo: false }` for deactivation and `{ ativo: true }` for direct
+reactivation. It does not change backend permissions, session checks or portfolio
+isolation. Deactivation requires a native modal dialog, with initial focus on
+Cancel, keyboard containment and an inert background. Cancel and Escape perform
+no write; both are disabled while an operation is pending. Duplicate submissions
+are blocked for both actions.
+
+A successful operation reloads the authoritative list, preserving its existing
+active-first and name ordering. Inactive employees retain their information, have
+a `Desativado` badge and a `Reativar` action. Focus follows the same employee after
+reordering. Mutation failures preserve the previous presentation and expose a
+retry. A saved mutation followed by a failed read has a separate warning and a
+read-only retry; status controls remain disabled until that read succeeds, as the
+visible list may be stale.
+
+The existing repository updates only `funcionarios.ativo`; the database trigger
+also refreshes `updated_at`. There is no task reassignment, link invalidation or
+history rewrite in this operation. The confirmation copy follows the requested
+design and mentions delegation and link invalidation, but these effects still
+require the future backend integration.
+The affected-task warning is hidden until that integration exists. No backend or
+schema changes are required for ORI-53.
+
+Run the local browser scenario with `ORI53_LOCAL_TESTS=enabled` and the local
+Supabase credentials, alongside the ORI-51/52 opt-ins. It creates and removes only
+synthetic accounts and their data. Coverage includes persistence, ordering,
+foreign employee IDs in both directions, keyboard and focus behavior, 360 px
+layout, rejected writes, duplicate prevention and recovery after a saved mutation
+whose list refresh fails. Component tests supplement these checks without a
+backend. The existing offline PWA registration test requires its separate demo
+build flag.
