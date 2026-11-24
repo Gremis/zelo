@@ -80,6 +80,7 @@ test("announces only after completion and expires at eight visible seconds witho
   expect(screen.getByText(message)).toBeVisible();
   advance(1);
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.queryByText(message)).not.toBeInTheDocument();
   expect(screen.getByText("Menu")).toHaveFocus();
   expect(screen.getByRole("alert")).toHaveTextContent("Falha de carregamento");
 });

@@ -70,7 +70,7 @@ test("real condominium flow, concurrent creation and tenant isolation", async ({
     await page.getByRole("link", { name: "Condomínios", exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();
     await expect(
-      page.getByText("Nenhum condomínio cadastrado.", { exact: false }),
+      page.getByText("Nenhum condomínio por enquanto", { exact: false }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Novo condomínio", exact: true })
