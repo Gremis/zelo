@@ -2267,3 +2267,44 @@ change. These local results establish no remaining ORI-59 publication blocker;
 remote Quality execution must be verified on the published PR. Publication is
 handled separately through the feature branch and a reviewed PR to develop; no
 merge, deployment or shared-environment operation is part of this task.
+
+### ORI-57 attachment metadata and tracking schema acceptance
+
+ORI-57 is based on `feature/ori-59-public-occurrence-registration` at `b6c4e59`.
+The starting tree was clean. Inspection of ORI-62/63/64/59 found that all requested
+schema criteria were already implemented; this task adds acceptance evidence and
+missing validation without another migration, table, writer or application path.
+
+| Criterion                                                  | Existing implementation                                                                                                                                                                             | Validation                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Long, random, nonsequential tracking code                  | ORI-62 `occurrences.tracking_code`: nonnull default `encode(extensions.gen_random_bytes(32), 'hex')`, 64 hexadecimal characters, unique constraint; separate identity `number`                      | Existing occurrence SQL and concurrency tests cover persistence, format and duplicate rejection; ORI-57 verifies the default and its dependency on the pgcrypto function                                                                               |
+| Private file identification                                | ORI-62 `occurrence_attachments`: UUID, occurrence/event IDs, bucket/path, original filename, MIME type, positive byte size and database timestamp; unique bucket/path; URL-only references rejected | Existing SQL tests cover required/nonblank fields, MIME, positive size, URL and duplicate-path rejection; generated-type assertions cover required inputs and defaulted identity/time                                                                  |
+| Attachment belongs to its introducing event and occurrence | Composite FK `(occurrence_id, event_id)` references `occurrence_events(occurrence_id, id)`, with restricted deletion/update                                                                         | Existing SQL tests reject mismatched association and destructive deletion; ORI-57 additionally rejects a mismatched INSERT between occurrences in the same portfolio                                                                                   |
+| History integrity                                          | ORI-63 append-only update/delete/truncate triggers and restricted references                                                                                                                        | Existing history-access SQL tests cover application roles and accidental grants; ORI-57 verifies that metadata insertion and an idempotent retry leave the original event and metadata unchanged                                                       |
+| Private reads and portfolio isolation                      | Forced RLS, authenticated portfolio SELECT policies and no anonymous private-table grants; no direct application-role writes                                                                        | Existing SQL tests cover both portfolios and anonymous reads; ORI-57 explicitly verifies that knowing the tracking code grants neither foreign-portfolio reads nor administrative writes                                                               |
+| Creation and retry compatibility                           | ORI-64 shared initial event writer, existing suggestion-aware atomic creator and ORI-59 private attempt record/transaction lock                                                                     | Existing public-registration integration tests cover rollback, concurrent idempotency and number-only responses; ORI-57 checks that retry after metadata persistence returns the same internal occurrence/code and still has exactly one initial event |
+
+`npm run db:types` was executed against the already running local stack and
+produced no diff: generated occurrence/tracking and attachment relationship types
+already match the schema. Existing codes and historical migrations are unchanged.
+No database reset, migration application or remote/shared-environment operation is
+needed for this acceptance-only change. New SQL fixtures run inside a transaction
+that is rolled back, using the existing local database and central RPCs.
+
+Changes are limited to `supabase/tests/database/attachments-tracking.test.sql`,
+additional contract assertions in `tests/unit/database/occurrences-types.test.ts`
+and this README. Existing tests are reused rather than duplicated. The schema
+represents persisted metadata only: no bucket, Storage policy, upload, download,
+file processing, resident form, visual confirmation or public tracking page/API
+is implemented. A tracking code is not an administrative credential. The ORI-59
+HTTP response remains number-only, and condominium resolution remains name/address-only.
+
+Local validation on Node 24.22.3 passed: `npm run test:db` (687 assertions across
+12 suites, including 13 new ORI-57 assertions), the nine existing public-registration
+integration cases, all 669 unit tests, formatting/write and check, ESLint, route
+type generation/TypeScript and the production dependency audit (zero
+vulnerabilities). Build and browser suites were not repeated because no application
+code, schema, generated output, configuration or dependency changed. All database
+validation remained local. Publication is handled separately through a reviewed
+PR to develop that depends on ORI-59; no merge, deployment or shared-environment
+change is part of this task.
