@@ -33,5 +33,5 @@ export default async function TrackingPage({
     );
   }
   if (!tracking) notFound();
-  return <TrackingView tracking={tracking} code={code} />;
+  return <TrackingView tracking={tracking} />;
 }

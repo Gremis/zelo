@@ -49,7 +49,7 @@ export function CopyTrackingLink({
         {label}
       </button>
       {status !== "idle" && (
-        <span role="status" aria-live="polite" className="text-sm font-medium">
+        <span role="status" className="text-sm font-medium">
           {status === "copied" ? (
             <span className="text-[#0b5e58]">Link copiado</span>
           ) : (

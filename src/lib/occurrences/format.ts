@@ -15,6 +15,16 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   hourCycle: "h23",
 });
 
+const trackingFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const calendarFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
   year: "numeric",
@@ -48,4 +58,8 @@ export function formatQueueDate(value: string, now?: Date) {
 
 export function formatOccurrenceDateTitle(value: string) {
   return `${dateFormatter.format(new Date(value))} — Horário de Brasília`;
+}
+
+export function formatTrackingMoment(value: string) {
+  return trackingFormatter.format(new Date(value)).replace(", ", " às ");
 }

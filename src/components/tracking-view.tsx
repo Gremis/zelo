@@ -1,20 +1,11 @@
-import {
-  formatTrackingMoment,
-  trackingLink,
-} from "@/lib/occurrences/tracking-link";
+import { formatTrackingMoment } from "@/lib/occurrences/format";
 import {
   TRACKING_STEPS,
   TRACKING_STEP_LABELS,
   type OccurrenceTracking,
 } from "@/server/occurrences/tracking.contract";
 
-export function TrackingView({
-  tracking,
-  code,
-}: {
-  tracking: OccurrenceTracking;
-  code: string;
-}) {
+export function TrackingView({ tracking }: { tracking: OccurrenceTracking }) {
   const current = TRACKING_STEPS.indexOf(tracking.situation.step);
   return (
     <main className="min-h-dvh flex-1 bg-[#f6f7f9] px-4 py-4 text-sm leading-[1.45] text-[#111827] [color-scheme:light] [font-family:var(--font-geist-sans),system-ui,sans-serif] [overflow-wrap:anywhere] sm:px-6 sm:py-8">
@@ -147,9 +138,6 @@ export function TrackingView({
           Este link mostra só esta ocorrência. Para registrar outra, use o link
           do condomínio.
         </footer>
-        <p className="sr-only">
-          Endereço desta ocorrência: <span>{trackingLink(code)}</span>
-        </p>
       </div>
     </main>
   );

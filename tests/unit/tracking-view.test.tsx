@@ -1,16 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { TrackingView } from "@/components/tracking-view";
-import {
-  occurrenceTrackingFixture,
-  trackingCodeFixture,
-} from "../fixtures/tracking";
+import { occurrenceTrackingFixture } from "../fixtures/tracking";
 
 function mount(overrides = {}) {
   const tracking = occurrenceTrackingFixture(overrides);
-  return render(
-    <TrackingView tracking={tracking} code={trackingCodeFixture} />,
-  );
+  return render(<TrackingView tracking={tracking} />);
 }
 
 test("shows the condominium, report, unit, location and translated situation", () => {
