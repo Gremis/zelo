@@ -1,6 +1,8 @@
 export const signupStyles = {
   screen:
-    "relative flex flex-1 items-start justify-center pt-[40px] pb-[56px] [padding-right:max(16px,env(safe-area-inset-right,0px))] [padding-left:max(16px,env(safe-area-inset-left,0px))] bg-[#f6f7f9] text-[#111827] [color-scheme:light] [-webkit-font-smoothing:auto] [-moz-osx-font-smoothing:auto] [font-family:var(--font-signup-ui),system-ui,sans-serif] text-[14px] leading-[1.45] [&_:is(input,button,a,select):focus-visible]:[outline:2px_solid_#0f766e] [&_:is(input,button,a,select):focus-visible]:outline-offset-[2px]",
+    "relative flex flex-1 items-start justify-center [padding-right:max(16px,env(safe-area-inset-right,0px))] [padding-left:max(16px,env(safe-area-inset-left,0px))] bg-[#f6f7f9] text-[#111827] [color-scheme:light] [-webkit-font-smoothing:auto] [-moz-osx-font-smoothing:auto] [font-family:var(--font-signup-ui),system-ui,sans-serif] text-[14px] leading-[1.45] [&_:is(input,button,a,select):focus-visible]:[outline:2px_solid_#0f766e] [&_:is(input,button,a,select):focus-visible]:outline-offset-[2px]",
+  "screen-start": "pt-[40px] pb-[56px]",
+  "screen-centered": "min-h-dvh py-[40px]",
   card: "flex flex-col gap-[16px] w-[min(420px,100%)] min-w-0 border border-[#e5e7eb] rounded-[14px] p-[28px] bg-white [@media(max-width:560px)]:px-[18px] [@media(max-width:560px)]:py-[22px]",
   header: "m-0",
   brand:

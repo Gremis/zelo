@@ -1,0 +1,66 @@
+[
+  {
+    "report": "Cheiro de gás no hall",
+    "hasRisk": true
+  },
+  {
+    "report": "Gasto alto com a conta de água",
+    "hasRisk": false
+  },
+  {
+    "report": "A conta de gás do condomínio veio alta",
+    "hasRisk": true
+  },
+  {
+    "report": "Fogão do salão não acende",
+    "hasRisk": false
+  },
+  {
+    "report": "Fogos de artifício até 2h",
+    "hasRisk": false
+  },
+  {
+    "report": "Porta corta-fogo trancada",
+    "hasRisk": true
+  },
+  {
+    "report": "Choque de horário na reserva do salão",
+    "hasRisk": false
+  },
+  {
+    "report": "Tomada dando choque",
+    "hasRisk": true
+  },
+  {
+    "report": "Prazo curto para a pintura",
+    "hasRisk": false
+  },
+  {
+    "report": "A lâmpada deu curto e apagou",
+    "hasRisk": true
+  },
+  {
+    "report": "Rachadura fininha no reboco",
+    "hasRisk": false
+  },
+  {
+    "report": "Cano estourou e a garagem está alagando",
+    "hasRisk": true
+  },
+  {
+    "report": "Garagem alagada depois da chuva de ontem",
+    "hasRisk": false
+  },
+  {
+    "report": "Fio solto no teto do corredor",
+    "hasRisk": false
+  },
+  {
+    "report": "Senhora presa no elevador",
+    "hasRisk": true
+  },
+  {
+    "report": "Elevador parou com uma senhora dentro",
+    "hasRisk": false
+  }
+]

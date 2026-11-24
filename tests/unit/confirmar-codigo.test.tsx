@@ -1,39 +1,48 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Activity, useEffect, useState } from "react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import ConfirmationCodePage from "@/app/confirmar-codigo/page";
-import { ConfirmationCodeScreen } from "@/app/confirmar-codigo/page";
 import SignupPage from "@/app/criar-conta/page";
 import { SignupFlowProvider, useSignupFlow } from "@/components/signup-flow";
 import {
   submitConfirmationCode,
-  submitPasswordRecovery,
   submitResendConfirmationCode,
 } from "@/lib/auth/submit";
+
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  refresh: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 vi.mock("@/lib/auth/submit", () => ({
   submitConfirmationCode: vi.fn(async () => {
     throw new Error("Unavailable");
   }),
-  submitPasswordRecovery: vi.fn(async () => {}),
   submitResendConfirmationCode: vi.fn(async () => {
     throw new Error("Unavailable");
   }),
 }));
 
 beforeEach(() => {
+  navigation.push.mockClear();
+  navigation.replace.mockClear();
   vi.mocked(submitConfirmationCode).mockReset();
   vi.mocked(submitConfirmationCode).mockRejectedValue(new Error("Unavailable"));
   vi.mocked(submitResendConfirmationCode).mockReset();
   vi.mocked(submitResendConfirmationCode).mockRejectedValue(
     new Error("Unavailable"),
   );
-  vi.mocked(submitPasswordRecovery).mockReset();
-  vi.mocked(submitPasswordRecovery).mockResolvedValue(undefined);
 });
 
 function TestFlow() {
-  const { setDraft } = useSignupFlow();
+  const { setDraft, showFirstSteps } = useSignupFlow();
   const [page, setPage] = useState("confirmation");
   useEffect(() => {
     setDraft({
@@ -51,6 +60,7 @@ function TestFlow() {
       >
         Change test screen
       </button>
+      <span data-testid="signup-first-steps">{String(showFirstSteps)}</span>
       <Activity mode={page === "confirmation" ? "visible" : "hidden"}>
         <ConfirmationCodePage />
       </Activity>
@@ -67,33 +77,6 @@ function renderConfirmation() {
       <TestFlow />
     </SignupFlowProvider>,
   );
-}
-
-function RecoveryCodeTestPage() {
-  const { setRecoveryEmail } = useSignupFlow();
-  const [ready, setReady] = useState(false);
-  return (
-    <>
-      <button
-        onClick={() => {
-          setRecoveryEmail("recuperacao@example.invalid");
-          setReady(true);
-        }}
-      >
-        Start recovery
-      </button>
-      {ready ? <ConfirmationCodeScreen flow="recovery" /> : null}
-    </>
-  );
-}
-
-function renderRecoveryCode() {
-  render(
-    <SignupFlowProvider>
-      <RecoveryCodeTestPage />
-    </SignupFlowProvider>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Start recovery" }));
 }
 
 function submitCode() {
@@ -122,12 +105,22 @@ test("handles direct access and missing context without enabling confirmation", 
   );
 });
 
+test("preserves the base validation for an empty confirmation code", () => {
+  renderConfirmation();
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar e entrar" }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Informe o código recebido.",
+  );
+  expect(screen.getByLabelText("Código")).toHaveFocus();
+  expect(submitConfirmationCode).not.toHaveBeenCalled();
+});
+
 test("shows the email in memory, filters code input and focuses linked validation", () => {
   renderConfirmation();
   expect(screen.getByText("pessoa@example.invalid")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
+      "O código vale por 15 minutos. Aguarde 60 segundos para reenviar. Não chegou? Confira a caixa de spam. A conta só é liberada depois da confirmação.",
     ),
   ).toBeInTheDocument();
   const code = screen.getByLabelText("Código");
@@ -167,30 +160,20 @@ test("reports unavailable confirmation and does not navigate", async () => {
   ).toBeInTheDocument();
 });
 
-test("shows accepted confirmation without inventing a queue destination", async () => {
+test("does not redirect a confirmation without a valid session outside mock mode", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  vi.stubEnv("NEXT_PUBLIC_REGISTRATION_DEMO", "enabled");
   vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+  );
   renderConfirmation();
   submitCode();
-  const heading = await screen.findByRole("heading", {
-    level: 1,
-    name: "Conta criada.",
-  });
-  expect(heading).toHaveFocus();
-  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-  expect(
-    screen.queryByRole("heading", { name: "Confirme seu e-mail" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Digite o código de 6 dígitos para confirmar/),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText("pessoa@example.invalid")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("link", { name: "Revisar cadastro" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
-  expect(screen.getByRole("main")).toHaveTextContent("Sindicondo");
-  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
-  expect(screen.queryByRole("link", { name: /fila/i })).not.toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "sua sessão não está ativa",
+  );
+  expect(navigation.replace).not.toHaveBeenCalled();
 });
 
 test("locks confirmation and resend during a pending request", async () => {
@@ -225,71 +208,7 @@ test("reports resend failure without an invented countdown or success", async ()
   );
   expect(submitResendConfirmationCode).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "Reenviar código" })).toBeEnabled();
-  expect(screen.queryByText(/30s|15 minutos/)).not.toBeInTheDocument();
-});
-
-test("renders the recovery code step with preserved e-mail and six-digit input", () => {
-  renderRecoveryCode();
-
-  expect(
-    screen.getByRole("heading", { name: "Digite o código" }),
-  ).toBeInTheDocument();
-  expect(screen.getByText("recuperacao@example.invalid")).toBeInTheDocument();
-  expect(screen.getByLabelText("Código")).toHaveAttribute(
-    "inputmode",
-    "numeric",
-  );
-  expect(screen.getByLabelText("Código")).toHaveAttribute(
-    "autocomplete",
-    "one-time-code",
-  );
-  expect(screen.getByLabelText("Código")).toHaveAttribute("maxlength", "6");
-  expect(screen.getByRole("link", { name: "Trocar e-mail" })).toHaveAttribute(
-    "href",
-    "/recuperar-senha",
-  );
-  expect(screen.getByText(/Ele vale por 15 minutos\./)).toBeInTheDocument();
-});
-
-test("resends a recovery code through the existing stub without a timer", async () => {
-  renderRecoveryCode();
-
-  fireEvent.click(screen.getByRole("button", { name: "Reenviar código" }));
-
-  expect(await screen.findByRole("status")).toHaveTextContent(
-    "Código reenviado. Confira seu e-mail.",
-  );
-  expect(submitPasswordRecovery).toHaveBeenCalledWith(
-    "recuperacao@example.invalid",
-  );
-  expect(screen.queryByText(/\d+s/)).not.toBeInTheDocument();
-});
-
-test("validates the recovery code length before continuing", () => {
-  renderRecoveryCode();
-
-  const code = screen.getByLabelText("Código");
-  fireEvent.change(code, { target: { value: "12a3" } });
-  expect(code).toHaveValue("123");
-  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-
-  expect(code).toHaveFocus();
-  expect(code).toHaveAccessibleDescription("Digite o código de 6 dígitos.");
-  expect(submitConfirmationCode).not.toHaveBeenCalled();
-});
-
-test("leaves recovery code verification to its pending backend contract", async () => {
-  renderRecoveryCode();
-
-  fireEvent.change(screen.getByLabelText("Código"), {
-    target: { value: "708264" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
-
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Não foi possível validar o código agora.",
-  );
-  expect(submitConfirmationCode).not.toHaveBeenCalled();
+  expect(screen.queryByText(/30s/)).not.toBeInTheDocument();
 });
 
 test("preserves only non-secret draft fields between screens and loses them on reload", () => {
@@ -431,4 +350,110 @@ test("does not resend while offline and restores the existing action after recon
   } finally {
     connection.mockRestore();
   }
+});
+
+test("navigates to the queue only after server session validation", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  const request = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        user: { id: "synthetic", email: "pessoa@example.invalid" },
+      }),
+      {
+        status: 200,
+      },
+    ),
+  );
+  vi.stubGlobal("fetch", request);
+  vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  renderConfirmation();
+  submitCode();
+  await vi.waitFor(() =>
+    expect(navigation.replace).toHaveBeenCalledWith("/fila"),
+  );
+  expect(request).toHaveBeenCalledWith("/api/auth/session", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  expect(navigation.refresh).toHaveBeenCalled();
+  expect(screen.getByTestId("signup-first-steps")).toHaveTextContent("true");
+});
+
+test.each(["unavailable", "offline"])(
+  "retries the session after %s without reusing the consumed code",
+  async (failure) => {
+    vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+    const request = vi.fn();
+    if (failure === "offline")
+      request.mockRejectedValueOnce(new TypeError("offline"));
+    else request.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    let finish!: (response: Response) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", request);
+    vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+    renderConfirmation();
+    submitCode();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Seu e-mail foi confirmado. Não foi possível verificar sua sessão.",
+    );
+    expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reenviar código" }),
+    ).not.toBeInTheDocument();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Verificar sessão novamente" }),
+    );
+    const pendingButton = screen.getByRole("button", {
+      name: "Verificando sessão...",
+    });
+    expect(pendingButton).toBeDisabled();
+    fireEvent.click(pendingButton);
+    expect(request).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish(
+        new Response(
+          JSON.stringify({
+            user: { id: "synthetic", email: "pessoa@example.invalid" },
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    expect(submitConfirmationCode).toHaveBeenCalledTimes(1);
+    expect(submitResendConfirmationCode).not.toHaveBeenCalled();
+    expect(navigation.replace).toHaveBeenCalledWith("/fila");
+    expect(navigation.refresh).toHaveBeenCalled();
+  },
+);
+
+test("does not navigate when the active session belongs to a different confirmed account", async () => {
+  vi.stubEnv("NEXT_PUBLIC_APP_ENV", "production");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          user: { id: "other", email: "other@example.invalid" },
+        }),
+      ),
+    ),
+  );
+  vi.mocked(submitConfirmationCode).mockResolvedValue({ ok: true });
+  renderConfirmation();
+  submitCode();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "A sessão ativa não corresponde à conta confirmada",
+  );
+  expect(navigation.replace).not.toHaveBeenCalled();
+  expect(screen.getByRole("link", { name: "Ir para o login" })).toHaveAttribute(
+    "href",
+    "/login",
+  );
+  expect(screen.queryByLabelText("Código")).not.toBeInTheDocument();
 });

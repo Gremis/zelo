@@ -15,6 +15,7 @@ test.beforeAll(async () => {
     ssr: { noExternal: [/^next\/font\/google$/] },
     resolve: {
       alias: [
+        { find: "next/navigation", replacement: "\0confirmation-navigation" },
         { find: "next/font/google", replacement: "\0confirmation-fonts" },
         {
           find: "@/components/signup-flow",
@@ -37,6 +38,8 @@ test.beforeAll(async () => {
           if (id === "next/font/google") return "\0confirmation-fonts";
         },
         load(id) {
+          if (id === "\0confirmation-navigation")
+            return "export const useRouter = () => ({ replace() {} });";
           if (id === "\0confirmation-context")
             return 'export function useSignupFlow() { return { draft: { fullName: "Pessoa Exemplo", email: "pessoa@example.invalid", phone: "" } }; }';
           if (id === "\0confirmation-fonts")

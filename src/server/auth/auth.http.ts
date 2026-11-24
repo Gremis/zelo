@@ -12,6 +12,10 @@ const STATUS_BY_CODE: Record<AuthErrorCode, number> = {
   invalid_recovery_code: 401,
   update_failed: 400,
   unknown: 500,
+  invalid_confirmation_code: 400,
+  confirmation_expired: 400,
+  confirmation_blocked: 429,
+  unauthorized: 401,
 };
 
 export function toResponse<T>(
@@ -23,7 +27,11 @@ export function toResponse<T>(
   }
 
   return NextResponse.json(
-    { error: result.error.message, details: result.error.details },
+    {
+      error: result.error.message,
+      details: result.error.details,
+      code: result.error.code,
+    },
     { status: STATUS_BY_CODE[result.error.code] },
   );
 }
@@ -51,4 +59,53 @@ export async function handleJson<T>(
   }
 
   return toResponse(await handler(parsed.data), successStatus);
+}
+
+export async function authRequest(
+  request: Request,
+  handler: (
+    service: import("./auth.service").AuthService,
+    body: unknown,
+  ) => Promise<Result<unknown>>,
+  successStatus = OK,
+  readBody = true,
+) {
+  const headers = new Headers({
+    "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
+    Expires: "0",
+    Pragma: "no-cache",
+  });
+  const origin = request.headers.get("origin");
+  const url = new URL(request.url);
+  const expectedOrigin = `${url.protocol}//${request.headers.get("host") ?? url.host}`;
+  if (origin && origin !== expectedOrigin)
+    return NextResponse.json(
+      { error: "Origem não autorizada." },
+      { status: 403, headers },
+    );
+  const execute = async (body: unknown) => {
+    const { getAuthService } = await import("./auth.factory");
+    const persistence =
+      url.pathname === "/api/auth/login" &&
+      typeof body === "object" &&
+      body !== null
+        ? (body as { keepSignedIn?: unknown }).keepSignedIn !== false
+        : undefined;
+    return handler(await getAuthService(headers, persistence), body);
+  };
+  let response: NextResponse;
+  try {
+    response = readBody
+      ? await handleJson(request, execute, successStatus)
+      : toResponse(await execute(undefined), successStatus);
+  } catch {
+    response = toResponse(
+      failure({
+        code: "unknown",
+        message: "Serviço temporariamente indisponível. Tente novamente.",
+      }),
+    );
+  }
+  headers.forEach((value, key) => response.headers.set(key, value));
+  return response;
 }
