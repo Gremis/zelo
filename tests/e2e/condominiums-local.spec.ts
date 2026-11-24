@@ -284,7 +284,9 @@ test("real condominium flow, concurrent creation and tenant isolation", async ({
       await expect(
         publicPage.getByText("Endereço atualizado", { exact: true }),
       ).toBeVisible();
-      await expect(publicPage.locator("form")).toHaveCount(0);
+      await expect(
+        publicPage.getByRole("form", { name: "Registrar ocorrência" }),
+      ).toBeVisible();
       await publicPage.goto("/c/does-not-exist-ab12");
       await expect(
         publicPage.getByRole("heading", { name: "Link não encontrado" }),
