@@ -290,9 +290,12 @@ export type Database = {
           decided_priority: string | null;
           decided_suggested_priority: string | null;
           decision: string | null;
+          delegation_started_at: string | null;
           description: string;
           due_at: string | null;
+          due_date: string | null;
           final_priority: string | null;
+          first_responsible_at: string | null;
           id: string;
           internal_note: string | null;
           location: string | null;
@@ -304,6 +307,8 @@ export type Database = {
           reporter_name: string | null;
           reporter_phone: string | null;
           reporter_unit_or_role: string | null;
+          responsible_employee_id: string | null;
+          responsible_kind: string | null;
           responsible_name: string | null;
           responsible_phone: string | null;
           responsible_profile_id: string | null;
@@ -314,6 +319,7 @@ export type Database = {
           suggestion_reason: string | null;
           suggestion_source: string | null;
           tracking_code: string;
+          version: number;
         };
         ComputedFields: never;
         Insert: {
@@ -326,9 +332,12 @@ export type Database = {
           decided_priority?: string | null;
           decided_suggested_priority?: string | null;
           decision?: string | null;
+          delegation_started_at?: string | null;
           description: string;
           due_at?: string | null;
+          due_date?: string | null;
           final_priority?: string | null;
+          first_responsible_at?: string | null;
           id?: string;
           internal_note?: string | null;
           location?: string | null;
@@ -340,6 +349,8 @@ export type Database = {
           reporter_name?: string | null;
           reporter_phone?: string | null;
           reporter_unit_or_role?: string | null;
+          responsible_employee_id?: string | null;
+          responsible_kind?: string | null;
           responsible_name?: string | null;
           responsible_phone?: string | null;
           responsible_profile_id?: string | null;
@@ -350,6 +361,7 @@ export type Database = {
           suggestion_reason?: string | null;
           suggestion_source?: string | null;
           tracking_code?: string;
+          version?: number;
         };
         Update: {
           ai_failure_reason?: string | null;
@@ -361,9 +373,12 @@ export type Database = {
           decided_priority?: string | null;
           decided_suggested_priority?: string | null;
           decision?: string | null;
+          delegation_started_at?: string | null;
           description?: string;
           due_at?: string | null;
+          due_date?: string | null;
           final_priority?: string | null;
+          first_responsible_at?: string | null;
           id?: string;
           internal_note?: string | null;
           location?: string | null;
@@ -375,6 +390,8 @@ export type Database = {
           reporter_name?: string | null;
           reporter_phone?: string | null;
           reporter_unit_or_role?: string | null;
+          responsible_employee_id?: string | null;
+          responsible_kind?: string | null;
           responsible_name?: string | null;
           responsible_phone?: string | null;
           responsible_profile_id?: string | null;
@@ -385,6 +402,7 @@ export type Database = {
           suggestion_reason?: string | null;
           suggestion_source?: string | null;
           tracking_code?: string;
+          version?: number;
         };
         Relationships: [
           {
@@ -399,6 +417,13 @@ export type Database = {
             columns: ["created_by_profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "occurrences_responsible_employee_id_fkey";
+            columns: ["responsible_employee_id"];
+            isOneToOne: false;
+            referencedRelation: "funcionarios";
             referencedColumns: ["id"];
           },
           {
@@ -539,6 +564,27 @@ export type Database = {
       has_active_session: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
+      };
+      manager_occurrence_upload_operation: {
+        Args: {
+          actor_profile: string;
+          operation: string;
+          payload?: Json;
+          session_key: string;
+          target_occurrence: string;
+          upload_secret: string;
+        };
+        Returns: Json;
+      };
+      occurrence_command: {
+        Args: {
+          command_key: string;
+          command_type: string;
+          expected_version: number;
+          payload: Json;
+          target_occurrence: string;
+        };
+        Returns: Json;
       };
       occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
       occurrence_upload_operation: {

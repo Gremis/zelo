@@ -14,6 +14,8 @@ import {
   readBoundedFile,
 } from "./upload-inspection";
 
+export type ManagerUploadScope = { occurrenceId: string; actorId: string };
+
 const bucket = "occurrence-evidence";
 const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const secretPattern = /^[0-9a-f]{64}$/;
@@ -49,17 +51,25 @@ export async function uploadOperation(
   secret?: string,
   payload: Json = {},
   signal?: AbortSignal,
+  scope?: ManagerUploadScope,
 ) {
-  const { data, error } = await storageClient(signal).rpc(
-    "occurrence_upload_operation",
-    {
-      operation,
-      session_key: sessionKey!,
-      condominium_slug: slug,
-      upload_secret: secret,
-      payload,
-    },
-  );
+  const client = storageClient(signal);
+  const { data, error } = scope
+    ? await client.rpc("manager_occurrence_upload_operation", {
+        operation,
+        session_key: sessionKey!,
+        target_occurrence: scope.occurrenceId,
+        actor_profile: scope.actorId,
+        upload_secret: secret!,
+        payload,
+      })
+    : await client.rpc("occurrence_upload_operation", {
+        operation,
+        session_key: sessionKey!,
+        condominium_slug: slug,
+        upload_secret: secret,
+        payload,
+      });
   if (error) {
     if (error.code === "P0004") throw new UploadBudgetExceeded();
     throw new OccurrenceWriteError(
@@ -137,7 +147,12 @@ function failure(error: unknown) {
   return publicFailure(error);
 }
 
-export async function prepareUploads(request: Request, slug: string) {
+export async function prepareUploads(
+  request: Request,
+  slug: string,
+  scope?: ManagerUploadScope,
+) {
+  const operate = scopedOperation(scope);
   try {
     const key = request.headers.get("Idempotency-Key") ?? "";
     const secret = credentials(request, key);
@@ -147,7 +162,7 @@ export async function prepareUploads(request: Request, slug: string) {
     } catch {
       throw new OccurrenceWriteError("invalid_input");
     }
-    const state = await uploadOperation("prepare", key, slug, secret, files);
+    const state = await operate("prepare", key, slug, secret, files);
     return publicReply(state, 200);
   } catch (error) {
     return failure(error);
@@ -158,11 +173,13 @@ export async function manageUploads(
   request: Request,
   slug: string,
   key: string,
+  scope?: ManagerUploadScope,
 ) {
+  const operate = scopedOperation(scope);
   try {
     const secret = credentials(request, key);
     return publicReply(
-      await uploadOperation(
+      await operate(
         request.method === "DELETE" ? "cancel" : "status",
         key,
         slug,
@@ -191,7 +208,9 @@ export async function processUploadFile(
   key: string,
   fileId: string,
   action: string,
+  scope?: ManagerUploadScope,
 ) {
+  const operate = scopedOperation(scope);
   let ownsInspection = false;
   try {
     const secret = credentials(request, key);
@@ -203,7 +222,7 @@ export async function processUploadFile(
       ownsInspection = true;
     }
     const inspectionDeadline = AbortSignal.timeout(40_000);
-    const file = (await uploadOperation(
+    const file = (await operate(
       action === "authorize" ? "authorize" : "claim",
       key,
       slug,
@@ -260,7 +279,7 @@ export async function processUploadFile(
         },
         inspectionDeadline,
       );
-      await uploadOperation(
+      await operate(
         "validated",
         key,
         slug,
@@ -274,7 +293,7 @@ export async function processUploadFile(
       );
       return publicReply({ fileId, state: "valid" });
     } catch (error) {
-      await uploadOperation(
+      await operate(
         error instanceof InvalidAttachment ? "failed" : "retry",
         key,
         slug,
@@ -334,3 +353,22 @@ export async function cleanupUploads(request: Request) {
 }
 
 export type { UploadState };
+
+function scopedOperation(scope?: ManagerUploadScope) {
+  return (
+    operation: string,
+    key: string | null,
+    slug?: string,
+    secret?: string,
+    payload: Json = {},
+    signal?: AbortSignal,
+  ) => uploadOperation(operation, key, slug, secret, payload, signal, scope);
+}
+
+export async function signedEvidence(path: string) {
+  const { data, error } = await storageClient()
+    .storage.from(bucket)
+    .createSignedUrl(path, 60, { download: true });
+  if (error || !data) throw new Error("Evidence unavailable.");
+  return data.signedUrl;
+}

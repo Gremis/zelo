@@ -254,6 +254,8 @@ values (
   'Funcionário do B', '31 98000-0000'
 );
 
+select set_config('request.jwt.claims', '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
+
 select lives_ok(
   $$update public.funcionarios set ativo = false where nome = 'Carlos Souza'$$,
   'Soft delete: funcionário pode ser desativado'
@@ -313,12 +315,12 @@ grant select on s14_refs to authenticated;
 -- Isolamento entre síndicos (identidade autenticada)
 -- =====================================================================
 update auth.users set email_confirmed_at=now() where id::text like '51400000-%';
-insert into auth.sessions(id,user_id) select id,id from auth.users where id::text like '51400000-%';
+
 
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
 
 select is(auth.uid(), '51400000-0000-4000-8000-000000000001'::uuid, 'Identidade do síndico A');
 
@@ -344,6 +346,8 @@ select lives_ok(
 );
 
 -- A desativa o próprio funcionário (caminho de UPDATE sob RLS).
+select set_config('request.jwt.claims', '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
+
 select lives_ok(
   $$update public.funcionarios set ativo = false where nome = 'Joana Martins'$$,
   'Síndico A desativa o próprio funcionário'
@@ -436,7 +440,7 @@ select throws_ok(
 -- Síndico B: isolamento simétrico.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000002","session_id":"51400000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000002","session_id":"51400000-0000-4000-9000-000000000002","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios where sindico_id <> auth.uid()),
   0::bigint, 'Síndico B também só enxerga a própria carteira'
@@ -464,7 +468,7 @@ select is((select count(*) from public.funcionarios), 0::bigint, 'Revoked sessio
 -- Não-síndico: sem acesso.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000003","session_id":"51400000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000003","session_id":"51400000-0000-4000-9000-000000000003","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios), 0::bigint,
   'Não-síndico não enxerga funcionários'
