@@ -16,10 +16,25 @@ export function createFirstStepsOperations(): FirstStepsOperations {
       return result.ok ? { ok: true, data: result.data.firstSteps } : result;
     },
     dismiss: async () => {
-      const result = await loadPanel();
-      return result.ok
-        ? { ok: true, data: { ...result.data.firstSteps, dismissed: true } }
-        : result;
+      try {
+        const response = await fetch("/api/panel/first-steps/dismiss", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const result: unknown = await response.json();
+        if (
+          !response.ok ||
+          !result ||
+          typeof result !== "object" ||
+          !("dismissed" in result) ||
+          result.dismissed !== true
+        )
+          return { ok: false, error: "unavailable" };
+        return { ok: true, data: { dismissed: true } };
+      } catch {
+        return { ok: false, error: "network" };
+      }
     },
   };
 }

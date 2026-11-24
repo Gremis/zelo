@@ -61,13 +61,12 @@ export function ConfirmationNotice() {
     };
   }, [announcement]);
 
-  if (announcement === 0) return null;
+  if (announcement === 0 || !visible) return null;
   return (
     <p
       role="status"
       aria-atomic="true"
-      aria-hidden={!visible}
-      className={`mb-[18px] rounded-lg border border-[#abefc6] bg-[#dcfae6] px-4 py-3 text-sm text-[#067647] ${visible ? "" : "invisible"}`}
+      className="mb-[18px] rounded-lg border border-[#abefc6] bg-[#dcfae6] px-4 py-3 text-sm text-[#067647]"
     >
       E-mail confirmado. Conta criada.
     </p>

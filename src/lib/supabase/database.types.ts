@@ -413,6 +413,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string;
+          first_steps_dismissed_at: string | null;
           full_name: string | null;
           id: string;
           is_morador: boolean;
@@ -423,6 +424,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           created_at?: string;
+          first_steps_dismissed_at?: string | null;
           full_name?: string | null;
           id: string;
           is_morador?: boolean;
@@ -432,6 +434,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          first_steps_dismissed_at?: string | null;
           full_name?: string | null;
           id?: string;
           is_morador?: boolean;
@@ -518,6 +521,10 @@ export type Database = {
           target_occurrence: string;
         };
         Returns: Json;
+      };
+      dismiss_first_steps: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
       };
       email_confirmation_guard: {
         Args: {

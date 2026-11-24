@@ -409,10 +409,14 @@ export function Condominiums() {
           </button>
         </div>
       ) : !items.length ? (
-        <p className={`${card} text-center`}>
-          Nenhum condomínio cadastrado. Cadastre seu primeiro condomínio para
-          gerar o link.
-        </p>
+        <div className={card}>
+          <h2 className="text-sm font-semibold">
+            Nenhum condomínio por enquanto
+          </h2>
+          <p className="mt-1 text-sm text-[#6b7280]">
+            Cadastre seu primeiro condomínio para começar.
+          </p>
+        </div>
       ) : (
         <div className="grid items-stretch gap-3 min-[560px]:grid-cols-2 min-[820px]:grid-cols-3 min-[1100px]:grid-cols-4">
           {items.map((item) => (
