@@ -2923,7 +2923,7 @@ by this delivery.
    attachments are optional and internal. Completion without attachments does not
    prepare an upload or invoke the inspector. Completed cases are read-only for
    the current ORI-72 commands: database guards also reject later priority changes
-   and internal notes. Explicit reopening belongs to ORI-91.
+   and internal notes. Explicit reopening is described in the ORI-91 section below.
 
 ### Incremental local migrations
 
@@ -3077,18 +3077,165 @@ immutable author/employee/function snapshots, portfolio isolation, deadline
 changes and atomic completion rollback. These are local results, not remote CI
 or hosted acceptance evidence.
 
-### ORI-91 reopening extension
+## Reopening completed occurrences (ORI-91)
 
-Completion is not a permanent product-level prohibition on reopening. ORI-72
-keeps completed cases read-only for the commands implemented here; ORI-91 will
-introduce an explicit, separately authorized reopening action. The completed card
-continues rendering its content and history, so the future button can be added
-without enabling the current editing controls or introducing a placeholder button.
+Branch `feature/ori-91-reopen-completed-occurrence` starts from ORI-72 branch
+`feature/ori-72-responsibility-deadline-completion`, commit `07e791a`. The initial
+worktree was clean. The user explicitly requested continuing from that branch
+rather than develop. No dependency branches were merged; remote references were
+checked for missing tracking/task implementations. The accepted implementation
+is submitted as a dependent PR to the ORI-72 branch. No remote migration, reset,
+merge or deployment is part of this delivery.
 
-The current database update guard rejects writes to completed occurrences. ORI-91
-must adapt that guard through a new migration together with its authenticated,
-idempotent reopening command and history event. Do not remove the existing guard
-or allow ordinary assignment/deadline/update commands to implicitly reopen cases.
-Reopening transitions and completion-cycle timestamp rules must follow ORI-91's
-acceptance criteria; they are not inferred or implemented in ORI-72. Existing
-completion evidence and history must remain immutable.
+### Manager workflow
+
+The original card layout is preserved. Completed cases keep their ordinary fields
+locked and expose Reabrir beside the close button; completion controls stay in
+their existing position. Confirmation asks for
+an optional internal reason. Cancel and Escape close only the confirmation, restore
+trigger focus and perform no write. Keyboard navigation stays inside the modal.
+Errors preserve the reason; uncertain responses retain the command key for safe
+recovery, while stale state requires a refresh. A cached receipt from a previous
+cycle cannot replace a newer completion state in the card.
+
+The existing authenticated command endpoint dispatches `reopen` to the explicit
+`reopen_occurrence` RPC. The database verifies an active manager session,
+condominium ownership, current completed status and expected version. Reopening
+returns to New, clears current responsibility, both deadline representations,
+current completion timestamp and delegation start, and preserves priority and all
+other occurrence fields, including the first responsibility timestamp. Existing
+commands cannot implicitly reopen a case. A private, unfinished command receipt
+authorizes only the exact reopening transition; it is finalized in the same
+transaction as the state change and central history event. No user-settable
+session flag or broad write bypass is introduced.
+
+History text is `Reabriu a ocorrência`, followed by `. ` and the trimmed reason
+when supplied. Empty/whitespace reasons are absent. Historical events, authors,
+roles and evidence are unchanged. Detail, queue and counts refresh after success,
+and New controls use the refreshed state rather than the old assignee draft.
+
+### Completion dates and migrations
+
+- `20261126100000_reopen_completed_occurrences.sql` adds the reopened event type,
+  protected completion snapshots, legacy backfill, the explicit transition guard
+  and manager RPC. `occurrences.completed_at` represents the current state;
+  `occurrence_completions` preserves completion dates across cycles. Existing
+  completion events are associated with snapshot rows, and legacy completed rows
+  without an event also retain their timestamp. New completed events capture the
+  new cycle in the same transaction as completion. The snapshot table is private
+  to authenticated portfolio readers through RLS and has no application write
+  grants; history/evidence-style guards preserve its records.
+- `20261126110000_reopen_command_receipt.sql` incrementally fixes the local receipt
+  variable reference without editing the already applied first migration.
+
+- `20261126120000_completion_event_identity.sql` identifies historical cycles by
+  their event rather than assuming their timestamps are unique, and recovers any
+  distinct historical events sharing a timestamp.
+
+All were applied only to the inspected local stack, without reset. Types were
+regenerated from that database. A subsequent completion registers a new timestamp
+and snapshot instead of overwriting the previous cycle. Rollback tests inject an
+event failure and verify that no state change or unfinished authorization receipt
+survives.
+
+### Explicit dependencies and acceptance boundaries
+
+The user selected preparing integration and recording dependencies instead of
+adding the complete resident tracking and employee task products to ORI-91.
+Neither product exists in this base or in the checked remote branch references.
+
+| Acceptance criterion | Current boundary                                                                                                                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1, 2, 3              | Manager reopening with/without reason, cancellation and Escape are implemented and tested                                                                                                                                                                                      |
+| 4                    | Manager reopening accepts a stored completion authored by an employee; the real employee task page and its closed-link behavior cannot be validated until that product exists                                                                                                  |
+| 5                    | The reopened event stores only the fixed public text `A ocorrência foi reaberta.` in `public_text`, with the reason confined to internal description/data; the public tracking page/API and its `Recebida pelo síndico` status projection remain blocked on the tracking story |
+| 6                    | Reopening clears the current delegation start and assignee; a later delegation obtains a new start timestamp. Token issuance and rejection of old task links remain blocked on the employee task/link story                                                                    |
+| 7, 8                 | Previous history, priority, completion dates, portfolio authorization, stale writes and idempotent/concurrent retries are covered by real database tests                                                                                                                       |
+
+Future resident endpoints must project only approved public fields and never
+serialize `internal_description`, `data.reason` or manager-only detail payloads.
+The tracking code itself remains unchanged. Future employee links must identify
+an immutable delegation instance, remain revoked after its completion, and never
+be authorized solely from the occurrence becoming open again. No placeholder
+public pages, fake task links or unverified claims about either product are added.
+The reason is currently accessible only through authenticated portfolio reads.
+
+### Local review
+
+1. Complete an in-progress/delegated synthetic case, then open its card from the
+   completed column/tab. Check Reabrir in the header and locked ordinary fields.
+2. Enter a reason and cancel, then repeat with Escape. The card stays open,
+   completed state/history remain unchanged, and focus returns to Reabrir.
+3. Confirm with a reason padded with spaces. Check New status, no responsible
+   person/deadline, unchanged priority, and exactly one trimmed history entry.
+4. Complete another case and reopen with an empty/whitespace reason. Check the
+   exact standard history text without an appended reason.
+5. Assign and complete the reopened case again. Both completion events/dates
+   remain, and the new current completion timestamp differs from the prior one.
+6. Compare another manager's portfolio and two stale tabs: access is refused,
+   stale commands conflict, and retrying an uncertain command does not add another
+   event. The local browser recovery test deliberately discards a committed HTTP
+   response and retries the same key.
+7. Treat resident tracking and employee links as blocked criteria above; there is
+   no page or token to exercise yet. A synthetic employee-authored completion is
+   tested in the database, not presented as a real task-page validation.
+
+The full legacy upload cleanup suite refuses this host's nonempty upload-session
+table before running its 15 cases. Existing local evidence was preserved; no
+sessions or objects were deleted to bypass that guard. The workflow integration
+suite still exercises its own isolated completion upload fixture. Hosted ORI-58
+acceptance remains pending independently of these local results.
+
+### ORI-91 local validation evidence
+
+Formatting/write and check, ESLint, route type generation/TypeScript and 780 unit
+and component tests passed on Node 24.22.3 (`npm test -- --maxWorkers=1`). The
+production dependency audit reported zero vulnerabilities. The standard Turbopack
+`npm run build` passed in an isolated Node 24 bookworm container after `npm ci`,
+using the same host-port restriction workaround documented for ORI-72.
+
+All 708 SQL assertions passed. Existing event-service metric assertions were
+scoped to their own occurrence fixture so existing local user history cannot
+change their result. The accidental-grant truncate test includes the new snapshot
+table and continues checking the append-only trigger rather than stopping at an
+earlier missing table privilege. These changes do not relax production grants.
+
+The workflow integration suite passed 19 cases against the loopback-only stack,
+including reopening authorization for owner/foreign/non-manager/anonymous users,
+stale and concurrent commands, repeated keys, rollback after event failure,
+immutable prior history and evidence bytes, completion cycles, equal historical
+timestamps and a synthetic employee-authored completion. The separate legacy
+15-case upload cleanup suite was refused by its preexisting nonempty-session
+safety guard, as described above; it was not forced to run against existing data.
+
+The standard production artifact passed 95 Chromium cases with one existing
+mock-only offline scenario skipped. The five ORI-91 cases cover cancellation,
+Escape without closing the parent card, focus restoration, optional/trimmed
+reasons, fresh New controls, new completion dates and recovery after losing a
+committed HTTP response. They passed at 360 and 1280 px and were repeated after
+the final migration. Initial failed browser traces were preserved locally before
+correcting nested Escape propagation and the mobile test's tab-loading race.
+
+All relevant local browser opt-ins were enabled; `ACCOUNT_DEMO_ENABLED=false`
+was supplied only to the test/server process to keep existing onboarding fixtures
+consistent. No environment file was changed. There was no real WhatsApp send,
+hosted validation, merge or deployment for ORI-91. The user approved the manual
+review before publication; local results do not prove remote CI execution.
+Resident tracking and employee task-link acceptance remain explicitly
+blocked on their absent products under the user-approved scope boundary.
+
+### Minimal card presentation follow-up
+
+Reabrir uses the original neutral outlined style beside the close button. The
+extra header action row was removed and the existing completion control location
+was restored. The card width, activity layout and business rules are unchanged.
+
+Verified JPEG/PNG/WebP evidence now appears as a small thumbnail in its history
+entry. Clicking expands/collapses it inline; downloading remains an explicit
+separate link. The existing authenticated attachment route accepts `preview=1`
+only for those verified image MIME types and issues a short-lived signed URL
+without forcing download. Other file types keep their download behavior. Preview
+uses an unoptimized image so browser authentication reaches the same-origin route
+instead of an image optimizer that does not forward credentials. Portfolio
+checks, private/no-store responses and download authorization remain in place.
+No bucket, database migration or public evidence access is added by this follow-up.

@@ -5,7 +5,7 @@ import {
 } from "@/server/occurrences/detail.service";
 import { signedEvidence } from "@/server/occurrences/uploads";
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string; attachmentId: string }> },
 ) {
   const headers = new Headers({ "Cache-Control": "private, no-store" });
@@ -20,7 +20,7 @@ export async function GET(
     await loadOccurrenceDetail(identity.supabase, id);
     const { data, error } = await identity.supabase
       .from("occurrence_attachments")
-      .select("storage_path")
+      .select("storage_path, content_type")
       .eq("occurrence_id", id)
       .eq("id", attachmentId)
       .maybeSingle();
@@ -30,7 +30,20 @@ export async function GET(
         { error: "Arquivo não encontrado." },
         { status: 404, headers },
       );
-    headers.set("Location", await signedEvidence(data.storage_path));
+    const preview = new URL(request.url).searchParams.get("preview");
+    if (
+      preview !== null &&
+      (preview !== "1" ||
+        !["image/jpeg", "image/png", "image/webp"].includes(data.content_type))
+    )
+      return Response.json(
+        { error: "A visualização está disponível apenas para imagens." },
+        { status: 400, headers },
+      );
+    headers.set(
+      "Location",
+      await signedEvidence(data.storage_path, preview !== "1"),
+    );
     return new Response(null, { status: 302, headers });
   } catch (error) {
     return Response.json(

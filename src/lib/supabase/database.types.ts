@@ -188,6 +188,43 @@ export type Database = {
           },
         ];
       };
+      occurrence_completions: {
+        Row: {
+          completed_at: string;
+          event_id: number | null;
+          id: number;
+          occurrence_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          completed_at: string;
+          event_id?: number | null;
+          id?: never;
+          occurrence_id: string;
+        };
+        Update: {
+          completed_at?: string;
+          event_id?: number | null;
+          id?: never;
+          occurrence_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "occurrence_completions_occurrence_id_event_id_fkey";
+            columns: ["occurrence_id", "event_id"];
+            isOneToOne: true;
+            referencedRelation: "occurrence_events";
+            referencedColumns: ["occurrence_id", "id"];
+          },
+          {
+            foreignKeyName: "occurrence_completions_occurrence_id_fkey";
+            columns: ["occurrence_id"];
+            isOneToOne: false;
+            referencedRelation: "occurrences";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       occurrence_events: {
         Row: {
           author_name: string | null;
@@ -668,6 +705,15 @@ export type Database = {
           occurrence_id: string;
           tracking_code: string;
         }[];
+      };
+      reopen_occurrence: {
+        Args: {
+          command_key: string;
+          expected_version: number;
+          reason?: string;
+          target_occurrence: string;
+        };
+        Returns: Json;
       };
       resolve_condominium_link: {
         Args: { p_slug: string };

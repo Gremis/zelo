@@ -4,7 +4,7 @@ import { OccurrenceRequestError } from "./detail-request";
 export type WorkflowCommand = {
   key: string;
   version: number;
-  type: "responsible" | "delegate" | "deadline" | "complete";
+  type: "responsible" | "delegate" | "deadline" | "complete" | "reopen";
   payload: Record<string, string | null>;
 };
 export type EligibleEmployee = {

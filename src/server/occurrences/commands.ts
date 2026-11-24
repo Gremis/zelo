@@ -18,7 +18,7 @@ export function commandBody(value: unknown) {
     !uuid.test(String(body.key)) ||
     !Number.isSafeInteger(body.version) ||
     Number(body.version) < 0 ||
-    !["responsible", "delegate", "deadline", "complete"].includes(
+    !["responsible", "delegate", "deadline", "complete", "reopen"].includes(
       String(body.type),
     ) ||
     !body.payload ||
@@ -32,6 +32,7 @@ export function commandBody(value: unknown) {
     delegate: ["employeeId", "message"],
     deadline: ["date"],
     complete: ["comment", "uploadKey", "uploadSecret"],
+    reopen: ["reason"],
   };
   if (
     Object.keys(payload).some(
@@ -65,13 +66,22 @@ export async function runOccurrenceCommand(
 ) {
   if (!uuid.test(id)) throw new CommandError(404);
   const body = commandBody(input);
-  const { data, error } = await client.rpc("occurrence_command", {
-    target_occurrence: id,
-    command_key: body.key,
-    expected_version: body.version,
-    command_type: body.type,
-    payload: body.payload,
-  });
+  const { data, error } =
+    body.type === "reopen"
+      ? await client.rpc("reopen_occurrence", {
+          target_occurrence: id,
+          command_key: body.key,
+          expected_version: body.version,
+          reason:
+            (body.payload as { reason?: string | null }).reason ?? undefined,
+        })
+      : await client.rpc("occurrence_command", {
+          target_occurrence: id,
+          command_key: body.key,
+          expected_version: body.version,
+          command_type: body.type,
+          payload: body.payload,
+        });
   if (error)
     throw new CommandError(
       error.code === "42501"
