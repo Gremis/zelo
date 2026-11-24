@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { PanelPageTitle } from "./panel-page-title";
 import type {
   PortfolioQueue,
@@ -32,6 +38,19 @@ const columns: { status: QueueStatus; title: string; empty: string }[] = [
     empty: "Nenhuma ocorrência concluída.",
   },
 ];
+const mobileQuery = "(max-width: 1000px)";
+
+function subscribeToViewport(onChange: () => void) {
+  if (!window.matchMedia) return () => {};
+  const query = window.matchMedia(mobileQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function isMobileViewport() {
+  return window.matchMedia?.(mobileQuery).matches ?? false;
+}
+
 const priorities: Record<
   QueuePriority | "unclassified",
   { title: string; badge: string; border: string; dot: string }
@@ -237,6 +256,34 @@ export function OccurrenceQueue({
   state: QueuePresentation;
   onOpenOccurrence?: (id: string) => void;
 }) {
+  const [selected, setSelected] = useState<QueueStatus>("new");
+  const mobile = useSyncExternalStore(
+    subscribeToViewport,
+    isMobileViewport,
+    () => false,
+  );
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const queueRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return;
+    if (
+      mobile &&
+      queueRef.current?.contains(active) &&
+      active.closest("[data-status]")?.getAttribute("data-status") !== selected
+    ) {
+      tabRefs.current[
+        columns.findIndex(({ status }) => status === selected)
+      ]?.focus();
+    } else if (
+      !mobile &&
+      tabRefs.current.includes(active as HTMLButtonElement)
+    ) {
+      queueRef.current
+        ?.querySelector<HTMLElement>(`[data-status="${selected}"]`)
+        ?.focus();
+    }
+  }, [mobile, selected]);
   const [now, setNow] = useState<Date>();
   useEffect(() => {
     let active = true;
@@ -330,16 +377,64 @@ export function OccurrenceQueue({
             </div>
           )}
           <div
+            role="tablist"
+            aria-label="Status das ocorrências"
+            className="mt-[18px] grid min-w-0 grid-cols-4 rounded-[10px] border border-[#d0d5dd] bg-white p-0.5 [@media(width>1000px)]:hidden"
+          >
+            {columns.map(({ status, title }, index) => (
+              <button
+                key={status}
+                ref={(node) => {
+                  tabRefs.current[index] = node;
+                }}
+                type="button"
+                role="tab"
+                id={`${id}-tab-${status}`}
+                aria-controls={`${id}-panel-${status}`}
+                aria-selected={selected === status}
+                tabIndex={selected === status ? 0 : -1}
+                onClick={() => setSelected(status)}
+                onKeyDown={(event) => {
+                  const next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? columns.length - 1
+                        : event.key === "ArrowRight"
+                          ? (index + 1) % columns.length
+                          : event.key === "ArrowLeft"
+                            ? (index + columns.length - 1) % columns.length
+                            : null;
+                  if (next === null) return;
+                  event.preventDefault();
+                  setSelected(columns[next].status);
+                  tabRefs.current[next]?.focus();
+                }}
+                className={`flex min-h-14 min-w-0 cursor-pointer flex-col items-center justify-center rounded-lg px-0.5 py-2 text-[11px] leading-[1.45] font-semibold [overflow-wrap:anywhere] min-[390px]:text-xs [@media(width>560px)]:min-h-11 [@media(width>560px)]:flex-row [@media(width>560px)]:gap-1.5 [@media(width>560px)]:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e] ${selected === status ? "bg-[#111827] text-white" : "text-[#4b5563] hover:bg-[#f2f4f7]"}`}
+              >
+                <span>{status === "in_progress" ? "Andamento" : title}</span>
+                <span>{data ? data.columns[status].count : "—"}</span>
+              </button>
+            ))}
+          </div>
+          <div
+            ref={queueRef}
             aria-busy={state.status === "loading"}
-            className="mt-[18px] grid min-w-0 grid-cols-1 items-start gap-3 min-[700px]:grid-cols-2 min-[1001px]:grid-cols-4"
+            className="mt-[18px] grid min-w-0 grid-cols-1 items-start gap-3 [@media(width>1000px)]:grid-cols-4"
           >
             {columns.map(({ status, title, empty: message }) => (
               <section
                 key={status}
-                aria-labelledby={`${id}-${status}`}
-                className="flex min-w-0 flex-col gap-2 rounded-xl bg-[#eef0f3] p-2.5"
+                id={`${id}-panel-${status}`}
+                data-status={status}
+                role={mobile ? "tabpanel" : undefined}
+                aria-labelledby={
+                  mobile ? `${id}-tab-${status}` : `${id}-${status}`
+                }
+                tabIndex={0}
+                className={`${selected === status ? "flex" : "hidden [@media(width>1000px)]:flex"} min-w-0 flex-col gap-2 rounded-xl bg-[#eef0f3] p-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e]`}
               >
-                <div className="flex min-w-0 items-center gap-2 px-1 pt-0.5 pb-1">
+                <div className="hidden min-w-0 items-center gap-2 px-1 pt-0.5 pb-1 [@media(width>1000px)]:flex">
                   <h2
                     id={`${id}-${status}`}
                     className="min-w-0 font-[family-name:var(--font-panel-heading)] text-[14.5px] leading-[1.45] font-bold"
