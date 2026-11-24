@@ -1243,6 +1243,7 @@ const receipt = await events.registerPublic({
   reporterName,
   reporterPhone,
   reporterUnitOrRole,
+  location,
   description,
 });
 ```
@@ -1251,7 +1252,8 @@ The slug must come from the validated public route, never from an arbitrary
 condominium UUID or owner field. The service validates its format again; the
 restricted database entry resolves the exact slug to a condominium with an enabled
 manager profile and locks that relationship. Reporter name and unit/function are
-required nonblank strings up to 200 characters; description is required up to
+required nonblank strings up to 200 characters; location is also required up to
+200 characters; description is required up to
 10,000 characters. Phone is required in normalized national digits (10 or 11,
 starting with a nonzero digit); presentation formatting must be removed before
 calling the service. Slugs are limited to 200 characters. Missing unit/function
@@ -1259,8 +1261,10 @@ is rejected, never replaced with invented text. Names and description are trimme
 No attachment references or paths are accepted.
 
 `registerPublic` makes one POST to
-`register_public_occurrence(condominium_slug, reporter_name, reporter_phone,
-reporter_unit_or_role, description)`. It uses the existing server-only
+`register_public_occurrence_with_suggestion(condominium_slug, reporter_name,
+reporter_phone, reporter_unit_or_role, description, location, calculated_priority,
+calculated_reason, calculated_source)`. The service computes these last three
+arguments internally; they are never accepted in public input. It uses the existing server-only
 `SUPABASE_SERVICE_ROLE_KEY` with the same no-store, bounded-fetch pattern as the
 email confirmation guard, without creating a general admin client. Configuration
 is validated at invocation, not import. Its result contains only
@@ -1345,8 +1349,8 @@ server-only; the narrow repository is not an untrusted generic RPC proxy.
 #### Metrics, tests and remaining work
 
 AI suggestions/failures and priority changes remain occurrence fields and produce
-no human-history events. Public registration starts without AI or priority
-classification; snapshots preserve what was known at the time rather than being
+no human-history events. At the ORI-64 baseline, public registration started without AI or priority
+classification; ORI-74 adds the rules-only suggestion at creation. Initial snapshots preserve what was known at the time rather than being
 backfilled with later suggestions. Notes capture the current priority and server
 time for first-human-response metrics. Test-only delegation and completion
 fixtures exercise the existing structured timestamps and priority snapshots for
@@ -1478,3 +1482,146 @@ ORI-94 branches directly from the published ORI-64 head
 The comparison against develop includes inherited work while #25 and its
 prerequisites remain open. Integrate the prerequisite PRs first and recheck
 ancestry/content if they are squash-merged.
+
+### Persisted rule suggestion at registration (ORI-74)
+
+The backend `registerPublic` input now requires `location` (1–200 nonblank
+characters) alongside the original `description` (1–10,000). Both are trimmed
+before matching and persistence; absent locations are rejected rather than
+invented or substituted. The caller still supplies only reporter fields, the
+validated condominium slug and the original report. Extra properties, including
+priority, reason, source, timestamps and human decisions, are rejected.
+
+The service calls ORI-94's `detectRisk(location, description)` exactly once
+before its single repository operation. The official list, Unicode behavior,
+field concatenation and list-order tie-break remain in the unchanged ORI-94
+engine. The calculated server-only payload adds:
+
+| Match                     | `suggested_priority` | `suggestion_reason`                             | `suggestion_source` |
+| ------------------------- | -------------------- | ----------------------------------------------- | ------------------- |
+| Official expression found | `urgent`             | `Menciona [canonical term]: risco à segurança.` | `rules`             |
+| No expression found       | `normal`             | `Sem sinal de risco no relato.`                 | `rules`             |
+
+The repository calls `register_public_occurrence_with_suggestion` once. The
+SECURITY DEFINER RPC validates input lengths, the allowed priority/source values
+and the normal/urgent reason combinations. It resolves and locks the enabled
+manager's condominium, inserts location, description and suggestion with a
+server-generated `suggestion_at`, then invokes the existing private registration
+event writer in the same transaction. Any failure rolls back the complete write.
+The receipt remains `{ occurrenceId, number, trackingCode }`; no follow-up update
+or compensating operation is used. Registration history keeps its original
+reporter snapshot and timestamp, with `is_human_action=false` and null
+`priority_snapshot` because no final priority was decided.
+
+Only `service_role` can execute the new entry. `anon` and `authenticated` cannot
+submit calculated suggestions directly. No table, sequence or private-writer
+privileges were widened. The database validates the result's shape and combination,
+not lexical matching: the authorized server is trusted to calculate the canonical
+term. Reimplementing or copying the 37-term engine into SQL would create a second
+business-rule source and is intentionally avoided. A privileged server credential
+must never be exposed to the future public caller.
+
+The new migration retains the old five-argument RPC for schema compatibility but
+revokes its execution from every application role, including `service_role`.
+The generated types reflect both database functions; the repository uses only the
+new required-argument entry. Old server code fails closed after that revocation
+instead of creating records without a location or suggestion. Coordinate the
+migration with the updated server before exposing public submission; no such
+endpoint currently exists, and this task does not publish one. This is an
+operational deployment requirement, not unfinished code integration: the factory,
+service, repository, required input contract and generated RPC types already use
+the new path. Repository inspection found no remaining runtime caller of the old
+entry; internal-note consumers are unchanged. This is schema-additive but not
+behaviorally compatible with an old registration writer, whose execution is
+intentionally revoked. The migration is
+applied locally only, without resets or edits to historical migrations.
+
+For the later authorized deployment:
+
+1. Integrate PR #26 and its prerequisites, then validate and prepare the new server
+   build before touching the target database. Build-time code does not invoke the
+   pending RPC. Verify that no independently deployed registration writer still
+   relies on the old entry; pause such callers during the transition if introduced
+   before this release.
+2. Follow the existing serialized environment deployment pipeline: verify branch
+   HEAD, build the prepared output, dry-run the versioned migration, then apply it
+   only after a successful dry-run. Do not restore the old application's RPC grant
+   as a compatibility workaround.
+3. Publish the prepared server output immediately after the successful migration.
+   In an authorized environment, verify registration using the updated service
+   and confirm persisted location, suggestion and initial event together.
+4. If publication fails after migration, inspect the target state and fix forward
+   with the updated server. Rolling back Vercel alone does not restore the old
+   writer's permission or undo the migration. Keep public submission unavailable
+   until the matching version is active.
+
+No shared migration, deployment or environment change is authorized by the local
+validation or by opening this PR.
+
+An update trigger freezes all four original suggestion fields, including null
+legacy values, without a definer-owner bypass. It protects against future
+application RPCs as well as current role ACLs. The existing suggestion-completeness
+constraint remains. `final_priority`, `priority_decided_at`, decision snapshots
+and `priority_change_reason` stay null at registration. Human decisions remain a
+separate future operation; neither classification nor priority changes generate
+history events. Existing metric fields, server timestamps, private-note behavior
+and portfolio isolation are preserved. Original snapshots are never recomputed
+when reading a record or opening a queue.
+
+Rows created before this integration, and low-level model fixtures, may have no
+suggestion or location. This migration does not backfill or reclassify them.
+Consumers must recognize null as unavailable original data, not infer a stored
+normal priority. Legacy remediation and eventual queue handling need explicit
+follow-up requirements. The trigger also rejects retroactive changes to original
+suggestions; a future corrective migration requires a separately reviewed policy.
+
+ORI-84's integration point is the suggestion selection inside the service before
+`repository.registerPublic`: keep positive keyword matches above AI; when no rule
+matches, a future validated AI suggestion may be selected, with the current normal
+rules result as the no-AI/failure fallback. That task must extend database source
+validation and types before enabling AI, then persist the selected original once.
+It must not overwrite an existing suggestion. No provider, category classification,
+AI architecture or retry orchestration is added here.
+
+No official ORI-76 seeds or fixtures were found in the repository. `seed.sql`
+remains empty. Future demonstration examples should call this same backend flow
+with an explicit location and description; they must not duplicate detection or
+insert hand-calculated suggestion fields. Only synthetic test fixtures are used,
+and none are published to shared environments.
+
+`npm run test:db:priority` runs seven real integration tests under a separate
+Node Vitest configuration, outside unit/e2e discovery. It requires the running
+project-local Supabase CLI stack and Docker, reads local CLI credentials without
+printing them, checks the loopback API target and executes the real service,
+repository and PostgREST RPC. Direct SQL readback proves persisted values and
+initial snapshots; a fixture-scoped failing event trigger proves rollback. Unique
+synthetic accounts, condominiums, records, events and the test trigger are removed
+after the suite. Missing prerequisites fail explicitly rather than skipping.
+`npm run test:db` covers role boundaries, reason combinations, immutability,
+legacy preservation and the existing schema/security regressions. Both concurrency
+modes remain available; `--public-registration` also verifies 200 persisted
+suggestions alongside 200 initial events in eight overlapping transactions.
+
+ORI-74 validation passed locally: 464 unit tests across 36 files (including the
+unchanged ORI-94 acceptance suite), 540 SQL assertions across seven suites, seven
+real service-to-database integration cases, and both concurrency modes (200 unique
+numbers/tracking codes each; public registration also verifies 200 suggestions
+and initial events). The adjusted ORI-64 named-argument rejection tests were
+rechecked separately: 56 assertions passed. Integration fixture and trigger cleanup
+was verified. Formatting/write and check, ESLint, route type generation and
+TypeScript passed on Node.js 24.22.3; the production dependency audit reported zero
+vulnerabilities. The production build passed after fresh `npm ci` in a disposable
+`node:24-alpine` container (the installed image reports 24.22.2), using a temporary
+copy without environment files or provider state and no published ports.
+
+Browser suites were not repeated because no interface, route or browser behavior
+was changed; unit, real database, rollback, role and concurrency tests exercise
+the affected backend paths. No existing skip condition was changed and the new
+integration command has no conditional skips. No SMTP, reset, shared environment operation or deployment was run during
+local validation. Remote CI results are reported separately on the published PR. Dependencies, lockfile, historical
+migrations, ORI-94 rules and seeds are unchanged. ORI-74 is based directly on
+published ORI-94 head `ef5690759076fdb897aaea6df3ed6c6385efdd4e` from PR #26.
+The exclusive task diff is
+`git diff ef5690759076fdb897aaea6df3ed6c6385efdd4e...feature/ori-74-persist-rule-priority`.
+The PR targets `develop`, whose comparison includes inherited work until #26 and
+its prerequisites are integrated; recheck ancestry/content if they are squash-merged.

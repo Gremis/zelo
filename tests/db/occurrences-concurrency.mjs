@@ -69,11 +69,14 @@ try {
       set local role service_role;
       select r.number || ':' || r.tracking_code
       from generate_series(1,25) s
-      cross join lateral public.register_public_occurrence(
+      cross join lateral public.register_public_occurrence_with_suggestion(
         '${slugs[index % 2]}','Synthetic reporter','11900000000','Synthetic unit',
-        'ORI64 concurrent ' || s::text
+        'ORI64 concurrent ' || s::text, 'Synthetic hall', 'normal', 'Sem sinal de risco no relato.', 'rules'
       ) r;
       reset role;
+      select 'suggestions:' || count(*) from public.occurrences o
+      where o.condominium_id='${condominiums[index % 2]}' and o.description like 'ORI64 concurrent %'
+      and o.suggested_priority='normal' and o.suggestion_source='rules' and o.suggestion_reason='Sem sinal de risco no relato.' and o.suggestion_at is not null and o.location='Synthetic hall' and o.final_priority is null;
       select 'events:' || count(*) from public.occurrence_events e
       join public.occurrences o on o.id=e.occurrence_id
       where o.condominium_id='${condominiums[index % 2]}' and o.description like 'ORI64 concurrent %';
@@ -107,12 +110,18 @@ try {
   await gate.done;
   const outputs = await Promise.all(workers.map((worker) => worker.done));
   if (publicRegistration) {
-    for (const output of outputs)
+    for (const output of outputs) {
+      assert.match(
+        output,
+        /^suggestions:25$/m,
+        "Each worker atomically persists 25 original suggestions",
+      );
       assert.match(
         output,
         /^events:25$/m,
         "Each worker creates exactly 25 initial events",
       );
+    }
   }
   const rows = outputs.flatMap((output) =>
     output.split("\n").filter((line) => /^\d+:[0-9a-f]{64}$/.test(line)),

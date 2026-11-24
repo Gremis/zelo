@@ -4,6 +4,7 @@ export type PublicRegistration = {
   reporterName: string;
   reporterPhone: string;
   reporterUnitOrRole: string;
+  location: string;
   description: string;
 };
 
@@ -19,8 +20,21 @@ export type RegistrationReceipt = {
   trackingCode: string;
 };
 
-export type OccurrenceEventRepository = {
+export type RuleSuggestion = {
+  suggestedPriority: "urgent" | "normal";
+  suggestionReason: string;
+  suggestionSource: "rules";
+};
+
+export type CalculatedRegistration = PublicRegistration & RuleSuggestion;
+
+export type OccurrenceEventService = {
   registerPublic(input: PublicRegistration): Promise<RegistrationReceipt>;
+  appendInternalNote(input: InternalNote): Promise<{ eventId: number }>;
+};
+
+export type OccurrenceEventRepository = {
+  registerPublic(input: CalculatedRegistration): Promise<RegistrationReceipt>;
   appendInternalNote(input: InternalNote): Promise<{ eventId: number }>;
 };
 
