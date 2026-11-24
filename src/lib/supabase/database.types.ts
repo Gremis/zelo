@@ -379,6 +379,10 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
       };
+      portfolio_occurrence_queue: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
       register_public_occurrence: {
         Args: {
           condominium_slug: string;

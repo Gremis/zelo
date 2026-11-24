@@ -1625,3 +1625,122 @@ The exclusive task diff is
 `git diff ef5690759076fdb897aaea6df3ed6c6385efdd4e...feature/ori-74-persist-rule-priority`.
 The PR targets `develop`, whose comparison includes inherited work until #26 and
 its prerequisites are integrated; recheck ancestry/content if they are squash-merged.
+
+### Portfolio occurrence queue (ORI-75)
+
+`GET /api/occurrences/queue` accepts no query parameters or client-selected manager.
+It uses the existing confirmed identity/active-session helper and the user's
+cookie client. The parameterless `portfolio_occurrence_queue()` RPC is STABLE,
+SECURITY INVOKER, has a fixed empty search path and is executable only by
+`authenticated`. It independently requires an active confirmed session and a
+manager profile, then joins condominiums owned by `auth.uid()` under the existing
+portfolio RLS. No service-role credential is used by the read path. Responses,
+including errors, are private and `no-store`: 401 for absent/invalid/revoked or
+unconfirmed identity, 403 for a non-manager, 400 for query parameters, and sanitized
+503 for query/contract/infrastructure failures. There is no frontend integration.
+
+The typed response is `PortfolioQueue` in
+`src/server/occurrences/queue.contract.ts`:
+
+```ts
+{
+  columns: {
+    new: { count: number, items: QueueCard[] },
+    in_progress: { count: number, items: QueueCard[] },
+    delegated: { count: number, items: QueueCard[] },
+    completed: { count: number, items: QueueCard[] }
+  },
+  openByPriority: { urgent: number, normal: number, low: number, unclassified: number }
+}
+```
+
+Each card contains `id`, `number`, `status`, `condominium: { id, name }`,
+`reporterUnitOrRole`, `description`, `location`, `suggestedPriority`,
+`finalPriority`, `effectivePriority`, `suggestionReason`, `suggestionSource`,
+`suggestionPending`, `reporterName`, `registeredAt` and `completedAt`.
+Nullable original fields stay nullable. The explicit database projection and
+runtime response parser exclude tracking codes, phones, internal notes, event
+payloads and responsible/delegation details. The parser also rejects missing
+columns, unsafe numbers, invalid priorities/dates and counts inconsistent with
+items; it never returns a partial queue as successful data.
+
+Effective priority is `final_priority ?? suggested_priority`: the persisted final
+value takes precedence, even if it lowers urgency. No original suggestion is
+modified or recalculated. `suggestionPending` is true only when a suggestion exists,
+`final_priority` is null and the real `priority_decided_at` is null. A legacy final
+priority without a decision timestamp therefore does not advertise an undecided
+suggestion. No inference from status, source or text substitutes for these fields.
+
+Open columns sort by effective priority (`urgent`, `normal`, `low`, then null),
+then oldest `registered_at`, then `number` and `id` ascending. Completed cards sort
+by newest `completed_at`, then `number` and `id`; all completions are included,
+without a seven-day cutoff. The existing completion constraint forbids a completed
+row without a completion date. Null completion dates are normal for open rows;
+the completed ordering defensively places nulls last if inconsistent legacy data
+is encountered, without inventing timestamps or relaxing that constraint.
+
+Legacy records without either priority remain explicitly unclassified (`null`),
+come after low priority within their open column, and contribute to
+`openByPriority.unclassified`. They are never silently labeled normal. Counts by
+status include all visible items; open-priority counts include only new,
+in-progress and delegated rows. An empty portfolio returns all four empty columns
+and every count as zero. No backfill, classification, `detectRisk` call, AI or
+application write is part of this query.
+
+Items and counts derive from one materialized visible relation in one SQL
+statement/snapshot. A single JSON scalar RPC result contains the entire queue, so
+PostgREST's default row cap cannot truncate individual cards or counts. There are
+no per-card/per-condominium queries or application pagination. The existing
+condominium-owner and occurrence-condominium indexes support the join; no extra
+index is justified for fetching and sorting every visible record. Very large
+portfolios still consume finite database/HTTP memory and time; failures are
+reported as errors, never as silently truncated success. Pagination or a resource
+budget would require a separately agreed contract.
+
+`20261122140000_portfolio_occurrence_queue.sql` adds only the read RPC and its
+execute grant, without schema/data changes to existing tables or earlier
+migrations. Types were generated from the local database. Apply the migration
+before publishing the endpoint in a later authorized release; a missing RPC
+returns a sanitized 503. The build does not invoke it. This task changes no
+existing route contract, UI, seeds, registration logic or future ORI-76 behavior.
+
+To run the real queue integration, prepare the local Supabase stack and a
+production build configured for that stack, start it with
+`npm run start -- --hostname 127.0.0.1 --port 3100`, then run
+`npm run test:db:queue` in another shell. The server must use the local public API
+URL and anon key; it needs no service role for the queue. The suite fails rather
+than skipping when prerequisites are unavailable. It creates synthetic accounts
+using local test-only admin credentials, tests the HTTP endpoint with real SSR
+session cookies and direct user-client RPC/table access, and deletes its fixtures.
+It must never target a shared environment. The existing
+`npm run test:db:priority` command now explicitly selects its original file;
+unit, database and Playwright discovery remain separate.
+
+Local validation passed: 486 unit tests across 37 files, 557 SQL assertions across
+eight suites, and ten real database/HTTP integration cases. The primary manager
+receives 1,016 occurrences across two condominiums, including 1,006 in a single
+column, without truncation; a second manager receives only their own record.
+Verified ordering, ties, human-priority precedence, undecided flags, all counts,
+legacy nulls, empty portfolio, parameter manipulation, sensitive-field exclusion,
+non-manager/unconfirmed/revoked sessions, and unchanged occurrence/history state
+after repeated reads. Formatting, ESLint, route type generation, TypeScript and
+production audit passed (zero vulnerabilities) on Node.js 24.22.3. A fresh isolated
+Node 24 container build passed (the installed image reports 24.22.2); its prepared
+output was served locally on Node 24.22.3 for the real HTTP integration and the
+existing browser suite: 43 passed and 15 pre-existing conditional skips. Those
+skips cover explicit local-auth opt-ins, out-of-scope SMTP flows and the separate
+registration-demo build; no skip condition was modified. Generated output was
+backed up for the isolated-build handoff. No SMTP, reset, remote migration, shared
+environment change or deployment was part of local validation. Final review added
+transactional SQL checks for ordering/ties in all four columns and rejection of
+completed rows without a completion timestamp; the targeted queue suite passed
+17 assertions. No business logic or historical migration needed correction.
+
+ORI-75 starts directly from published ORI-74 head
+`944159a43e37ac587460d2184f4a22e5f65fe80b`, inherited through PR #27, and targets
+`develop`. Its exclusive diff is
+`git diff 944159a43e37ac587460d2184f4a22e5f65fe80b...feature/ori-75-portfolio-queue-query`.
+The develop comparison includes inherited work until #27 and its prerequisites
+are integrated; recheck ancestry/content if prerequisites are squash-merged.
+Remote CI results must be verified on the published commit and are reported on
+the PR separately from the local database/HTTP evidence.
