@@ -2888,3 +2888,207 @@ layout, rejected writes, duplicate prevention and recovery after a saved mutatio
 whose list refresh fails. Component tests supplement these checks without a
 backend. The existing offline PWA registration test requires its separate demo
 build flag.
+
+## Responsibility, delegation, deadlines and completion (ORI-72)
+
+The local ORI-72 worktree continues from the ORI-58 baseline. Merge `b558249`
+integrates the employee management UI from ORI-53, including ORI-51/52 and the
+responsive ORI-78 status tabs, while preserving the existing detail card and
+private upload backend. The implementation is organized into commits for the
+shared upload inspector, transactional workflow backend, connected interface and
+validation documentation. The user approved all flows during manual acceptance
+and authorized publishing this branch through a pull request to `develop`.
+No Linear tasks, shared-environment changes, merge or deployment are authorized
+by this delivery.
+
+### Internal delivery stages
+
+1. Responsibility: the manager can assume a case as “Eu” or enter a free-text
+   provider/administrator. Provider changes save on blur or Enter. A normalized
+   unchanged value is a no-op. The server identifies the manager; clients cannot
+   supply the author. The first responsibility timestamp survives subsequent
+   assignments and employee deactivation.
+2. Delegation: only active employees of the occurrence's condominium are eligible,
+   regardless of their work schedule. Selecting and editing a message creates a
+   draft. Confirmation persists the assignment and WhatsApp intention atomically;
+   cancellation changes nothing. The browser reserves a window during the user
+   gesture and navigates it only after a confirmed command. A blocked window gets
+   an explicit “Abrir WhatsApp” link. Neither navigation nor an intention proves
+   that a message was sent or received. Tests intercept this interaction.
+3. Deadline: a civil date is available only while a case is in progress. It is
+   transported as `YYYY-MM-DD`, stored as PostgreSQL `date`, and displayed without
+   converting through the browser's time zone. Delegation and employee
+   deactivation clear the current deadline and append a removal event.
+4. Completion: only in-progress or delegated cases can be completed. Comments and
+   attachments are optional and internal. Completion without attachments does not
+   prepare an upload or invoke the inspector. Completed cases are read-only for
+   the current ORI-72 commands: database guards also reject later priority changes
+   and internal notes. Explicit reopening belongs to ORI-91.
+
+### Incremental local migrations
+
+Apply these versioned migrations through the normal reviewed migration process;
+never reset a database to install them or modify previously applied migrations.
+They were applied incrementally to the project-local stack during development.
+
+| Migration                                                 | Purpose                                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `20261125100000_occurrence_workflow.sql`                  | Assignment identity, first assignment timestamp, civil deadline, version, command receipts, central history overload, terminal guards and transactional employee release |
+| `20261125110000_completion_evidence.sql`                  | Completion upload purpose/target/manager, authenticated upload operations and transactional event attachment links                                                       |
+| `20261125120000_workflow_integrity.sql`                   | Separate public and authenticated upload operations, validate database command payloads, record priority retention and expose workflow fields in the queue               |
+| `20261125130000_preserve_existing_priority_decisions.sql` | Preserve existing final/recorded priority decisions as well as decisions with timestamps                                                                                 |
+
+The deadline backfill converts `due_at` using
+`(due_at AT TIME ZONE 'America/Sao_Paulo')::date`. Existing timestamps are retained
+until a workflow action replaces or clears the deadline. New date writes clear
+`due_at` and use `due_date`; no new timestamp is invented from a civil date.
+Existing responsibility kinds are inferred from the stored profile/name. Where
+history exists, the first assignment timestamp is recovered from the earliest
+`responsible_changed` event. A missing historical timestamp is not fabricated.
+
+New commands use a UUID key, expected occurrence version and a validated payload.
+The database locks the occurrence, checks portfolio ownership and an active
+manager session, and records the receipt in the same transaction as all state and
+history changes. A repeated key with the same actor/payload/version returns the
+original receipt; a different payload conflicts. Upload secrets are hashed in
+command records. Clients preserve uncertain commands in tab-scoped session
+storage and provide recovery instead of silently issuing a different command.
+A conflict requires refreshing the occurrence. Actual network activity disables
+other detail mutations; the occurrence version also prevents stale tab writes.
+
+The central history writer is extended rather than replaced with a separate
+workflow history. Events retain author and employee/function snapshots and the
+previous responsible person's name. The first human workflow action confirms a
+suggested priority only if no final/recorded human decision already exists. The
+same event explicitly records that the suggestion was retained. Historical
+events and attachment metadata remain append-only.
+
+Employee deactivation runs its release trigger in the same transaction as the
+`ativo` update. Open assigned cases return to New and lose their current
+assignment and deadline; history identifies the authenticated manager who
+performed the deactivation. Completed cases are preserved. Reactivation never
+restores assignments. Delegation locks the employee before the occurrence, and
+release locks occurrences in a stable order, so a concurrent deactivation cannot
+leave a new assignment to an inactive employee.
+
+### HTTP and interface integration
+
+- `POST /api/occurrences/[id]/commands` accepts responsibility, delegation,
+  deadline and completion commands. It uses the session actor and rejects
+  cross-origin writes and unexpected command fields.
+- `GET /api/occurrences/[id]/eligible-employees` derives the condominium from the
+  authorized occurrence and filters active employees by condominium ID.
+- `/api/occurrences/[id]/uploads` prepares a completion attempt;
+  `.../[key]` supports status/cancellation, and
+  `.../[key]/[fileId]/authorize` or `validate` reuses the ORI-58 pipeline.
+- `GET /api/occurrences/[id]/attachments/[attachmentId]` authorizes both the
+  occurrence and attachment before issuing a 60-second signed download redirect.
+  Object paths alone grant no access. Responses are private and not cached.
+
+The detail UI offers labelled native controls, keyboard interaction, progress and
+recoverable errors. The desktop focus trap includes date/file/text inputs; the
+mobile detail remains inline. Cards display responsible names and civil deadlines.
+Successful commands refresh the detail and queue counts. If the queue refresh
+fails after a successful write, the UI explicitly distinguishes the saved change
+from the failed refresh.
+
+### Reused evidence pipeline and recovery
+
+Completion sessions reuse `occurrence-evidence`, frozen manifests, signed upload
+authorization, immutable evidence copies, inspection, hashes, leases and cleanup.
+The session is bound to its purpose, occurrence and manager. Public registration
+cannot consume a completion session or operate it through public upload routes.
+All manager operations first authorize the current session and occurrence.
+
+Files are uploaded and verified before the completion command. One PostgreSQL
+transaction sets completion state/time, appends the central event, inserts every
+attachment link and records the command receipt. A validation or linking failure
+rolls back the completion. Storage and PostgreSQL still do not share a transaction:
+failed commands leave private temporary files for recovery or existing cleanup.
+Cancellation never deletes linked evidence. The UI keeps the upload attempt and
+secret in tab-scoped session storage; after reload the original local files may
+need to be selected again. A changed manifest requires explicit cancellation and
+a new attempt. Invalid/incomplete files never silently become a text-only
+completion. Closing a tab does not immediately remove files; the existing
+abandoned-attempt retention/cleanup policy applies.
+
+The macOS RSS monitor now distinguishes a process that exited during `/bin/ps`
+from an inaccessible live process. Only a confirmed `ESRCH` is treated as an exited
+process. An unavailable monitor for a live parser still stops inspection with a
+retryable failure. The same inspector and limits serve both public registration
+and authenticated completion; no second attachment implementation is introduced.
+
+The ORI-58 hosted acceptance procedure above remains pending. Local Storage,
+PostgreSQL, browser, tracing and container build results do not verify Vercel
+native loading, subprocess/RSS availability, hosted Cron or hosted Storage. No
+hosted or CI success is claimed by these local checks.
+
+### Local review
+
+Use the local `/fila` route with a confirmed manager and synthetic occurrences.
+Review stages A through D in order: assume/change a responsible person; draft,
+cancel and confirm delegation; define/change/remove a deadline; then complete
+with optional comment/evidence. Check movement and counts in the queue, previous
+responsible names, priority retention and first assignment time in history.
+Repeat at 360 px and desktop widths with keyboard navigation. Deactivate an
+assigned employee through `/funcionarios`, verify return to New, and reactivate
+without restoring the assignment. A New case must not offer completion and a
+completed case must reject the current ORI-72 business commands.
+
+The dedicated opt-in browser suite is `tests/e2e/occurrence-workflow-local.spec.ts`;
+it requires the loopback Supabase configuration, `ORI47_LOCAL_AUTH_TESTS=enabled`
+and `ORI72_LOCAL_TESTS=enabled`. It uses synthetic accounts and cleans only its
+own fixtures. Run the standard production build before browser tests; Playwright
+owns `127.0.0.1:3100` exclusively and refuses an occupied port. The real database
+suite is `tests/db/workflow.integration.test.ts`, run with
+`vitest.db.config.mts`. Existing ORI-58 upload integration tests remain applicable.
+
+### Validation evidence for this worktree
+
+Final local checks passed on host Node 24.22.3: `npm run format`,
+`npm run format:check`, `npm run lint`, `npm run typecheck`, 761 unit/component
+tests, 24 workflow/private-upload integration tests, 708 SQL assertions and the
+production dependency audit with zero vulnerabilities. The final unit run used
+`npm test -- --maxWorkers=2`; existing condominium/role focus and timer assertions
+had intermittent failures under the default parallel load while other validation
+was running. Their assertions were not weakened or disabled.
+
+The standard `npm run build` passed with Turbopack in a disposable Node 24
+bookworm container after `npm ci`. The source copy excluded environment files,
+Git metadata, dependencies and provider state. The host build was blocked by
+Turbopack's internal CSS-worker port binding, even after an escalated attempt;
+no alternate bundler or Tailwind configuration was substituted. The completion
+route's file trace includes the shared inspector, sharp, PDF and MP4 dependencies.
+
+The final standard-build artifact passed 90 Chromium cases with one existing
+mock-only offline case skipped. All relevant local authentication, employee,
+public-registration, attachment and ORI-72 opt-ins were enabled. For the complete
+suite, `ACCOUNT_DEMO_ENABLED=false` was set only in the test/server process so the
+existing onboarding fixtures and server agreed; no environment file was changed.
+The dedicated ORI-72 flows also passed earlier with the local demonstration flag
+active. Playwright started and stopped its own exclusive loopback production
+server. WhatsApp opening was intercepted and no real messages were sent.
+
+The final browser cases include the complete workflow at 360/1280 px, signed
+internal evidence reading, explicit removal of invalid local files, and recovery
+of a committed completion whose HTTP response was deliberately lost. The real
+SQL/Storage tests cover concurrent commands, same-key replay, deactivation races,
+immutable author/employee/function snapshots, portfolio isolation, deadline
+changes and atomic completion rollback. These are local results, not remote CI
+or hosted acceptance evidence.
+
+### ORI-91 reopening extension
+
+Completion is not a permanent product-level prohibition on reopening. ORI-72
+keeps completed cases read-only for the commands implemented here; ORI-91 will
+introduce an explicit, separately authorized reopening action. The completed card
+continues rendering its content and history, so the future button can be added
+without enabling the current editing controls or introducing a placeholder button.
+
+The current database update guard rejects writes to completed occurrences. ORI-91
+must adapt that guard through a new migration together with its authenticated,
+idempotent reopening command and history event. Do not remove the existing guard
+or allow ordinary assignment/deadline/update commands to implicitly reopen cases.
+Reopening transitions and completion-cycle timestamp rules must follow ORI-91's
+acceptance criteria; they are not inferred or implemented in ORI-72. Existing
+completion evidence and history must remain immutable.
