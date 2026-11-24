@@ -2206,9 +2206,10 @@ Run `npx vitest run --config vitest.db.config.mts tests/db/public-registration.i
 against the project-local running stack after `supabase migration up --local`.
 These tests exercise the route handlers against real local Supabase, concurrency,
 rollback injection and authenticated queue isolation with synthetic fixtures.
-The future resident frontend still needs the form, field error presentation,
-pending-attempt storage/retry behavior and number confirmation. The existing
-`/c/{slug}` presentation page is preserved; it does not yet submit reports.
+ORI-60 and ORI-61 now deliver the resident form, field error presentation,
+in-memory retry recovery and confirmed-number presentation directly on
+`/c/{slug}`, using these existing endpoints. See the joint delivery below for
+recovery limits and local browser validation.
 
 ### ORI-59 publication review
 
@@ -2308,3 +2309,98 @@ code, schema, generated output, configuration or dependency changed. All databas
 validation remained local. Publication is handled separately through a reviewed
 PR to develop that depends on ORI-59; no merge, deployment or shared-environment
 change is part of this task.
+
+### ORI-60 and ORI-61 joint public form delivery
+
+ORI-60 and ORI-61 are delivered together on
+`feature/ori-60-61-public-occurrence-form`, based on ORI-57 at `585faf6`.
+The resident interface uses real ORI-59 persistence from the first delivery;
+there is no simulated persistence, application demo flag or alternate writer.
+
+`/c/{slug}` mounts `PublicOccurrenceForm`. Typed contracts, HTTP operations and
+client validation live in `src/lib/public-occurrences`; components do not issue
+HTTP requests directly. Lookup uses the existing public GET and presents real
+name/address, loading, unavailable-link and retryable technical-error states.
+Registration uses the existing public POST with exactly the five declared fields
+and `Idempotency-Key`; browser credentials are omitted by both operations. Existing
+sessions never supply reporter values or authorship. Backend, migrations, types,
+priority classification and queue contracts are unchanged.
+
+The form reuses `PhoneInput` and its progressive Brazilian DDD mask, accepts a
+single name and self-declared roles such as `Porteiro`, and validates the existing
+200/10,000-character limits and 11-digit mobile contract without truncating input.
+All fields have labels, associated errors, invalid/described-by attributes and
+visible keyboard focus. Invalid submission focuses the first invalid field in
+visual order; editing does not move focus unexpectedly. Successful confirmation
+focuses its heading and displays only the real returned number. `Registrar outra`
+clears the fields/errors/completed attempt and keeps the same condominium.
+
+A UUID and normalized immutable payload are created only for a valid attempt.
+A synchronous processing guard prevents duplicate submits. Timeouts, network
+failures, 5xx responses and malformed success receipts retain an uncertain outcome:
+fields become read-only, no success is displayed, and `Recuperar envio original`
+reuses exactly the same key and payload. HTTP 400 maps known server field errors
+and permits correction with a new attempt; HTTP 404 presents link unavailability.
+HTTP 409 is explicit and never triggers an automatic new key or submission.
+Starting another report while the prior outcome is uncertain/conflicting requires
+explicit confirmation of the potential duplication risk. There are no automatic
+submission retries.
+
+Attempts and personal input exist only in component memory. Reloading, closing or
+navigating away loses this recovery state; the interface warns users to keep the
+page open after an uncertain outcome. No cross-reload recovery is promised. No
+personal values are written to localStorage, sessionStorage, URLs or logs. The
+backend idempotency record remains persistent, but the browser cannot recover an
+attempt once it has discarded its key/payload. A malformed response never becomes
+a fictitious confirmation.
+
+Public links still come from the existing condominium service's validated
+`PUBLIC_APP_ORIGIN`; no request-header origin override or fixed production domain
+was introduced. Local review explicitly supplied `http://127.0.0.1:3100` to the
+review server. The real condominium test asserts the generated URL and navigates
+to that exact URL, while the existing condominium flow verifies link copying.
+
+Validation on Node 24.22.3 passed formatting/write and check, ESLint, route types
+and TypeScript, 692 unit tests (including 23 new public-operation/component cases),
+687 SQL assertions, nine existing public-registration integration cases and the
+production audit with zero vulnerabilities. The standard `npm run build` passed
+after fresh `npm ci` in a disposable `node:24-alpine` container (Node 24.22.2),
+without environment files, provider state or published ports. Its production
+output was served on the host with the exact same application source.
+
+The browser suite passed 62 tests, with 16 unchanged/local opt-in skips and zero
+failures. New interface tests exercise 360/768/1280px, long content, keyboard,
+phone typing/paste, server errors, pending-submit blocking, uncertainty and 409.
+Then the local database options were enabled explicitly for
+`public-registration-local.spec.ts` and `condominiums-local.spec.ts`: both passed
+against real backend/database, without a fixture fallback. They verify creation
+through the condominium API, anonymous resident submission, a real confirmed
+number, `new` status, the initial reporter event, queue refresh and other-portfolio
+isolation. A signed-in other manager submits `Porteiro`; its server response is
+dropped after commit, and recovery through the interface uses the same key/body
+and returns the same number with one initial event. `Registrar outra` also clears
+the resident form while retaining its condominium.
+
+A retained synthetic local review at `/c/de-revisao-xx28` produced occurrence
+`#3727`: database status `new`, exactly one initial event, no authenticated author
+and visibility in the responsible manager's queue after reload. This fixture is
+local-only and is not seeded, configured or recreated by application code. To
+verify the complete flow in an existing reviewer account, create/use a condominium
+in that account and copy its own public link; the retained review fixture belongs
+to a separate synthetic account.
+
+Comparison captures from the real local interface are in `docs/`:
+`ori-60-61-public-form-360.png`, `ori-60-61-public-form-desktop.png`,
+`ori-60-61-public-errors-360.png`, `ori-60-61-public-confirmation-360.png`,
+`ori-60-61-public-confirmation-desktop.png` and `ori-60-61-owner-queue.png`.
+
+Attachments, public tracking, manager-panel registration, phone-based limits,
+notifications and realtime queue updates remain outside this delivery. No backend
+contract change, database reset, remote configuration, shared-environment operation
+or deployment was performed for this local implementation. Publication is handled
+separately through the feature branch and a reviewed PR to develop.
+
+The final visual refinement reduces inputs to 40px, buttons to 44px and the
+spacing between fields, with a smaller header and report area. Its standard
+Turbopack container build, affected component tests and 360/1280px browser
+inspection passed; the final form/error captures reflect this compact layout.
