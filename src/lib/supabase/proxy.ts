@@ -26,7 +26,10 @@ export async function updateSession(request: NextRequest) {
       supabaseResponse.headers.set(key, value),
     );
   }
-  if (request.nextUrl.pathname.startsWith("/api/public/"))
+  if (
+    request.nextUrl.pathname.startsWith("/api/public/") ||
+    request.nextUrl.pathname === "/api/internal/attachments/cleanup"
+  )
     return supabaseResponse;
 
   const persistent =
