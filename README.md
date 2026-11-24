@@ -2143,3 +2143,127 @@ empty-update validation, Esc/backdrop closing and another-portfolio 404. The
 local database required `npm run db:stop` and `npm run db:start` after
 `npm run db:reset` because the reset left storage unhealthy on this host; the
 reset itself applied every migration before the failed health check.
+
+### Public occurrence registration (ORI-59)
+
+The existing stable `/c/{slug}` condominium link identifies the public form's
+condominium. No login is required. `GET /api/public/condominiums/{slug}` returns
+only `{"name":"Condomínio Exemplo","address":"Endereço de exemplo"}`. A missing
+link or a condominium whose manager is no longer a manager returns HTTP 404 with
+`code: "not_found"`; infrastructure failures return 503 with `code: "unavailable"`.
+There is no additional condominium activation flag. Responses use `no-store`.
+
+`POST /api/public/condominiums/{slug}/occurrences` accepts JSON and requires an
+`Idempotency-Key` header containing a UUID. Example body:
+
+```json
+{
+  "reporterName": "Ana",
+  "reporterUnitOrRole": "Porteiro",
+  "reporterPhone": "11900000000",
+  "location": "Hall de entrada",
+  "description": "Lâmpada apagada"
+}
+```
+
+The response is HTTP 200 with `{"number":123}` for both creation and replay,
+only after the database transaction commits. No personal data, internal ID or
+tracking token is returned. Only the five listed fields are accepted. Name,
+unit/role and location allow up to 200 characters; description allows 10,000.
+All require nonblank strings and reject NUL. Phone requires 11 digits: DDD plus
+a mobile number beginning with 9. Text is trimmed before persistence. A single
+name and self-declared roles such as `Porteiro` are valid. No employee lookup is
+performed. Cookies do not select the condominium or author; the public API skips
+session refresh and uses the route slug, anonymous resolution and server-only
+service credentials for registration.
+
+Validation failures return HTTP 400 with `code: "invalid_input"` and a `fields`
+object keyed by input field, `attemptKey`, or `body`. Unexpected fields are a
+`body` error. Reusing a key with changed normalized content returns HTTP 409 with
+`code: "conflict"`. Errors contain no database diagnostics or submitted values.
+
+The frontend must generate `crypto.randomUUID()` once per submission attempt,
+keep the key together with the exact payload while the outcome is uncertain,
+and reuse both after timeouts, connection loss or retry. Keep the pending attempt
+across navigation/reload if retry recovery is offered, and clear it after confirmed
+success or explicit abandonment. Do not generate a new key merely because the
+response was lost. A deliberate new report or edited payload needs a new key;
+a 409 must not silently submit another report. Identical reports with independent
+keys are allowed. The server trims surrounding whitespace, so this normalization
+does not change attempt identity. No time-based expiry is currently applied.
+
+The incremental migration stores a SHA-256 content fingerprint and the committed
+occurrence reference in a private table keyed by condominium and attempt UUID.
+A transaction-scoped advisory lock serializes concurrent requests for the same
+pair. Fingerprint conflicts return no receipt. The wrapper calls the existing
+`register_public_occurrence_with_suggestion` RPC, preserving the central service's
+risk classification, global database sequence and shared initial event writer.
+Occurrence, initial event and attempt are committed or rolled back together.
+Sequence gaps after rollback remain possible. Existing history is never rewritten.
+No anonymous table permissions are added.
+
+Run `npx vitest run --config vitest.db.config.mts tests/db/public-registration.integration.test.ts`
+against the project-local running stack after `supabase migration up --local`.
+These tests exercise the route handlers against real local Supabase, concurrency,
+rollback injection and authenticated queue isolation with synthetic fixtures.
+The future resident frontend still needs the form, field error presentation,
+pending-attempt storage/retry behavior and number confirmation. The existing
+`/c/{slug}` presentation page is preserved; it does not yet submit reports.
+
+### ORI-59 publication review
+
+The integrated comparison baseline is `a82798b` (ORI-70 plus the ORI-50 merge,
+which already contains ORI-49), before the ORI-59 implementation. Both this
+baseline and the current application passed the standard `npm run build` with
+Turbopack after fresh `npm ci` in separate disposable `node:24-alpine` containers
+(the installed image reports Node 24.22.2). Each container used a temporary copy
+from a read-only source mount, excluding environment files, Git metadata,
+dependencies, build output and provider state. No ports were published, and no
+existing container, bundler, deployment or security configuration was changed.
+The resulting production outputs were served separately on host Node 24.22.3 by
+Playwright's exclusive loopback server.
+
+The earlier 31 browser failures were validation-environment failures from the
+Webpack fallback, not demonstrated ORI-59 or integration regressions. That output
+retained `@tailwind utilities` without generating `.flex` or `.grid`; the project's
+Tailwind loader is configured under `turbopack.rules`. Visual fixtures also discover
+CSS under `.next/static/chunks`, while the fallback emitted CSS under
+`.next/static/css`. These differences invalidated the layout and interaction
+results. No application layout or existing assertion was changed to obtain approval.
+
+| Previously failing group     | Cases | Integrated baseline, standard build | ORI-59, standard build |
+| ---------------------------- | ----: | ----------------------------------- | ---------------------- |
+| Authentication layout        |    14 | Passed                              | Passed                 |
+| Login/recovery accessibility |     2 | Passed                              | Passed                 |
+| Signup/confirmation          |     4 | Passed                              | Passed                 |
+| Condominium visual fixtures  |     5 | Passed                              | Passed                 |
+| Queue layout/expansion       |     4 | Passed                              | Passed                 |
+| Detail card interaction      |     2 | Passed                              | Passed                 |
+
+The recorded 31 failure IDs from the previous run were matched individually to
+passing results in both new JSON reports. The full baseline run passed 56 tests
+with 15 existing opt-in skips; ORI-59 passed the same 56 with those 15 skips plus
+the new local database test's explicit opt-in. Neither run had failures or flaky
+results. The public HTTP test was then enabled separately against the real local
+stack and the standard container output and passed. Prior failure traces remain
+in the ignored `test-results` directory. Comparison build logs and JSON reports
+were retained locally in the temporary review directory.
+
+Coverage review retained the existing rollback, content-conflict and independent
+attempt cases. It strengthened the same-attempt concurrent test with an explicit
+single persisted attempt/occurrence and single initial event assertion, checked
+both receipts against their condominium IDs when sharing a key, and verified
+anonymous read denial on private occurrence/history tables. The HTTP test now
+forwards a real browser submission, waits for its committed server response,
+discards that response with a simulated connection reset, verifies the committed
+number in the local database and recovers exactly that number by retrying. Both
+initial and recovered responses are checked for an exact number-only contract;
+public resolution is name/address-only, and unauthenticated private detail/queue
+requests return only an error. No resident frontend was implemented.
+
+After these additions, all nine targeted real database tests and the enabled HTTP
+browser test passed. Existing approved checks were not repeated without a related
+change. These local results establish no remaining ORI-59 publication blocker;
+remote Quality execution must be verified on the published PR. Publication is
+handled separately through the feature branch and a reviewed PR to develop; no
+merge, deployment or shared-environment operation is part of this task.
