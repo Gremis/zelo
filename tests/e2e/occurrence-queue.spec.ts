@@ -323,6 +323,9 @@ type PriorityBody = {
 };
 
 async function mockOccurrenceDetail(page: Page) {
+  await page.route("**/api/occurrences/*/eligible-employees", (route) =>
+    route.fulfill({ json: { employees: [] } }),
+  );
   let current = occurrenceDetailFixture();
   const priorityBodies: PriorityBody[] = [];
   const updates: string[] = [];
@@ -473,9 +476,9 @@ test("detail card expands in place on mobile and closes with the X", async ({
   await expect(dialog.getByRole("button", { name: "Fechar" })).toBeFocused();
   await dialog.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(7);
+  await expect(page.getByRole("article")).toHaveCount(4);
   await expect(
-    page.getByRole("heading", { name: "Novo", exact: true }),
+    page.getByRole("tab", { name: "Novo 4", exact: true }),
   ).toBeVisible();
 });
 
