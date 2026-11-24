@@ -45,7 +45,7 @@ select throws_ok($$select public.register_public_occurrence_with_suggestion(curr
 reset role;
 drop trigger ori64_test_failure on public.occurrence_events;
 select is((select count(*) from occurrences where description='ORI64 rollback sentinel'),0::bigint,'Event failure rolls occurrence back');
-select is((select count(*) from occurrence_events),1::bigint,'Failed event leaves no extra history');
+select is((select count(*) from occurrence_events where occurrence_id=current_setting('ori64.created')::uuid),1::bigint,'Failed event leaves no extra history');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"64000000-0000-4000-8000-000000000001","session_id":"64000000-0000-4000-9000-000000000001","role":"authenticated"}',true);
 select lives_ok($$select public.append_occurrence_note(current_setting('ori64.created')::uuid,'Synthetic internal note')$$,'Original RPC reuses shared writer successfully');
@@ -77,11 +77,11 @@ select throws_ok($$select append_occurrence_note(current_setting('ori64.created'
 reset role;
 update occurrences set final_priority='normal',ai_failure_reason='Synthetic failure' where id=current_setting('ori64.created')::uuid;
 select is((select count(*) from occurrence_events where occurrence_id=current_setting('ori64.created')::uuid),2::bigint,'Final priority and failure fields do not add human events or overwrite the original suggestion');
-select ok((select author_name='Synthetic reporter' and author_type='reporter' and author_profile_id is null from occurrence_events where event_type='registered'),'Reporter remains distinct from changed manager profile');
+select ok((select author_name='Synthetic reporter' and author_type='reporter' and author_profile_id is null from occurrence_events where event_type='registered' and occurrence_id=current_setting('ori64.created')::uuid),'Reporter remains distinct from changed manager profile');
 insert into occurrence_events(occurrence_id,event_type,author_type,author_name,internal_description,is_human_action,occurred_at,priority_snapshot,responsible_name,delegation_started_at) values (current_setting('ori64.created')::uuid,'responsible_changed','manager','Synthetic metric manager','Synthetic delegation',true,transaction_timestamp()+interval '1 hour','urgent','Synthetic employee',transaction_timestamp()+interval '1 hour');
-insert into occurrence_events(occurrence_id,event_type,author_type,author_name,internal_description,is_human_action,occurred_at,priority_snapshot,delegation_started_at) select occurrence_id,'completed','manager','Synthetic metric manager','Synthetic completion',true,transaction_timestamp()+interval '2 hours','urgent',delegation_started_at from occurrence_events where event_type='responsible_changed';
+insert into occurrence_events(occurrence_id,event_type,author_type,author_name,internal_description,is_human_action,occurred_at,priority_snapshot,delegation_started_at) select occurrence_id,'completed','manager','Synthetic metric manager','Synthetic completion',true,transaction_timestamp()+interval '2 hours','urgent',delegation_started_at from occurrence_events where event_type='responsible_changed' and occurrence_id=current_setting('ori64.created')::uuid;
 select ok((select min(occurred_at) filter(where is_human_action) >= min(occurred_at) filter(where event_type='registered') from occurrence_events),'First human response metric has server timestamps');
-select ok((select extract(epoch from occurred_at-delegation_started_at)>=0 from occurrence_events where event_type='completed'),'Fixture completion supports delegation duration metric');
+select ok((select extract(epoch from occurred_at-delegation_started_at)>=0 from occurrence_events where event_type='completed' and occurrence_id=current_setting('ori64.created')::uuid),'Fixture completion supports delegation duration metric');
 select is(has_function_privilege('anon','public.register_public_occurrence_with_suggestion(text,text,text,text,text,text,text,text,text)','EXECUTE'),'anon'='service_role','anon public registration execute is minimal');
 select ok(not has_function_privilege('anon','private.append_occurrence_event(uuid,text,text)','EXECUTE'),'anon cannot call shared private writer');
 select is(has_function_privilege('authenticated','public.register_public_occurrence_with_suggestion(text,text,text,text,text,text,text,text,text)','EXECUTE'),'authenticated'='service_role','authenticated public registration execute is minimal');

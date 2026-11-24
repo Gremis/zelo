@@ -29,10 +29,13 @@ create temporary table rpc_refs as
 select (select id from public.condominiums where name = 'Cond B') as condo_b;
 grant select on rpc_refs to authenticated;
 
+update auth.users set email_confirmed_at=now() where id::text like 'a1400000-%';
+insert into auth.sessions(id,user_id) select id,id from auth.users where id::text like 'a1400000-%';
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"a1400000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  '{"sub":"a1400000-0000-4000-8000-000000000001","session_id":"a1400000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 
 -- ---------- create_funcionario ----------
 select lives_ok(
