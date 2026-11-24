@@ -1,0 +1,452 @@
+[
+  {
+    "id": "G01",
+    "onde": "Hall do 5º andar",
+    "relato": "Cheiro forte de gás perto da porta do 502",
+    "prioridade": "Urgente",
+    "categoria": "Gás",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G02",
+    "onde": "Garagem G2",
+    "relato": "Água escorrendo pela parede bem em cima do quadro de luz",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "implícito",
+    "nota": "Água em contato com a elétrica"
+  },
+  {
+    "id": "G03",
+    "onde": "Portão da garagem",
+    "relato": "O portão da garagem travou aberto e não fecha, já são 23h",
+    "prioridade": "Urgente",
+    "categoria": "Portão e acesso",
+    "tipo": "implícito",
+    "nota": "Prédio aberto à noite"
+  },
+  {
+    "id": "G04",
+    "onde": "Elevador social",
+    "relato": "Elevador parou entre o 3º e o 4º andar com uma senhora dentro",
+    "prioridade": "Urgente",
+    "categoria": "Elevador",
+    "tipo": "implícito",
+    "nota": "Pessoa presa sem usar a palavra 'presa'"
+  },
+  {
+    "id": "G05",
+    "onde": "Casa de máquinas",
+    "relato": "Saindo fumaça do motor da bomba d'água",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G06",
+    "onde": "Corredor do bloco B",
+    "relato": "Fio solto pendurado do teto do corredor, as crianças passam por ali",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "implícito",
+    "nota": "'Fio solto' não está na lista de risco"
+  },
+  {
+    "id": "G07",
+    "onde": "Salão de festas",
+    "relato": "A viga do teto está com uma rachadura grande que aumentou essa semana e está caindo pedaço de reboco",
+    "prioridade": "Urgente",
+    "categoria": "Estrutura",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G08",
+    "onde": "Garagem",
+    "relato": "Cano estourou e a garagem está alagando, a água já chegou nos carros",
+    "prioridade": "Urgente",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G09",
+    "onde": "Cozinha do salão",
+    "relato": "Tomada da cozinha dando choque quando encosta",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G10",
+    "onde": "Parquinho",
+    "relato": "O balanço está quase soltando da corrente e tem criança brincando agora",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G11",
+    "onde": "Entrada",
+    "relato": "A porta de vidro da entrada quebrou e ficou cheio de caco no chão",
+    "prioridade": "Urgente",
+    "categoria": "Portão e acesso",
+    "tipo": "implícito",
+    "nota": "Risco de corte e entrada aberta"
+  },
+  {
+    "id": "G12",
+    "onde": "Área externa",
+    "relato": "Árvore grande inclinada depois da chuva, parece que vai cair em cima dos carros",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G13",
+    "onde": "Escada de emergência",
+    "relato": "A porta da escada de emergência está trancada com cadeado",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "implícito",
+    "nota": "Rota de fuga bloqueada"
+  },
+  {
+    "id": "G14",
+    "onde": "Portaria",
+    "relato": "Um homem tentou forçar o portão de pedestres e ameaçou o porteiro",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G15",
+    "onde": "Hall do 2º andar",
+    "relato": "A lâmpada estourou, soltou faísca e agora o interruptor está quente",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G16",
+    "onde": "Cobertura",
+    "relato": "A caixa d'água está transbordando sem parar e a água está descendo pelas paredes do último andar",
+    "prioridade": "Urgente",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G17",
+    "onde": "Hall do térreo",
+    "relato": "Lâmpada queimada no hall e também tem um fio desencapado saindo do interruptor",
+    "prioridade": "Urgente",
+    "categoria": "Elétrica",
+    "tipo": "pegadinha",
+    "nota": "Dois problemas: vale o mais grave"
+  },
+  {
+    "id": "G18",
+    "onde": "Corredor do 4º andar",
+    "relato": "sheiro de gaz no corredor",
+    "prioridade": "Urgente",
+    "categoria": "Gás",
+    "tipo": "pegadinha",
+    "nota": "Erro de digitação: a regra não pega, a IA precisa pegar"
+  },
+  {
+    "id": "G19",
+    "onde": "Elevador",
+    "relato": "O vizinho do 101 ameaçou bater na minha filha dentro do elevador",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "pegadinha",
+    "nota": "Parece convivência, mas tem ameaça"
+  },
+  {
+    "id": "G20",
+    "onde": "Piscina",
+    "relato": "O portãozinho da piscina não fecha e tem criança pequena brincando na borda",
+    "prioridade": "Urgente",
+    "categoria": "Segurança",
+    "tipo": "implícito",
+    "nota": ""
+  },
+  {
+    "id": "G21",
+    "onde": "Escada do bloco 1",
+    "relato": "Lâmpada queimada na escada, fica tudo escuro à noite",
+    "prioridade": "Normal",
+    "categoria": "Iluminação",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G22",
+    "onde": "Garagem, vaga 40",
+    "relato": "Lâmpada da garagem piscando perto da vaga 40",
+    "prioridade": "Normal",
+    "categoria": "Iluminação",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G23",
+    "onde": "Piscina",
+    "relato": "Ralo da piscina entupido, a água está acumulando na borda",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G24",
+    "onde": "Banheiro do salão",
+    "relato": "Torneira pingando sem parar",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G25",
+    "onde": "Apto 104",
+    "relato": "O interfone não toca quando a portaria liga",
+    "prioridade": "Normal",
+    "categoria": "Portão e acesso",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G26",
+    "onde": "Elevador de serviço",
+    "relato": "Elevador de serviço parado desde ontem, sem ninguém dentro, o social está funcionando",
+    "prioridade": "Normal",
+    "categoria": "Elevador",
+    "tipo": "pegadinha",
+    "nota": "Elevador parado sem pessoa presa"
+  },
+  {
+    "id": "G27",
+    "onde": "Portão de pedestres",
+    "relato": "O portão de pedestres está demorando para abrir com a tag",
+    "prioridade": "Normal",
+    "categoria": "Portão e acesso",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G28",
+    "onde": "Lixeira do bloco 2",
+    "relato": "Lixo acumulado na lixeira, começando a cheirar mal",
+    "prioridade": "Normal",
+    "categoria": "Limpeza e conservação",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G29",
+    "onde": "Hall",
+    "relato": "Infiltração na parede do hall, com mancha e mofo",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G30",
+    "onde": "Corredor do 3º andar",
+    "relato": "Rachadura fininha no reboco da parede do corredor",
+    "prioridade": "Normal",
+    "categoria": "Estrutura",
+    "tipo": "pegadinha",
+    "nota": "Rachadura superficial"
+  },
+  {
+    "id": "G31",
+    "onde": "Academia",
+    "relato": "A esteira da academia parou de funcionar",
+    "prioridade": "Normal",
+    "categoria": "Outros",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G32",
+    "onde": "Área comum do térreo",
+    "relato": "Cheiro de esgoto vindo do ralo",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G33",
+    "onde": "Corredor do último andar",
+    "relato": "Tem uma telha quebrada e quando chove pinga no corredor",
+    "prioridade": "Normal",
+    "categoria": "Estrutura",
+    "tipo": "claro",
+    "nota": "Causa é o telhado (corrigido na v2 do gabarito)"
+  },
+  {
+    "id": "G34",
+    "onde": "Portaria",
+    "relato": "A câmera da portaria está desligada desde ontem",
+    "prioridade": "Normal",
+    "categoria": "Segurança",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G35",
+    "onde": "Andares altos",
+    "relato": "A pressão da água está muito fraca do 8º andar pra cima",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G36",
+    "onde": "Administração",
+    "relato": "A conta de gás do condomínio veio muito alta esse mês",
+    "prioridade": "Normal",
+    "categoria": "Gastos e orçamento",
+    "tipo": "pegadinha",
+    "nota": "Cobrança, não vazamento. A regra marca Urgente: falso alarme conhecido"
+  },
+  {
+    "id": "G37",
+    "onde": "Salão de festas",
+    "relato": "O fogão do salão de festas não acende",
+    "prioridade": "Normal",
+    "categoria": "Gás",
+    "tipo": "pegadinha",
+    "nota": "'Fogão' não é 'fogo'"
+  },
+  {
+    "id": "G38",
+    "onde": "Administração",
+    "relato": "A empresa da pintura da fachada deu um prazo curto e quer resposta até sexta",
+    "prioridade": "Normal",
+    "categoria": "Gastos e orçamento",
+    "tipo": "pegadinha",
+    "nota": "'Curto' fora de contexto elétrico"
+  },
+  {
+    "id": "G39",
+    "onde": "Garagem",
+    "relato": "vazamento",
+    "prioridade": "Normal",
+    "categoria": "Vazamento e hidráulica",
+    "tipo": "pegadinha",
+    "nota": "Relato curto demais: sem sinal de risco"
+  },
+  {
+    "id": "G40",
+    "onde": "Garagem",
+    "relato": "Oi, aqui é a Ana do 31 99999-1234, a lâmpada da garagem queimou",
+    "prioridade": "Normal",
+    "categoria": "Iluminação",
+    "tipo": "pegadinha",
+    "nota": "Dado pessoal no relato"
+  },
+  {
+    "id": "G41",
+    "onde": "Garagem",
+    "relato": "Sugestão: colocar um bicicletário na garagem",
+    "prioridade": "Baixa",
+    "categoria": "Outros",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G42",
+    "onde": "Apto 303",
+    "relato": "O vizinho do 303 coloca som alto toda sexta",
+    "prioridade": "Baixa",
+    "categoria": "Barulho e convivência",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G43",
+    "onde": "Piscina",
+    "relato": "Qual o horário da piscina no feriado?",
+    "prioridade": "Baixa",
+    "categoria": "Outros",
+    "tipo": "claro",
+    "nota": "Dúvida"
+  },
+  {
+    "id": "G44",
+    "onde": "Jardim",
+    "relato": "A grama do jardim está alta",
+    "prioridade": "Baixa",
+    "categoria": "Limpeza e conservação",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G45",
+    "onde": "Muro externo",
+    "relato": "A pintura do muro externo está descascando",
+    "prioridade": "Baixa",
+    "categoria": "Limpeza e conservação",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G46",
+    "onde": "Bloco 2",
+    "relato": "O cachorro do 201 late durante o dia",
+    "prioridade": "Baixa",
+    "categoria": "Barulho e convivência",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G47",
+    "onde": "Salão de festas",
+    "relato": "Duas reservas do salão no mesmo sábado, deu choque de horário",
+    "prioridade": "Normal",
+    "categoria": "Outros",
+    "tipo": "pegadinha",
+    "nota": "'Choque' fora de contexto elétrico. Precisa de providência do síndico (corrigido na v2 do gabarito)"
+  },
+  {
+    "id": "G48",
+    "onde": "7º andar",
+    "relato": "Fogos de artifício na festa do 7º andar até 2h da manhã",
+    "prioridade": "Baixa",
+    "categoria": "Barulho e convivência",
+    "tipo": "pegadinha",
+    "nota": "'Fogos' não é 'fogo'"
+  },
+  {
+    "id": "G49",
+    "onde": "Garagem",
+    "relato": "Carro de visitante parado na vaga do 201 de novo",
+    "prioridade": "Baixa",
+    "categoria": "Barulho e convivência",
+    "tipo": "claro",
+    "nota": ""
+  },
+  {
+    "id": "G50",
+    "onde": "Salão de festas",
+    "relato": "Gostaria de um orçamento para trocar o piso do salão",
+    "prioridade": "Baixa",
+    "categoria": "Gastos e orçamento",
+    "tipo": "claro",
+    "nota": ""
+  }
+]

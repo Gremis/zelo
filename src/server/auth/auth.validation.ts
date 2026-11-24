@@ -1,0 +1,164 @@
+import {
+  getPasswordRequirements,
+  validateSignup,
+} from "@/lib/auth/signup-validation";
+import { type Result, failure, success } from "./auth.result";
+
+const MIN_PASSWORD_LENGTH = 8;
+
+export type SignUpInput = {
+  fullName: string;
+  email: string;
+  password: string;
+  phone: string;
+};
+export type LoginInput = { email: string; password: string };
+export type EmailInput = { email: string };
+export type ResetPasswordInput = {
+  email: string;
+  code: string;
+  password: string;
+};
+
+function asRecord(body: unknown): Record<string, unknown> {
+  if (typeof body === "object" && body !== null) {
+    return body as Record<string, unknown>;
+  }
+  return {};
+}
+
+function readTrimmed(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return "";
+}
+
+function readRaw(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return "";
+}
+
+function passwordError(password: string): string | null {
+  if (!password) {
+    return "Informe a senha.";
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+  }
+  if (getPasswordRequirements(password).some(({ met }) => !met)) {
+    return "A senha deve incluir uma letra de A a Z e um número.";
+  }
+  return null;
+}
+
+function invalidInput(details: Record<string, string>): Result<never> {
+  return failure({
+    code: "invalid_input",
+    message: "Dados inválidos.",
+    details,
+  });
+}
+
+export function validateSignUp(body: unknown): Result<SignUpInput> {
+  const record = asRecord(body);
+  const fullName = readTrimmed(record.fullName);
+  const email = readTrimmed(record.email);
+  const password = readRaw(record.password);
+
+  const phone = readTrimmed(record.phone).replace(/\D/g, "");
+  const details = validateSignup({
+    fullName,
+    email,
+    password,
+    phone,
+    acceptedTerms: record.acceptedTerms === true,
+  });
+  if (Object.keys(details).length > 0) return invalidInput(details);
+  return success({ fullName, email: email.toLowerCase(), password, phone });
+}
+
+export function validateLogin(body: unknown): Result<LoginInput> {
+  const record = asRecord(body);
+  const email = readTrimmed(record.email);
+  const password = readRaw(record.password);
+
+  if (!email || !password) {
+    return failure({
+      code: "invalid_input",
+      message: "Informe e-mail e senha.",
+    });
+  }
+
+  return success({ email, password });
+}
+
+export function validateEmailOnly(body: unknown): Result<EmailInput> {
+  const email = readTrimmed(asRecord(body).email);
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return failure({
+      code: "invalid_input",
+      message: "Informe um e-mail válido.",
+    });
+  }
+
+  return success({ email });
+}
+
+export function validateResetPassword(
+  body: unknown,
+): Result<ResetPasswordInput> {
+  const record = asRecord(body);
+  const email = readTrimmed(record.email);
+  const code = readTrimmed(record.code);
+  const password = readRaw(record.password);
+
+  const details: Record<string, string> = {};
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    details.email = "Informe o e-mail.";
+  }
+  if (!/^\d{6}$/.test(code)) {
+    details.code = "Informe o código.";
+  }
+  const passwordIssue = passwordError(password);
+  if (passwordIssue) {
+    details.password = passwordIssue;
+  }
+
+  if (Object.keys(details).length > 0) {
+    return invalidInput(details);
+  }
+
+  return success({ email, code, password });
+}
+
+export function validatePendingRegistration(
+  body: unknown,
+): Result<{ email: string; registrationId: string }> {
+  const record = asRecord(body);
+  const email = readTrimmed(record.email).toLowerCase();
+  const registrationId = readTrimmed(record.registrationId);
+  if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      registrationId,
+    )
+  ) {
+    return invalidInput({ email: "Informe um cadastro válido." });
+  }
+  return success({ email, registrationId });
+}
+
+export function validateConfirmation(
+  body: unknown,
+): Result<{ email: string; registrationId: string; code: string }> {
+  const pending = validatePendingRegistration(body);
+  if (!pending.ok) return pending;
+  const code = readTrimmed(asRecord(body).code);
+  if (!/^\d{6}$/.test(code))
+    return invalidInput({ code: "Informe o código de seis dígitos." });
+  return success({ ...pending.data, code });
+}

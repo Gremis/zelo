@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -21,7 +22,7 @@ afterEach(() => {
     );
 });
 
-function runStartup(scenario: string) {
+function runStartup(scenario: string, profile?: string) {
   const root = mkdtempSync(join(tmpdir(), "zelo-network-test-"));
   directories.push(root);
   mkdirSync(join(root, "scripts"));
@@ -78,6 +79,7 @@ if (args[0] === "network" && args[1] === "ls") {
         ...process.env,
         PATH: `${join(root, "bin")}${delimiter}${process.env.PATH}`,
         ZELO_TEST_SCENARIO: scenario,
+        ...(profile ? { ZELO_LOCAL_DB_PROFILE: profile } : {}),
       },
     },
   );
@@ -180,3 +182,20 @@ test("does not invoke stop when no project containers are running after failure"
   expect(calls.some(([command]) => command === "stop")).toBe(false);
   expect(result.stderr).not.toContain("Cleanup failed:");
 });
+
+test.each(["gmail", "mailpit"])(
+  "keeps network checks and targets the isolated %s workdir",
+  (profile) => {
+    const { root, result } = runStartup("new", profile);
+    expect(result.status).toBe(0);
+    expect(
+      JSON.parse(readFileSync(join(root, "cli-arguments.json"), "utf8")),
+    ).toEqual([
+      "start",
+      "--network-id",
+      "zelo-local-loopback",
+      "--workdir",
+      `${join(realpathSync(root), "supabase/.smtp-manual", profile)}/`,
+    ]);
+  },
+);
