@@ -1219,3 +1219,183 @@ Publication targets `develop` and depends on PR #23 (ORI-62), whose head is
 `git diff f2e6ca925df2d8369793ea3a800614b797b3ef45...feature/ori-63-history-integrity-access`.
 Until #23 is integrated, GitHub's comparison against `develop` also contains its
 inherited commits. ORI-63 does not alter or merge that prerequisite PR.
+
+### Shared occurrence event service (ORI-64)
+
+`src/server/occurrences/event.factory.ts` exports the server-only
+`occurrenceEvents(responseHeaders?)` factory. The service supports two distinct
+contracts from `contracts.ts`: `PublicRegistration` (`type: "registered"`) and
+`InternalNote` (`type: "manager_update"`). There is no generic event payload or
+client-selectable author, event time, visibility, public projection or structured
+data. Runtime validation rejects extra properties and unsupported event types.
+Other event types stay in the ORI-62 model for future workflows and metric fixtures,
+but cannot be requested through this service.
+
+The future S1.5 server entry should validate its public route slug and request
+shape, then call this factory rather than inserting records or issuing a second
+event request:
+
+```ts
+const events = occurrenceEvents(responseHeaders);
+const receipt = await events.registerPublic({
+  type: "registered",
+  condominiumSlug: validatedRouteSlug,
+  reporterName,
+  reporterPhone,
+  reporterUnitOrRole,
+  description,
+});
+```
+
+The slug must come from the validated public route, never from an arbitrary
+condominium UUID or owner field. The service validates its format again; the
+restricted database entry resolves the exact slug to a condominium with an enabled
+manager profile and locks that relationship. Reporter name and unit/function are
+required nonblank strings up to 200 characters; description is required up to
+10,000 characters. Phone is required in normalized national digits (10 or 11,
+starting with a nonzero digit); presentation formatting must be removed before
+calling the service. Slugs are limited to 200 characters. Missing unit/function
+is rejected, never replaced with invented text. Names and description are trimmed.
+No attachment references or paths are accepted.
+
+`registerPublic` makes one POST to
+`register_public_occurrence(condominium_slug, reporter_name, reporter_phone,
+reporter_unit_or_role, description)`. It uses the existing server-only
+`SUPABASE_SERVICE_ROLE_KEY` with the same no-store, bounded-fetch pattern as the
+email confirmation guard, without creating a general admin client. Configuration
+is validated at invocation, not import. Its result contains only
+`{ occurrenceId, number, trackingCode }`; these values are sensitive receipts and
+must not be logged. There is no automatic retry: a timeout can leave the caller
+uncertain about a committed transaction. S1.5 must define its abuse controls,
+request deduplication and receipt delivery behavior before exposing an HTTP entry.
+No S1.5 endpoint, form or public tracking read is added here. The existing public
+condominium page still uses its original link resolver and has no occurrence
+submission operation to replace.
+
+For future authenticated internal-note actions:
+
+```ts
+await occurrenceEvents(responseHeaders).appendInternalNote({
+  type: "manager_update",
+  occurrenceId,
+  note,
+});
+```
+
+This uses the existing cookie/session Supabase client and passes only the ID and
+note to the original ORI-63 RPC. It does not use the privileged credential. The
+database still derives the manager's identity, name and phone from an active,
+confirmed session and the real portfolio; profile snapshots are read under a
+shared lock. Headers from session refresh can be propagated by the future caller.
+Notes stay internal, with no resident text and empty structured data. Both paths
+return sanitized `OccurrenceWriteError` codes: `invalid_input`, `access_denied` or
+`unavailable`. No provider error, credential, reporter data or tracking code is
+included in those exceptions. Missing and foreign occurrences retain identical
+read results and note-RPC errors. Backend validation errors do not call the
+repository; database validation also protects direct RPC calls.
+
+#### Database transaction and event ownership
+
+`20261122120000_occurrence_event_service.sql` introduces the private invoker
+`private.append_occurrence_event(uuid, text, text)` as the single implementation
+for supported event writes. Its EXECUTE is revoked from PUBLIC and all application
+roles. The original note RPC delegates to it; the new public-registration RPC
+creates the occurrence and calls it in the same database transaction. Both public
+RPCs are SECURITY DEFINER, use an empty search path and qualify application
+objects. There is no production failure-injection argument or bypass.
+
+The registration operation fixes `origin=public_form` and `channel=web`, leaves
+`created_by_profile_id` null, and stores the supplied reporter snapshots as
+self-declared information. The initial event is `registered`, `author_type=reporter`,
+with no profile FK, `is_human_action=false` and
+`data={"identity":"self_declared"}`. Its internal and resident text are exactly
+`Registrou a ocorrência pelo formulário. Unidade informada: [unidade]`, using the
+provided unit/function. The public text contains no authenticated manager or
+responsible-person name. Occurrence and initial-event timestamps are generated by
+the database and agree. Global identity numbering and random 256-bit tracking
+codes retain their ORI-62 defaults. The partial unique index allows at most one
+`registered` event per occurrence; the RPC provides the matching at-least-one
+transaction guarantee. If the event write fails, the occurrence insert rolls back;
+sequence gaps are expected. Applying the index rejects pre-existing duplicate
+registrations rather than silently deleting or repairing history.
+
+The database helper determines type, author, description, visibility and structured
+data for each supported action. It rejects unsupported event kinds. Public
+registration has no occurrence-ID argument and cannot append to existing history;
+clients cannot identify themselves as system, manager or employee. Automated
+origin and employee identity require future server-owned operations and a real
+employee registry; no employee FK or authenticated employee snapshot is invented.
+Profile changes or manager deactivation never rewrite existing snapshots.
+
+| Role                       | Public registration RPC                  | Internal-note RPC                       | Direct table writes / private helper |
+| -------------------------- | ---------------------------------------- | --------------------------------------- | ------------------------------------ |
+| `anon`                     | Denied                                   | Denied                                  | Denied                               |
+| `authenticated`            | Denied                                   | Active confirmed manager, own portfolio | Denied                               |
+| `service_role`             | Execute only this new registration entry | Denied                                  | Denied                               |
+| Database maintenance roles | Privileged                               | Privileged                              | Privileged                           |
+
+The ORI-63 ACLs, forced RLS, portfolio reads, mutation triggers and RESTRICT
+relationships remain intact. Granting this exact registration RPC does not grant
+`service_role` SELECT or INSERT on the tables, access to the private helper, or
+permission to execute manager actions. Its existing BYPASSRLS flag still means RLS
+is not its boundary; ACLs and triggers are. Administrators can alter protections
+and data as documented in ORI-63. Existing privileged server credentials remain
+server-only; the narrow repository is not an untrusted generic RPC proxy.
+
+#### Metrics, tests and remaining work
+
+AI suggestions/failures and priority changes remain occurrence fields and produce
+no human-history events. Public registration starts without AI or priority
+classification; snapshots preserve what was known at the time rather than being
+backfilled with later suggestions. Notes capture the current priority and server
+time for first-human-response metrics. Test-only delegation and completion
+fixtures exercise the existing structured timestamps and priority snapshots for
+duration metrics; no corresponding application workflow or callable writer is
+exposed. The original ORI-62 metric regressions are retained.
+
+`event-service.test.sql` tests the real `service_role`, `authenticated` and `anon`
+roles, successful atomic creation, exact event text/projection and reporter
+snapshots, direct RPC payload rejection, cross-portfolio denial, session revocation,
+profile edits/deactivation, and helper ACLs. A transaction-local AFTER INSERT
+trigger deliberately fails a real initial-event write and proves the occurrence
+is rolled back. It is created only by the SQL test, dropped there and covered by
+the final transaction rollback. The ORI-62 model test now expects a second
+registration on the same occurrence to fail, while retaining its original positive
+registration cases and other supported-type checks.
+
+Run `npm run test:db` for SQL regressions and
+`npm run test:db:concurrency -- --public-registration` for eight overlapping
+transactions issuing the new RPC under `service_role`: 200 unique numbers/codes
+and exactly 200 initial events across two condominiums. It reuses the existing
+concurrency harness and rolls back all occurrences/events; committed synthetic
+account/condominium fixtures are cleaned up. The original concurrency mode remains
+available. Unit tests cover typed service validation, forged/unsupported payloads,
+one-request transport, session-client reuse, receipt validation, sanitized errors
+and absence of retries/compensating writes.
+
+Remaining work includes the S1.5 HTTP/form integration, public abuse controls and
+idempotency, tracking authorization, uploads/physical Storage integrity, employee
+registration and the delegation/deadline/completion/message workflows. No shared
+migrations, SMTP operations, deployment are part of this implementation.
+
+ORI-64 validation passed locally on Node.js 24.22.3 with the locked Supabase CLI:
+503 SQL assertions across six suites, 327 unit tests across 35 files, the original
+concurrency regression and the new service-role registration mode (200 atomic
+initial events), formatting/write and check, ESLint, route type generation and
+TypeScript, production build and 43 browser tests. The production dependency audit
+reported zero vulnerabilities. Database types were generated from the existing
+local stack after applying only the new migration, without reset.
+
+The browser run retained 15 existing conditional skips: 11 require the explicit
+local-auth opt-in and were not repeated in this task (authenticated note/session
+behavior is covered by the SQL suites), three execute SMTP/email flows outside
+this task's authorization, and one requires a registration-demo build. No skip
+condition or browser test was changed. These are local validation results; publication CI is reported separately.
+
+ORI-64 publication targets `develop` and depends on PR #24 (ORI-63), whose
+published head is `f7c7308f62df854fa9b164708bdecc67afbe01ef`. The exclusive task diff
+is `git diff f7c7308f62df854fa9b164708bdecc67afbe01ef...feature/ori-64-occurrence-event-service`.
+Until #24 and its prerequisites are integrated, the develop comparison contains
+inherited work. Recheck ancestry/content if those prerequisites are squash-merged.
+Final review adds direct database length-limit tests and exact metric assertions
+for the first authenticated human action and delegation-to-completion duration.
