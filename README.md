@@ -2096,177 +2096,107 @@ were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
 
-### Occurrence detail card and priority decision (ORI-70)
+## Employee UI integration review (ORI-51)
 
-`/fila` opens the occurrence card from a queue card or its "Abrir ocorrência"
-button. On desktop the card is a modal over the dimmed queue: page scroll is
-locked, focus moves to "Fechar", Tab is trapped inside the panel, and the card
-closes on the X, Escape or a backdrop click. At 1000px and below the panel
-expands in place inside the current tab as a single column, the queue content is
-hidden while it is open, and the previous page scroll is restored on close. The
-X is always the first control and exposes the accessible name "Fechar".
+The employee page reuses the ORI-49 tables and ORI-50 repository, validation and
+RPCs. The additive `funcaoId` request field is resolved only against the current
+manager's RLS-filtered roles; a caller-supplied role name cannot replace that
+selection. The original name-based backend contract remains available. New role
+creation and employee activation controls remain outside this UI task.
 
-The header shows number, condominium, status, the report as title, and unit,
-location and registration time in the Sao Paulo calendar. The case column keeps
-the priority select (Urgente/Normal/Baixa), the suggestion state ("Sugerida pelo
-Sindicondo" until a decision exists, then "Sugerida: <prioridade>"), the
-suggestion reason, the category, and "Registrada por" with the reporter name,
-phone and unit or role. "Por que mudou? (opcional)" appears only when the final
-priority differs from the suggested one, and stores the reason immediately.
+Employee endpoints now use `confirmedIdentity`, including its active-session
+probe, instead of accepting `getUser()` alone. The new page receives the same
+private/no-store proxy headers as the existing panel pages; employee JSON success
+and error responses also prohibit caching. Supabase cookie refresh and persistence
+semantics are unchanged. `ConfirmationCodeScreen` remains a local function in
+its page module: removing its named export satisfies Next's page-export whitelist
+without changing the default page component or confirmation behavior.
 
-`GET /api/occurrences/[id]` reads the card through the `occurrence_detail` RPC.
-Only confirmed managers of the occurrence's condominium can read it; another
-portfolio returns no row, so HTTP 404 is indistinguishable from a missing
-occurrence. `PATCH /api/occurrences/[id]/priority` calls
-`decide_occurrence_priority`, which requires an active confirmed session, locks
-completed occurrences with 409, keeps the original suggested priority immutable,
-stores the final priority and change reason as occurrence data and never writes
-a history row.
+### SQL provenance and fixture corrections
 
-Activity stays open, newest first, with date, time and author, and shows the
-viewer as "(síndico, você)" while the stored event keeps the author name. The
-text-only update box sits above the history, is hidden for completed occurrences
-and posts to `POST /api/occurrences/[id]/updates`, which reuses the existing
-append-only occurrence event service. Empty text returns "Escreva a
-atualização.", a successful insert clears the box and adds the newest row, and
-updates never change status or priority. Attachments (ORI-66) and
-responsible/deadline/completion (ORI-72) remain out of scope, as do editing or
-deleting an update.
+The original employee tests pass against the original ORI-49 (`44b0c5d`) and
+ORI-50 (`43bf26f`) migration histories in disposable local databases. Their
+unconfirmed accounts and JWTs without session IDs are incompatible with the
+active-session policies inherited from ORI-78. The integrated fixtures now create
+confirmed users and real session rows, assert that the session is active before
+the positive authorization cases, and explicitly reject expired/revoked sessions.
+No application policy, grant or historical migration was relaxed.
 
-Migration `20261123120000_occurrence_detail_priority.sql` adds both functions
-with fixed search paths, explicit grants and no service_role bypass. Local
-validation passed: formatting, ESLint, route types/TypeScript, 615 unit tests,
-the nine database test files (598 assertions, including the new
-`occurrence-detail.test.sql`) and the 13 occurrence queue browser cases covering
-desktop, 360px mobile, priority change, reason selection, manager updates,
-empty-update validation, Esc/backdrop closing and another-portfolio 404. The
-local database required `npm run db:stop` and `npm run db:start` after
-`npm run db:reset` because the reset left storage unhealthy on this host; the
-reset itself applied every migration before the failed health check.
+The unchanged ORI-78 (`9f56c79`) event/history tests pass on an empty schema but
+reproduce their failures with preexisting synthetic records and that branch's
+`scripts/demo-occurrences.sql`. Event queries previously counted unrelated
+history or selected multiple registrations. They now scope fixture assertions by
+occurrence ID and compare the total history count before/after the intentionally
+failed write. The optional `local_demo.occurrences` foreign key adds a dependency
+to `TRUNCATE ... CASCADE`; its denied privilege previously stopped the test before
+the evidence trigger. The accidental-grant test now grants/revokes TRUNCATE for
+that dependency closure inside its rolled-back transaction, still requiring the
+exact append-only trigger error. Runtime permissions and history stay unchanged.
 
-### Public occurrence registration (ORI-59)
+### Demo and real-browser verification
 
-The existing stable `/c/{slug}` condominium link identifies the public form's
-condominium. No login is required. `GET /api/public/condominiums/{slug}` returns
-only `{"name":"Condomínio Exemplo","address":"Endereço de exemplo"}`. A missing
-link or a condominium whose manager is no longer a manager returns HTTP 404 with
-`code: "not_found"`; infrastructure failures return 503 with `code: "unavailable"`.
-There is no additional condominium activation flag. Responses use `no-store`.
+The Demo preparation route previously compared the browser's Origin with Next's
+internal request hostname: `127.0.0.1:3100` was rejected when Next reported
+`localhost:3100`. It now compares Origin with the request Host, following the
+existing condominium endpoint convention. Foreign origins, a different port and
+untrusted forwarded-host values remain rejected before authentication or writes.
+The request still derives the manager only from the confirmed active session.
+Preparation ownership, eligibility and idempotence are unchanged.
 
-`POST /api/public/condominiums/{slug}/occurrences` accepts JSON and requires an
-`Idempotency-Key` header containing a UUID. Example body:
+Run browser validation with `ACCOUNT_DEMO_ENABLED=true`,
+`ORI47_LOCAL_AUTH_TESTS=enabled`, `ORI51_LOCAL_TESTS=enabled` and the local Supabase
+test credentials available only to the test process. `npm run test:e2e` builds and
+manages its own production server at `127.0.0.1:3100`; that port must be free.
+The local Mailpit profile must already be active for signup confirmation. Tests
+cover confirmation through captured local email, existing sessions, re-login,
+Demo IDs remaining stable, Demo not completing real first steps, real employee
+persistence after re-login, selected ownership/role IDs, cross-portfolio HTTP and
+direct Data API attacks, duplicate phones, free-text/empty schedules, field
+retention on errors, keyboard focus and responsive layouts. Synthetic cleanup is
+restricted to the created account IDs at the local API and removes their Demo
+records before account deletion.
 
-```json
-{
-  "reporterName": "Ana",
-  "reporterUnitOrRole": "Porteiro",
-  "reporterPhone": "11900000000",
-  "location": "Hall de entrada",
-  "description": "Lâmpada apagada"
-}
-```
+`npm run test:db:account-demo` now targets the same `127.0.0.1:3100` production
+server instead of an unrelated server on port 3000. Run it with Demo enabled and
+no concurrent writers: it verifies snapshots of all preexisting portfolio data.
+`npm run test:db` runs the transaction-isolated SQL suite against the existing
+local stack without reset. No remote execution or publication is implied by these
+local checks.
 
-The response is HTTP 200 with `{"number":123}` for both creation and replay,
-only after the database transaction commits. No personal data, internal ID or
-tracking token is returned. Only the five listed fields are accepted. Name,
-unit/role and location allow up to 200 characters; description allows 10,000.
-All require nonblank strings and reject NUL. Phone requires 11 digits: DDD plus
-a mobile number beginning with 9. Text is trimmed before persistence. A single
-name and self-declared roles such as `Porteiro` are valid. No employee lookup is
-performed. Cookies do not select the condominium or author; the public API skips
-session refresh and uses the route slug, anonymous resolution and server-only
-service credentials for registration.
+## Inline employee role creation (ORI-52)
 
-Validation failures return HTTP 400 with `code: "invalid_input"` and a `fields`
-object keyed by input field, `attemptKey`, or `body`. Unexpected fields are a
-`body` error. Reusing a key with changed normalized content returns HTTP 409 with
-`code: "conflict"`. Errors contain no database diagnostics or submitted values.
+The native employee-role selector now ends with `+ Criar nova função`. Choosing it
+reveals the required `Nome da nova função` field below that selector. Switching
+back to an existing role removes the field, its error and its discarded value.
+Existing roles are still submitted by `funcaoId`; creation submits `funcaoNome`
+instead, with no selector sentinel or stale role name in the existing-ID request.
 
-The frontend must generate `crypto.randomUUID()` once per submission attempt,
-keep the key together with the exact payload while the outcome is uncertain,
-and reuse both after timeouts, connection loss or retry. Keep the pending attempt
-across navigation/reload if retry recovery is offered, and clear it after confirmed
-success or explicit abandonment. Do not generate a new key merely because the
-response was lost. A deliberate new report or edited payload needs a new key;
-a 409 must not silently submit another report. Identical reports with independent
-keys are allowed. The server trims surrounding whitespace, so this normalization
-does not change attempt identity. No time-based expiry is currently applied.
+The form reuses `validateCreateFuncionario` and sends a single employee POST.
+Selection, typing, blur and cancellation never call the standalone role-creation
+endpoint. ORI-50's `create_funcionario` RPC creates or reuses the role and employee
+in the same transaction, including rollback of a new role when the employee is
+rejected. No migration, endpoint, normalization rule or backend permission is
+added. Canonical names and IDs come from the joined employee list and a fresh
+`GET /api/funcoes` when opening the next form; the frontend does not maintain its
+own matching or deduplication policy. A portfolio with no roles can use creation
+after its authorized condominium choices have loaded.
 
-The incremental migration stores a SHA-256 content fingerprint and the committed
-occurrence reference in a private table keyed by condominium and attempt UUID.
-A transaction-scoped advisory lock serializes concurrent requests for the same
-pair. Fingerprint conflicts return no receipt. The wrapper calls the existing
-`register_public_occurrence_with_suggestion` RPC, preserving the central service's
-risk classification, global database sequence and shared initial event writer.
-Occurrence, initial event and attempt are committed or rolled back together.
-Sequence gaps after rollback remain possible. Existing history is never rewritten.
-No anonymous table permissions are added.
+The conditional field preserves native select keyboard behavior, associated
+inline errors, form-order validation focus, duplicate-submit prevention and field
+retention after a failed save. The field stays in the Função column on desktop
+and precedes Condomínio in the mobile form. The ORI-51 list, sessions, Demo and
+other panel flows remain in place.
 
-Run `npx vitest run --config vitest.db.config.mts tests/db/public-registration.integration.test.ts`
-against the project-local running stack after `supabase migration up --local`.
-These tests exercise the route handlers against real local Supabase, concurrency,
-rollback injection and authenticated queue isolation with synthetic fixtures.
-The future resident frontend still needs the form, field error presentation,
-pending-attempt storage/retry behavior and number confirmation. The existing
-`/c/{slug}` presentation page is preserved; it does not yet submit reports.
-
-### ORI-59 publication review
-
-The integrated comparison baseline is `a82798b` (ORI-70 plus the ORI-50 merge,
-which already contains ORI-49), before the ORI-59 implementation. Both this
-baseline and the current application passed the standard `npm run build` with
-Turbopack after fresh `npm ci` in separate disposable `node:24-alpine` containers
-(the installed image reports Node 24.22.2). Each container used a temporary copy
-from a read-only source mount, excluding environment files, Git metadata,
-dependencies, build output and provider state. No ports were published, and no
-existing container, bundler, deployment or security configuration was changed.
-The resulting production outputs were served separately on host Node 24.22.3 by
-Playwright's exclusive loopback server.
-
-The earlier 31 browser failures were validation-environment failures from the
-Webpack fallback, not demonstrated ORI-59 or integration regressions. That output
-retained `@tailwind utilities` without generating `.flex` or `.grid`; the project's
-Tailwind loader is configured under `turbopack.rules`. Visual fixtures also discover
-CSS under `.next/static/chunks`, while the fallback emitted CSS under
-`.next/static/css`. These differences invalidated the layout and interaction
-results. No application layout or existing assertion was changed to obtain approval.
-
-| Previously failing group     | Cases | Integrated baseline, standard build | ORI-59, standard build |
-| ---------------------------- | ----: | ----------------------------------- | ---------------------- |
-| Authentication layout        |    14 | Passed                              | Passed                 |
-| Login/recovery accessibility |     2 | Passed                              | Passed                 |
-| Signup/confirmation          |     4 | Passed                              | Passed                 |
-| Condominium visual fixtures  |     5 | Passed                              | Passed                 |
-| Queue layout/expansion       |     4 | Passed                              | Passed                 |
-| Detail card interaction      |     2 | Passed                              | Passed                 |
-
-The recorded 31 failure IDs from the previous run were matched individually to
-passing results in both new JSON reports. The full baseline run passed 56 tests
-with 15 existing opt-in skips; ORI-59 passed the same 56 with those 15 skips plus
-the new local database test's explicit opt-in. Neither run had failures or flaky
-results. The public HTTP test was then enabled separately against the real local
-stack and the standard container output and passed. Prior failure traces remain
-in the ignored `test-results` directory. Comparison build logs and JSON reports
-were retained locally in the temporary review directory.
-
-Coverage review retained the existing rollback, content-conflict and independent
-attempt cases. It strengthened the same-attempt concurrent test with an explicit
-single persisted attempt/occurrence and single initial event assertion, checked
-both receipts against their condominium IDs when sharing a key, and verified
-anonymous read denial on private occurrence/history tables. The HTTP test now
-forwards a real browser submission, waits for its committed server response,
-discards that response with a simulated connection reset, verifies the committed
-number in the local database and recovers exactly that number by retrying. Both
-initial and recovered responses are checked for an exact number-only contract;
-public resolution is name/address-only, and unauthenticated private detail/queue
-requests return only an error. No resident frontend was implemented.
-
-After these additions, all nine targeted real database tests and the enabled HTTP
-browser test passed. Existing approved checks were not repeated without a related
-change. These local results establish no remaining ORI-59 publication blocker;
-remote Quality execution must be verified on the published PR. Publication is
-handled separately through the feature branch and a reviewed PR to develop; no
-merge, deployment or shared-environment operation is part of this task.
+Run the local browser suite with `ORI52_LOCAL_TESTS=enabled` alongside the existing
+ORI-51/auth opt-ins and `ACCOUNT_DEMO_ENABLED=true`. It uses only the local stack,
+confirmed synthetic accounts and account-scoped cleanup. Coverage includes
+creation and availability of Jardineira in the next form without page reload,
+real persistence after reload, canonical Porteiro reuse for a lowercase name,
+cancel/switch without orphan roles, duplicate/foreign-condominium rejection with
+transaction rollback, cross-portfolio role IDs, keyboard input and 360px/desktop
+layout. Unit tests separately exercise whitespace validation, backend field
+errors and pending/failed submissions. No role editing, removal, activation or
+task-delegation UI is included.
 
 ## Canonical migration coordination
 
