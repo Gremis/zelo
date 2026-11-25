@@ -13,7 +13,7 @@ end;
 $$;
 revoke all on function public.seed_funcoes_padrao() from public,anon,authenticated,service_role;
 
-create trigger on_profile_sindico_seed_funcoes
+create or replace trigger on_profile_sindico_seed_funcoes
   after update of is_sindico on public.profiles
   for each row when(new.is_sindico and not old.is_sindico)
   execute function public.seed_funcoes_padrao();
