@@ -465,6 +465,50 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      create_funcao: {
+        Args: { p_nome: string };
+        Returns: {
+          created_at: string;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "funcoes";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_funcionario: {
+        Args: {
+          p_celular: string;
+          p_condominio_id: string;
+          p_funcao_nome: string;
+          p_horario_trabalho?: string;
+          p_nome: string;
+        };
+        Returns: {
+          ativo: boolean;
+          celular: string;
+          celular_normalizado: string | null;
+          condominio_id: string;
+          created_at: string;
+          funcao_id: string;
+          horario_trabalho: string | null;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "funcionarios";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       decide_occurrence_priority: {
         Args: {
           change_reason?: string;
