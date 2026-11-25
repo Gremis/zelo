@@ -27,6 +27,9 @@ export async function updateSession(request: NextRequest) {
       supabaseResponse.headers.set(key, value),
     );
   }
+  if (request.nextUrl.pathname.startsWith("/api/public/"))
+    return supabaseResponse;
+
   const persistent =
     request.cookies.get(PERSISTENCE_COOKIE)?.value !== "session";
 

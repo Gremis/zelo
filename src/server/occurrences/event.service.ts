@@ -39,6 +39,7 @@ export function createOccurrenceEventService(
   return {
     async registerPublic(input: PublicRegistration) {
       exactFields(input, [
+        ...(input?.attemptKey !== undefined ? ["attemptKey"] : []),
         "type",
         "condominiumSlug",
         "reporterName",
@@ -48,6 +49,9 @@ export function createOccurrenceEventService(
         "description",
       ]);
       if (
+        (input.attemptKey !== undefined &&
+          (typeof input.attemptKey !== "string" ||
+            !uuid.test(input.attemptKey))) ||
         input.type !== "registered" ||
         typeof input.condominiumSlug !== "string" ||
         input.condominiumSlug.length > 200 ||
@@ -61,6 +65,9 @@ export function createOccurrenceEventService(
       const risk = detectRisk(location, description);
       return repository.registerPublic({
         type: "registered",
+        ...(input.attemptKey !== undefined
+          ? { attemptKey: input.attemptKey }
+          : {}),
         condominiumSlug: input.condominiumSlug,
         reporterName: text(input.reporterName, 200),
         reporterPhone: input.reporterPhone,
