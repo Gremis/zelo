@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OccurrenceQueue } from "./occurrence-queue";
+import { ManagerOccurrenceForm } from "./manager-occurrence-form";
 import {
   loadOccurrenceQueue,
   QueueLoadError,
@@ -23,6 +24,7 @@ export function ConnectedOccurrenceQueue({
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [openId, setOpenId] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -108,22 +110,39 @@ export function ConnectedOccurrenceQueue({
   }, [attempt, router, prepareDemo]);
 
   return (
-    <OccurrenceQueue
-      state={
-        state.status === "error"
-          ? { ...state, onRetry: () => setAttempt((value) => value + 1) }
-          : state
-      }
-      onOpenOccurrence={setOpenId}
-      detail={
-        openId
-          ? {
-              id: openId,
-              onClose: () => setOpenId(null),
-              onChanged: () => void refresh(),
-            }
-          : null
-      }
-    />
+    <>
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setRegistering(true)}
+          className="min-h-11 rounded-lg bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0b5e58]"
+        >
+          Registrar ocorrência
+        </button>
+      </div>
+      <OccurrenceQueue
+        state={
+          state.status === "error"
+            ? { ...state, onRetry: () => setAttempt((value) => value + 1) }
+            : state
+        }
+        onOpenOccurrence={setOpenId}
+        detail={
+          openId
+            ? {
+                id: openId,
+                onClose: () => setOpenId(null),
+                onChanged: () => void refresh(),
+              }
+            : null
+        }
+      />
+      {registering && (
+        <ManagerOccurrenceForm
+          onClose={() => setRegistering(false)}
+          onRegistered={() => void refresh()}
+        />
+      )}
+    </>
   );
 }
