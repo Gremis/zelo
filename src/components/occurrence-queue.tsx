@@ -9,12 +9,18 @@ import {
 } from "react";
 import { PanelPageTitle } from "./panel-page-title";
 import { OccurrenceDetailPanel } from "./occurrence-detail";
+import {
+  formatOccurrenceDateTitle,
+  formatQueueDate,
+} from "@/lib/occurrences/format";
 import type {
   PortfolioQueue,
   QueueCard,
   QueuePriority,
   QueueStatus,
 } from "@/server/occurrences/queue.contract";
+
+export { formatQueueDate } from "@/lib/occurrences/format";
 
 export type QueuePresentation =
   | { status: "loading" }
@@ -81,52 +87,6 @@ const priorities: Record<
     dot: "bg-[#98a2b3]",
   },
 };
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
-  timeZone: "America/Sao_Paulo",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
-const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
-  timeZone: "America/Sao_Paulo",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-const calendarFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Sao_Paulo",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-function calendarDate(date: Date) {
-  const parts = calendarFormatter.formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((item) => item.type === type)!.value);
-  return { year: part("year"), month: part("month"), day: part("day") };
-}
-
-export function formatQueueDate(value: string, now?: Date) {
-  const date = new Date(value);
-  const current = now ? calendarDate(now) : null;
-  const recorded = calendarDate(date);
-  if (current) {
-    const day = (parts: typeof recorded) =>
-      Date.UTC(parts.year, parts.month - 1, parts.day) / 86_400_000;
-    const difference = day(current) - day(recorded);
-    if (difference === 0) return `hoje ${timeFormatter.format(date)}`;
-    if (difference === 1) return `ontem ${timeFormatter.format(date)}`;
-  }
-  const day = String(recorded.day).padStart(2, "0");
-  const month = String(recorded.month).padStart(2, "0");
-  const year = current?.year === recorded.year ? "" : `/${recorded.year}`;
-  return `${day}/${month}${year} ${timeFormatter.format(date)}`;
-}
 
 function Report({ text }: { text: string }) {
   const id = useId();
@@ -163,7 +123,10 @@ function Report({ text }: { text: string }) {
           type="button"
           aria-controls={id}
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded(!expanded);
+          }}
           className="mt-1 cursor-pointer text-xs font-medium text-[#0b5e58] underline underline-offset-2 hover:text-[#0f766e]"
         >
           {expanded ? "Recolher relato" : "Ler relato completo"}
@@ -183,12 +146,13 @@ export function OccurrenceCard({
   onOpen?: (id: string) => void;
 }) {
   const style = priorities[item.effectivePriority ?? "unclassified"];
-  const fullDate = `${dateFormatter.format(new Date(item.registeredAt))} — Horário de Brasília`;
+  const fullDate = formatOccurrenceDateTitle(item.registeredAt);
   const id = useId();
   return (
     <article
       aria-labelledby={id}
-      className={`flex min-w-0 flex-col gap-[5px] rounded-[10px] border border-[#e5e7eb] border-l-4 ${style.border} bg-white px-3 py-[11px]`}
+      onClick={onOpen ? () => onOpen(item.id) : undefined}
+      className={`flex min-w-0 flex-col gap-[5px] rounded-[10px] border border-[#e5e7eb] border-l-4 ${style.border} bg-white px-3 py-[11px] ${onOpen ? "cursor-pointer" : ""}`}
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <span
@@ -240,7 +204,10 @@ export function OccurrenceCard({
       {onOpen && (
         <button
           type="button"
-          onClick={() => onOpen(item.id)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(item.id);
+          }}
           className="cursor-pointer text-xs font-semibold text-[#0b5e58] underline underline-offset-2"
         >
           Abrir ocorrência #{item.number}

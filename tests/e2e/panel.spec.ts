@@ -26,7 +26,7 @@ for (const width of [360, 1440]) {
     await expect(
       menu.getByRole("link", { name: "Fila de ocorrências" }),
     ).toHaveAttribute("aria-current", "page");
-    for (const name of ["Histórico de ocorrências", "Funcionários"]) {
+    for (const name of ["Histórico de ocorrências"]) {
       const item = menu.getByRole("button", { name, exact: true });
       await expect(item).toBeDisabled();
       await expect(item).toHaveCSS("cursor", "not-allowed");
@@ -34,6 +34,9 @@ for (const width of [360, 1440]) {
         "Esta tela ainda não está disponível.",
       );
     }
+    await expect(
+      menu.getByRole("link", { name: "Funcionários", exact: true }),
+    ).toHaveAttribute("href", "/funcionarios");
     await expect(menu.getByText("Pessoa Sintética")).toBeVisible();
     await expect(
       menu.getByText("Síndico profissional · 0 condomínios"),

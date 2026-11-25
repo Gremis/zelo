@@ -34,10 +34,12 @@ test("loads observed progress and never completes steps through a click", async 
   expect(
     screen.getByText("Cadastre seu primeiro condomínio").closest("li"),
   ).toHaveClass("line-through");
-  for (const name of [
-    "Cadastre zelador e porteiro de cada prédio",
-    "Copie o link do formulário e envie aos moradores",
-  ]) {
+  expect(
+    screen.getByRole("link", {
+      name: "Cadastre zelador e porteiro de cada prédio",
+    }),
+  ).toHaveAttribute("href", "/funcionarios?novo=1");
+  for (const name of ["Copie o link do formulário e envie aos moradores"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   expect(

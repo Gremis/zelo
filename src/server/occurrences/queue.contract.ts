@@ -1,3 +1,11 @@
+import {
+  date,
+  integer,
+  nullableString,
+  record,
+  string,
+} from "./contract-utils";
+
 export const QUEUE_STATUSES = [
   "new",
   "in_progress",
@@ -33,39 +41,11 @@ export type PortfolioQueue = {
   openByPriority: Record<QueuePriority | "unclassified", number>;
 };
 
-function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid queue response.");
-  return value as Record<string, unknown>;
-}
-
-function string(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Invalid queue field.");
-  return value;
-}
-
-function nullableString(value: unknown): string | null {
-  return value === null ? null : string(value);
-}
-
-function count(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
-    throw new Error("Invalid queue count.");
-  return value;
-}
-
 function priority(value: unknown): QueuePriority | null {
   if (value === null) return null;
   if (!QUEUE_PRIORITIES.includes(value as QueuePriority))
     throw new Error("Invalid queue priority.");
   return value as QueuePriority;
-}
-
-function date(value: unknown): string {
-  const result = string(value);
-  if (!Number.isFinite(Date.parse(result)))
-    throw new Error("Invalid queue date.");
-  return result;
 }
 
 function card(value: unknown, status: QueueStatus): QueueCard {
@@ -80,7 +60,7 @@ function card(value: unknown, status: QueueStatus): QueueCard {
     throw new Error("Invalid queue card.");
   const result: QueueCard = {
     id: string(row.id),
-    number: count(row.number),
+    number: integer(row.number),
     ...(row.isDemo === undefined ? {} : { isDemo: row.isDemo as boolean }),
     status,
     condominium: { id: string(condominium.id), name: string(condominium.name) },
@@ -116,7 +96,7 @@ export function parsePortfolioQueue(value: unknown): PortfolioQueue {
     const column = record(columns[status]);
     if (!Array.isArray(column.items)) throw new Error("Invalid queue column.");
     const items = column.items.map((item) => card(item, status));
-    const total = count(column.count);
+    const total = integer(column.count);
     if (total !== items.length) throw new Error("Incomplete queue column.");
     result.columns[status] = { count: total, items };
     if (status !== "completed")
@@ -124,7 +104,7 @@ export function parsePortfolioQueue(value: unknown): PortfolioQueue {
         expected[item.effectivePriority ?? "unclassified"] += 1;
   }
   for (const key of [...QUEUE_PRIORITIES, "unclassified"] as const) {
-    result.openByPriority[key] = count(totals[key]);
+    result.openByPriority[key] = integer(totals[key]);
     if (result.openByPriority[key] !== expected[key])
       throw new Error("Inconsistent queue counts.");
   }

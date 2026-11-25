@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { removeLocalAccountData } from "./local-database";
 import { test as base, expect } from "@playwright/test";
 
 export const test = base.extend<{ localAccount: void }>({
@@ -45,10 +46,12 @@ export const test = base.extend<{ localAccount: void }>({
         ).toBe(200);
         await provideFixture();
       } finally {
-        await fetch(
+        removeLocalAccountData(account.id);
+        const removed = await fetch(
           `http://127.0.0.1:54321/auth/v1/admin/users/${account.id}`,
           { method: "DELETE", headers },
         );
+        expect(removed.ok).toBe(true);
       }
     },
     { auto: true },

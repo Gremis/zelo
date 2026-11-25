@@ -3,9 +3,9 @@ import { build } from "vite";
 import { resolve } from "node:path";
 import { readdir } from "node:fs/promises";
 import { occurrenceDetailFixture } from "../fixtures/occurrence-detail";
-import { queueFixture, queueEmptyFixture } from "../fixtures/occurrence-queue";
 import type { PriorityChangeReason } from "@/server/occurrences/detail.contract";
 import type { QueuePriority } from "@/server/occurrences/queue.contract";
+import { queueFixture, queueEmptyFixture } from "../fixtures/occurrence-queue";
 
 let script: string;
 let stylesheets: string;
@@ -84,7 +84,9 @@ async function mount(page: Page, fixture = "all") {
   await page.evaluate(() => document.fonts.ready);
 }
 
-for (const width of [360, 390, 560, 561, 768, 999, 1000, 1001, 1440]) {
+for (const width of [
+  360, 390, 560, 561, 768, 999, 1000, 1001, 1024, 1280, 1440, 1728,
+]) {
   test(`queue presentation at ${width}px preserves all cards and keyboard access`, async ({
     page,
   }, testInfo) => {
@@ -368,6 +370,37 @@ test("mobile long cards and zero counts fit without horizontal scrolling", async
   );
 });
 
+test.describe("mobile touch navigation", () => {
+  test.use({ hasTouch: true });
+
+  test("uses the connected response for every tab without fetching again", async ({
+    page,
+  }) => {
+    let attempts = 0;
+    await page.route("**/api/occurrences/queue", (route) => {
+      attempts += 1;
+      return route.fulfill({ json: queueFixture("all") });
+    });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await mount(page, "connected");
+    await expect(
+      page.getByRole("tab", { name: "Novo 4", exact: true }),
+    ).toBeVisible();
+    for (const [label, count] of [
+      ["Andamento 1", 1],
+      ["Delegado 1", 1],
+      ["Concluído 1", 1],
+      ["Novo 4", 4],
+    ] as const) {
+      const tab = page.getByRole("tab", { name: label, exact: true });
+      await tab.tap();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("article")).toHaveCount(count);
+    }
+    expect(attempts).toBe(1);
+  });
+});
+
 type PriorityBody = {
   priority: QueuePriority;
   reason: PriorityChangeReason | null;
@@ -486,7 +519,9 @@ test("detail card saves priority, records a reason and appends manager updates",
     .getByLabel("Escreva uma atualização")
     .fill("Visita marcada para amanhã.");
   await dialog.getByRole("button", { name: "Adicionar" }).click();
-  await expect(dialog.getByText("Atualização adicionada.")).toBeVisible();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "Atualização adicionada.",
+  );
   await expect(dialog.getByLabel("Escreva uma atualização")).toHaveValue("");
   await expect(history.getByRole("listitem").first()).toContainText(
     "Visita marcada para amanhã.",
@@ -524,6 +559,11 @@ test("detail card expands in place on mobile and closes with the X", async ({
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
     "hidden",
   );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await expect(
     page.getByRole("heading", { name: "Novo", exact: true }),
   ).toBeHidden();
@@ -556,33 +596,47 @@ test("a detail outside the manager portfolio is presented as not found", async (
   ).toHaveCount(0);
 });
 
-test.describe("mobile touch navigation", () => {
-  test.use({ hasTouch: true });
-
-  test("uses the connected response for every tab without fetching again", async ({
-    page,
-  }) => {
-    let attempts = 0;
-    await page.route("**/api/occurrences/queue", (route) => {
-      attempts += 1;
-      return route.fulfill({ json: queueFixture("all") });
-    });
-    await page.setViewportSize({ width: 390, height: 900 });
-    await mount(page, "connected");
-    await expect(
-      page.getByRole("tab", { name: "Novo 4", exact: true }),
-    ).toBeVisible();
-    for (const [label, count] of [
-      ["Andamento 1", 1],
-      ["Delegado 1", 1],
-      ["Concluído 1", 1],
-      ["Novo 4", 4],
-    ] as const) {
-      const tab = page.getByRole("tab", { name: label, exact: true });
-      await tab.tap();
-      await expect(tab).toHaveAttribute("aria-selected", "true");
-      await expect(page.getByRole("article")).toHaveCount(count);
-    }
-    expect(attempts).toBe(1);
+test("mobile detail preserves the selected delegated tab after closing and resizing", async ({
+  page,
+}) => {
+  const queue = queueFixture("all");
+  const item = queue.columns.delegated.items[0];
+  let requests = 0;
+  await page.route("**/api/occurrences/queue", (route) => {
+    requests += 1;
+    return route.fulfill({ json: queue });
   });
+  await page.route(`**/api/occurrences/${item.id}`, (route) =>
+    route.fulfill({
+      json: occurrenceDetailFixture({
+        id: item.id,
+        number: item.number,
+        status: item.status,
+        description: item.description,
+        condominium: item.condominium,
+      }),
+    }),
+  );
+  await page.setViewportSize({ width: 360, height: 900 });
+  await mount(page, "connected");
+  const selected = page.getByRole("tab", {
+    name: "Delegado 1",
+    exact: true,
+  });
+  await selected.click();
+  await page
+    .getByRole("button", { name: `Abrir ocorrência #${item.number}` })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Fechar" })).toBeFocused();
+  await dialog.getByRole("button", { name: "Fechar" }).click();
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await page.setViewportSize({ width: 1001, height: 900 });
+  await expect(page.getByRole("article")).toHaveCount(7);
+  await page.setViewportSize({ width: 360, height: 900 });
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("article")).toHaveCount(1);
+  expect(requests).toBe(1);
 });

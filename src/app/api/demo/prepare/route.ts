@@ -5,7 +5,9 @@ import { prepareAccountDemo } from "@/server/demo/prepare";
 export async function POST(request: Request) {
   const headers = new Headers({ "Cache-Control": "private, no-store" });
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  const url = new URL(request.url);
+  const expectedOrigin = `${url.protocol}//${request.headers.get("host") ?? url.host}`;
+  if (origin && origin !== expectedOrigin)
     return NextResponse.json(
       { error: "Origem não autorizada." },
       { status: 403, headers },
