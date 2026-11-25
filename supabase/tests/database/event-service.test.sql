@@ -63,7 +63,7 @@ select throws_ok($$select public.register_public_occurrence_with_suggestion(curr
 select throws_ok($$select private.append_occurrence_event(current_setting('ori64.created')::uuid,'completed')$$,'42501',null,'Authenticated cannot bypass event wrapper');
 reset role;
 update profiles set full_name='Changed manager',phone='11800000000',is_sindico=false where id='64000000-0000-4000-8000-000000000001';
-select ok((select author_name='Synthetic manager 1' and author_phone='11900000000' and author_role='manager' and not visible_to_resident and public_text is null and data='{}'::jsonb and occurred_at>=transaction_timestamp() from occurrence_events where event_type='manager_update'),'Manager snapshot and internal projection survive profile edits/deactivation');
+select ok((select author_name='Synthetic manager 1' and author_phone='11900000000' and author_role='manager' and not visible_to_resident and public_text is null and data='{}'::jsonb and occurred_at>=transaction_timestamp() from occurrence_events where event_type='manager_update' and occurrence_id=current_setting('ori64.created')::uuid),'Manager snapshot and internal projection survive profile edits/deactivation');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"64000000-0000-4000-8000-000000000001","session_id":"64000000-0000-4000-9000-000000000001","role":"authenticated"}',true);
 select throws_ok($$select append_occurrence_note(current_setting('ori64.created')::uuid,'Forbidden')$$,'42501','Occurrence unavailable.','Deactivated manager cannot append');
