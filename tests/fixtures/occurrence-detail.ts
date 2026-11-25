@@ -31,8 +31,15 @@ export function occurrenceDetailFixture(
     priorityChangeReason: null,
     category: "Gás",
     canDecidePriority: true,
+    version: 0,
+    responsibleKind: null,
+    responsibleName: null,
+    responsibleEmployeeId: null,
+    firstResponsibleAt: null,
+    dueDate: null,
     events: [
       {
+        attachments: [],
         id: 2,
         type: "manager_update",
         occurredAt: "2026-11-22T21:26:00Z",
@@ -44,6 +51,7 @@ export function occurrenceDetailFixture(
         text: "Zelador olhou o portão. Motor queimado, pedi orçamento.",
       },
       {
+        attachments: [],
         id: 1,
         type: "registered",
         occurredAt: "2026-11-22T12:05:00Z",

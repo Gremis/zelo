@@ -22,6 +22,8 @@ function respond(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const options = init ?? {};
+      if (url.endsWith("/eligible-employees"))
+        return Response.json({ employees: [] });
       calls.push({ url, init: options });
       return handler(url, options);
     },

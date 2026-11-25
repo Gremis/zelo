@@ -121,12 +121,21 @@ export async function registerPublicRequest(request: Request, slug: string) {
     );
   }
   const attemptKey = request.headers.get("Idempotency-Key");
+  const uploadSecret = request.headers.get("Upload-Token");
+  if (uploadSecret !== null && !/^[0-9a-f]{64}$/.test(uploadSecret))
+    return publicReply(
+      { code: "invalid_input", error: "Credencial de envio inválida." },
+      400,
+    );
   const { errors, values } = validatePublicRegistration(body, attemptKey);
   if (Object.keys(errors).length)
     return publicReply({ code: "invalid_input", fields: errors }, 400);
   try {
     await resolvePublicCondominium(slug);
-    const receipt = await occurrenceEvents().registerPublic({
+    const receipt = await occurrenceEvents(
+      undefined,
+      uploadSecret ?? undefined,
+    ).registerPublic({
       ...values,
       type: "registered",
       condominiumSlug: slug,
