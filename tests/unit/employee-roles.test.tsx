@@ -207,27 +207,48 @@ test("retains new role data after a failed save and blocks repeated submission w
   ).toBeEnabled();
 });
 
-test("maps backend role-name errors to the new field without discarding its value", async () => {
-  setup(async () =>
-    json(
-      { details: { funcaoNome: "A função deve ter até 50 caracteres." } },
-      400,
-    ),
-  );
-  await open();
-  fillEmployee();
-  chooseNew();
-  fireEvent.change(screen.getByLabelText("Nome da nova função"), {
-    target: { value: "Jardineira" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Salvar funcionário" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Nome da nova função")).toHaveFocus(),
-  );
-  expect(
-    screen.getByLabelText("Nome da nova função"),
-  ).toHaveAccessibleDescription("A função deve ter até 50 caracteres.");
-  expect(screen.getByLabelText("Nome da nova função")).toHaveValue(
-    "Jardineira",
-  );
-});
+test.each([false, true])(
+  "maps backend role-name errors to the new field without discarding its value (early frame: %s)",
+  async (earlyFrame) => {
+    if (earlyFrame) {
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        (callback: FrameRequestCallback) => {
+          callback(0);
+          return 0;
+        },
+      );
+    }
+    let finish!: (value: Response) => void;
+    setup(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await open();
+    fillEmployee();
+    chooseNew();
+    fireEvent.change(screen.getByLabelText("Nome da nova função"), {
+      target: { value: "Jardineira" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar funcionário" }));
+    expect(screen.getByLabelText("Nome da nova função")).toBeDisabled();
+    finish(
+      json(
+        { details: { funcaoNome: "A função deve ter até 50 caracteres." } },
+        400,
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Nome da nova função")).toBeEnabled();
+      expect(screen.getByLabelText("Nome da nova função")).toHaveFocus();
+    });
+    expect(
+      screen.getByLabelText("Nome da nova função"),
+    ).toHaveAccessibleDescription("A função deve ter até 50 caracteres.");
+    expect(screen.getByLabelText("Nome da nova função")).toHaveValue(
+      "Jardineira",
+    );
+  },
+);
