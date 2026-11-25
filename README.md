@@ -207,10 +207,9 @@ Panel identity and first steps use the protected API even when development mock
 flags are present. Component mocks remain available as explicit test fixtures.
 A simulated signup is not an authenticated session and cannot unlock `/fila`.
 First steps are shown only in the current post-signup flow. Login, logout and
-a fresh page load do not show this card. First-step dismissal is persisted per
-account in `profiles.first_steps_dismissed_at` through an authenticated RPC, and
-successful dismissal also clears the current signup presentation flag. Dismissal
-does not complete real steps. Only the condominium step can be derived from the
+a fresh page load do not show this card. First-step dismissal affects only the
+current rendered panel; per-account
+persistence belongs to ORI-48. Only the condominium step can be derived from the
 existing database. Employee registration, resident-link delivery, occurrence
 history and their navigation destinations remain unavailable.
 
