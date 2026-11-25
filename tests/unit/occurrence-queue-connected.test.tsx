@@ -233,3 +233,63 @@ test("opening a card loads its detail and a priority change refreshes the queue 
   expect(screen.getByRole("dialog")).toBeInTheDocument();
   expect(screen.getAllByRole("article")).toHaveLength(4);
 });
+
+test("focus refreshes changes from another window and coalesces concurrent refreshes", async () => {
+  request.mockResolvedValueOnce(Response.json(queueFixture("all")));
+  let complete!: (response: Response) => void;
+  request.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  render(<ConnectedOccurrenceQueue />);
+  await screen.findByLabelText("4 em Novo");
+  fireEvent.focus(window);
+  fireEvent.focus(window);
+  expect(request).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    complete(Response.json(queueEmptyFixture));
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("article")).not.toBeInTheDocument(),
+  );
+});
+
+test("temporary background refresh failure preserves the visible cards", async () => {
+  request
+    .mockResolvedValueOnce(Response.json(queueFixture("all")))
+    .mockRejectedValueOnce(new Error("Synthetic offline"));
+  render(<ConnectedOccurrenceQueue />);
+  await screen.findByLabelText("4 em Novo");
+  await act(async () => {
+    fireEvent.focus(window);
+  });
+  expect(screen.getAllByRole("article")).toHaveLength(7);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("visible queue polls every fifteen seconds and stops after unmount", async () => {
+  vi.useFakeTimers();
+  try {
+    request.mockImplementation(() =>
+      Promise.resolve(Response.json(queueEmptyFixture)),
+    );
+    const view = render(<ConnectedOccurrenceQueue />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+    view.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});

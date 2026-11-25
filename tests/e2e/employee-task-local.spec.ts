@@ -97,7 +97,8 @@ for (const width of [360, 1280]) {
         await page.request.get(`/api/occurrences/${id}`)
       ).json();
       expect(detail.status).toBe("delegated");
-      await page.goto("/fila");
+      await page.bringToFront();
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await expect(
         page
           .getByRole("article")
@@ -213,7 +214,8 @@ for (const width of [360, 1280]) {
       expect(completed).toHaveLength(1);
       expect(completed[0].authorType).toBe("employee");
       expect(completed[0].attachments).toHaveLength(1);
-      await page.goto("/fila");
+      await page.bringToFront();
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await expect(
         page.getByText(
           "Concluída por Funcionário Sintético ORI105 (Função Sintética)",

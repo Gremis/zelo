@@ -24,34 +24,72 @@ export function ConnectedOccurrenceQueue({
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [openId, setOpenId] = useState<string | null>(null);
   const mounted = useRef(true);
+  const initializing = useRef(true);
+  const refreshing = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      refreshing.current?.abort();
     };
   }, []);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await loadOccurrenceQueue();
-      if (mounted.current) setState({ status: "success", data });
-    } catch (error) {
-      if (error instanceof QueueLoadError && error.status === 401)
-        router.replace("/login");
-      if (mounted.current)
-        setState({
-          status: "error",
-          message:
-            "Alteração salva, mas não foi possível atualizar a fila. Tente novamente.",
-        });
-    }
-  }, [router]);
+  const refresh = useCallback(
+    async (background = false) => {
+      if (!mounted.current || initializing.current || refreshing.current)
+        return;
+      const controller = new AbortController();
+      refreshing.current = controller;
+      try {
+        const data = await loadOccurrenceQueue(controller.signal);
+        if (mounted.current && !controller.signal.aborted)
+          setState({ status: "success", data });
+      } catch (error) {
+        if (!mounted.current || controller.signal.aborted) return;
+        const expired = error instanceof QueueLoadError && error.status === 401;
+        const forbidden =
+          error instanceof QueueLoadError && error.status === 403;
+        if (expired) router.replace("/login");
+        if (!background || expired || forbidden)
+          setState({
+            status: "error",
+            message: expired
+              ? "Sua sessão expirou. Entre novamente."
+              : forbidden
+                ? "Acesso não autorizado para consultar a fila."
+                : "Alteração salva, mas não foi possível atualizar a fila. Tente novamente.",
+          });
+      } finally {
+        if (refreshing.current === controller) refreshing.current = null;
+      }
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    const update = () => {
+      if (document.visibilityState === "visible" && navigator.onLine)
+        void refresh(true);
+    };
+    window.addEventListener("focus", update);
+    window.addEventListener("online", update);
+    document.addEventListener("visibilitychange", update);
+    const interval = window.setInterval(update, 15_000);
+    return () => {
+      window.removeEventListener("focus", update);
+      window.removeEventListener("online", update);
+      document.removeEventListener("visibilitychange", update);
+      window.clearInterval(interval);
+    };
+  }, [refresh]);
 
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
     async function load() {
+      initializing.current = true;
+      refreshing.current?.abort();
       setState({ status: "loading" });
       try {
         if (prepareDemo) {
@@ -98,6 +136,8 @@ export function ConnectedOccurrenceQueue({
                   : undefined,
         });
         if (status === 401) router.replace("/login");
+      } finally {
+        if (active) initializing.current = false;
       }
     }
     void load();
