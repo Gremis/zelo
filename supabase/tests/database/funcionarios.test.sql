@@ -21,10 +21,14 @@ select no_plan();
 
 -- Síndico A, Síndico B e um não-síndico C. O metadata controla is_sindico,
 -- que o trigger de profiles usa e que dispara o seed das funções padrão.
-insert into auth.users (id, email, raw_user_meta_data) values
-  ('51400000-0000-4000-8000-000000000001', 's14-a@example.invalid', '{"is_sindico": true}'),
-  ('51400000-0000-4000-8000-000000000002', 's14-b@example.invalid', '{"is_sindico": true}'),
-  ('51400000-0000-4000-8000-000000000003', 's14-c@example.invalid', '{"is_sindico": false}');
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('51400000-0000-4000-8000-000000000001', 's14-a@example.invalid', now(), '{"is_sindico": true}'),
+  ('51400000-0000-4000-8000-000000000002', 's14-b@example.invalid', now(), '{"is_sindico": true}'),
+  ('51400000-0000-4000-8000-000000000003', 's14-c@example.invalid', now(), '{"is_sindico": false}');
+
+insert into auth.sessions (id, user_id)
+select replace(id::text, '-8000-', '-9000-')::uuid, id from auth.users
+where id in ('51400000-0000-4000-8000-000000000001', '51400000-0000-4000-8000-000000000002' , '51400000-0000-4000-8000-000000000003');
 
 select has_table('public', 'funcoes', 'Tabela funcoes existe');
 select has_table('public', 'funcionarios', 'Tabela funcionarios existe');
@@ -51,6 +55,32 @@ select is(
   0::bigint, 'Não-síndico não recebe funções padrão'
 );
 
+-- Seed quando um perfil existente passa a ser síndico (trigger de UPDATE).
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('51400000-0000-4000-8000-000000000004', 's14-virou@example.invalid', now(),
+   '{"is_sindico": false}');
+select is(
+  (select count(*) from public.funcoes
+    where sindico_id = '51400000-0000-4000-8000-000000000004'),
+  0::bigint, 'Perfil criado como não-síndico começa sem funções'
+);
+update public.profiles set is_sindico = true
+  where id = '51400000-0000-4000-8000-000000000004';
+select is(
+  (select count(*) from public.funcoes
+    where sindico_id = '51400000-0000-4000-8000-000000000004'),
+  3::bigint, 'Ao virar síndico, recebe as 3 funções padrão'
+);
+update public.profiles set is_sindico = false
+  where id = '51400000-0000-4000-8000-000000000004';
+update public.profiles set is_sindico = true
+  where id = '51400000-0000-4000-8000-000000000004';
+select is(
+  (select count(*) from public.funcoes
+    where sindico_id = '51400000-0000-4000-8000-000000000004'),
+  3::bigint, 'Virar síndico de novo não duplica as funções (on conflict)'
+);
+
 -- =====================================================================
 -- Restrições de funções
 -- =====================================================================
@@ -62,7 +92,12 @@ select throws_ok(
 );
 
 select is(
-  (select count(*) from public.funcoes where lower(nome) = 'zelador'),
+  (select count(*) from public.funcoes
+    where lower(nome) = 'zelador'
+      and sindico_id in (
+        '51400000-0000-4000-8000-000000000001',
+        '51400000-0000-4000-8000-000000000002'
+      )),
   2::bigint, 'A mesma função pode existir para síndicos diferentes'
 );
 
@@ -228,6 +263,14 @@ select is(
   false, 'Funcionário desativado é preservado (sem exclusão física)'
 );
 
+-- I1: excluir um síndico com condomínio/funcionário vinculado é bloqueado
+-- (a FK preserva os dados em vez de apagar em cascata).
+select throws_ok(
+  $$delete from auth.users where id = '51400000-0000-4000-8000-000000000001'$$,
+  '23503', null,
+  'Excluir síndico com condomínio/funcionário vinculado é bloqueado'
+);
+
 -- =====================================================================
 -- Estrutura de segurança
 -- =====================================================================
@@ -257,21 +300,24 @@ select ok(
 )
 from (values ('anon'), ('authenticated'), ('service_role')) as roles(role_name);
 
--- Guarda os ids do síndico B para o teste de referência cruzada.
+-- Guarda ids do síndico B para os testes de referência cruzada / UPDATE.
 create temporary table s14_refs as
-select (select id from public.condominiums where name = 'Condo B') as condo_b;
+select
+  (select id from public.condominiums where name = 'Condo B') as condo_b,
+  (select id from public.funcoes
+    where sindico_id = '51400000-0000-4000-8000-000000000002'
+      and nome = 'Zelador') as funcao_b;
 grant select on s14_refs to authenticated;
 
 -- =====================================================================
 -- Isolamento entre síndicos (identidade autenticada)
 -- =====================================================================
-update auth.users set email_confirmed_at=now() where id::text like '51400000-%';
-insert into auth.sessions(id,user_id) select id,id from auth.users where id::text like '51400000-%';
-
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
+
+select ok(public.has_active_session(), 'Employee fixture uses a confirmed active session');
 
 select is(auth.uid(), '51400000-0000-4000-8000-000000000001'::uuid, 'Identidade do síndico A');
 
@@ -294,6 +340,45 @@ select lives_ok(
       'Joana Martins', '31 99211-7741'
     )$$,
   'Síndico A cria funcionário na própria carteira'
+);
+
+-- A desativa o próprio funcionário (caminho de UPDATE sob RLS).
+select lives_ok(
+  $$update public.funcionarios set ativo = false where nome = 'Joana Martins'$$,
+  'Síndico A desativa o próprio funcionário'
+);
+
+-- A não pode mover o próprio funcionário para o condomínio de outro síndico.
+select throws_ok(
+  $$update public.funcionarios
+    set condominio_id = (select condo_b from s14_refs)
+    where nome = 'Joana Martins'$$,
+  '42501', null, 'UPDATE não move funcionário para condomínio de outro síndico'
+);
+
+-- A não pode mover o próprio funcionário para a função de outro síndico.
+select throws_ok(
+  $$update public.funcionarios
+    set funcao_id = (select funcao_b from s14_refs)
+    where nome = 'Joana Martins'$$,
+  '42501', null, 'UPDATE não move funcionário para função de outro síndico'
+);
+
+-- A não pode criar função em nome de outro síndico.
+select throws_ok(
+  $$insert into public.funcoes (sindico_id, nome)
+    values ('51400000-0000-4000-8000-000000000002', 'Forjada')$$,
+  '42501', null, 'Não cria função em nome de outro síndico'
+);
+
+-- A não altera a função de outro síndico (RLS filtra: 0 linhas afetadas).
+select results_eq(
+  $$with changed as (
+      update public.funcoes set nome = 'Renomeada'
+      where sindico_id = '51400000-0000-4000-8000-000000000002' returning id)
+    select count(*) from changed$$,
+  $$values (0::bigint)$$,
+  'Síndico A não renomeia função de outro síndico'
 );
 
 select throws_ok(
@@ -350,7 +435,7 @@ select throws_ok(
 -- Síndico B: isolamento simétrico.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000002","session_id":"51400000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000002","session_id":"51400000-0000-4000-9000-000000000002","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios where sindico_id <> auth.uid()),
   0::bigint, 'Síndico B também só enxerga a própria carteira'
@@ -360,10 +445,25 @@ select is(
   1::bigint, 'Síndico B enxerga o próprio funcionário'
 );
 
+reset role;
+update auth.sessions set not_after = now() - interval '1 second'
+where id = '51400000-0000-4000-9000-000000000002';
+set local role authenticated;
+select ok(not public.has_active_session(), 'Expired employee session is rejected');
+select is((select count(*) from public.funcionarios), 0::bigint, 'Expired session cannot list employees');
+select is((select count(*) from public.funcoes), 0::bigint, 'Expired session cannot list roles');
+select throws_ok($$select public.create_funcionario(
+  (select condo_b from s14_refs), 'Zelador', 'Synthetic blocked employee', '11900000003')$$,
+  '42501', null, 'Expired session cannot create an employee');
+reset role;
+delete from auth.sessions where id = '51400000-0000-4000-9000-000000000002';
+set local role authenticated;
+select is((select count(*) from public.funcionarios), 0::bigint, 'Revoked session cannot list employees with unchanged JWT claims');
+
 -- Não-síndico: sem acesso.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000003","session_id":"51400000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000003","session_id":"51400000-0000-4000-9000-000000000003","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios), 0::bigint,
   'Não-síndico não enxerga funcionários'
