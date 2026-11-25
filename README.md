@@ -2248,3 +2248,134 @@ Run focused backend checks with
 The opted-in `employee-task-local.spec.ts` uses ORI-105's local flags and now covers
 all message forms, response-loss recovery, focus, activity and resident privacy
 before the existing start/completion scenario.
+
+### ORI-107 employee queue signals
+
+This delivery depends on [ORI-103 employee messages, PR #54](https://github.com/Gremis/zelo/pull/54)
+at `6358cdda84065924192cf13b6ce4006e0e0c6665`, and its inherited ORI-105 (#53)
+and ORI-104 (#52) prerequisites. The draft targets `develop`; its cumulative diff
+includes pending dependencies until they are integrated. Review the exclusive
+ORI-107 changes with `git diff 6358cdda84065924192cf13b6ce4006e0e0c6665 HEAD`.
+Other branches, PRs and inherited migrations are unchanged. ORI-105 already
+supplies `taskStarted` for the current eligible delegation and
+`completedByEmployee` from the latest completion event's employee snapshot.
+The queue keeps those projections and now also accepts the optional boolean
+`hasNewEmployeeMessage`. Execution is displayed only in Delegado, and completion
+authorship only in Concluído. Both execution and unread-message signals can appear
+together; existing descriptions, responsibility, deadlines and counts remain.
+
+On November 25, 2026, the requester confirmed that unread means all unread
+employee messages for the occurrence, including earlier delegations and messages
+before reopening. Reassignment and reopening therefore do not discard unread
+messages. The marker is per authorized account and occurrence, independent of
+business status or historical event contents.
+
+The new incremental migration
+`20261126200000_employee_message_read_signals.sql` creates the private
+`occurrence_employee_message_reads` receipt table and a partial message-order
+index. It extends `occurrence_employee_state` without replacing the portfolio
+query and adds authenticated RPC `read_occurrence_employee_messages`.
+The RPC requires an active session and ownership of the occurrence's portfolio,
+validates the supplied employee-message event ID against that occurrence, and
+monotonically advances the account's receipt while holding the occurrence lock.
+It neither updates the occurrence nor appends, edits or deletes business events.
+The public RPC types were regenerated from the running local database.
+
+`POST /api/occurrences/[id]/message-read` accepts exactly
+`{ "throughEventId": <positive safe integer> }`. The existing detail GET remains
+read-only. Only the mounted, successfully rendered detail sends this POST, using
+the largest sequential employee-message event ID actually included in that
+parsed detail. Queue rendering, hovering, prefetching and failed detail loading
+never acknowledge messages. A message committed afterward remains unread until
+its own content is presented. Event IDs are ordered bigint identifiers, not UUIDs.
+
+The existing focus/visibility/online refresh and fifteen-second queue polling
+also refresh an open detail. No second polling timer was added. Newly rendered
+messages advance the marker consistently; drafts and the open panel survive
+background refresh. Transient detail refresh failures retain the old content and
+show an error. Read-write failures show a retry action and do not report confirmed
+success or optimistically clear the queue signal. Repeated receipts do not create
+business events.
+
+Only the new migration was applied to the inspected local stack. As on the
+inherited branches, the CLI refused migration up because applied versions
+`20261120120000` and `20261120130000` have no corresponding files in this checkout.
+The new migration and its version were applied in one local database transaction;
+inherited versions were not repaired or reorganized. There was no reset or
+shared/remote database operation.
+
+For local review open `http://127.0.0.1:3000/fila`, delegate a synthetic occurrence
+to an active employee of the same condominium and portfolio, and open its generated
+`/t/<code>` link separately. Click Comecei and return to the manager window:
+Delegado should show Em execução. Send a message: the card should show both
+Em execução and Recado novo. Open the occurrence successfully and return to the
+queue: Recado novo disappears and stays cleared after reload. With the detail
+open, messages are acknowledged only when their refreshed activity is presented.
+Complete the task in the employee window: Concluído shows the employee's saved
+name and role. Test a new delegation and reopening to verify previous execution
+and completion labels are not reused as current state.
+
+Focused database tests are selected with
+`npx vitest run --config vitest.db.config.mts tests/db/workflow.integration.test.ts -t ORI-107`.
+The production browser scenario is `tests/e2e/employee-signals-local.spec.ts`,
+with the existing local Supabase environment, `ORI47_LOCAL_AUTH_TESTS=enabled`,
+`ORI107_LOCAL_TESTS=enabled` and `PUBLIC_APP_ORIGIN=http://127.0.0.1:3100`.
+It runs at 360/1280 px with real employee actions and database receipts, injects
+failure and concurrent delivery, verifies persistence and preserves the existing
+mobile behavior that hides the queue while a detail is open. Its synthetic
+accounts, records and receipts are removed by the existing fixture cleanup.
+
+Validation passed locally: 865 unit/component tests across 71 files, all 41
+real database/Storage workflow tests, seven focused production-browser cases
+(including both real-local 360/1280 px signal scenarios), and the standard browser
+suite with 71 passing cases and 33 environment-gated skips (31 inherited and
+two ORI-107 local scenarios that passed separately). Formatting,
+ESLint, route type generation, TypeScript and the production audit passed; the
+audit reported zero production vulnerabilities. The standard host build hit the
+documented Turbopack process restriction. The standard build passed through the
+documented disposable Node 24 container alternative, and its prepared output was
+served locally for both browser runs. The existing port-3000 server was preserved.
+
+The Claude reference was inaccessible; the implementation uses the existing
+queue/detail components and visual identity. Physical camera behavior and hosted
+attachment validation remain inherited limitations of the employee-task flow.
+The publication scope is this branch and a draft PR to `develop`. Local checks
+are distinct from GitHub Quality results. The PR workflow runs Quality without
+deployment; no shared database operation, merge or deployment is authorized.
+
+#### ORI-107 evidence and review
+
+The real-local production browser scenario now captures each state separately:
+execution alone, an unread message before starting, execution and a new message
+together, the queue after persisted reading, completion with the employee snapshot,
+the presented activity, and anonymous resident tracking. Private message text is
+asserted absent from both rendered content and server-rendered HTML after
+completion, and from resident tracking while a delegated task has an unread
+message. Both 360 and 1280 px scenarios passed with real database operations.
+The local database/Storage workflow suite passed 41 tests and the unit suite passed
+865 tests. The earlier broader production-browser regression passed seven focused
+cases and 71 standard cases with 33 environment-gated skips; two of those skips
+are the real-local ORI-107 scenarios executed separately. Formatting, lint,
+route types, TypeScript, the standard container build and the production audit
+also passed. Quality has no database credentials; real-local results are separate
+from CI. The requester confirmed saving these evidence captures on November 25,
+2026; this is not a claim of additional manual acceptance.
+
+PNG captures follow the repository's `docs/` convention:
+
+| State                                      | 360 px                                           | Desktop, 1280 px                                  |
+| ------------------------------------------ | ------------------------------------------------ | ------------------------------------------------- |
+| Execution in Delegado                      | [Capture](docs/ori-107-execution-360.png)        | [Capture](docs/ori-107-execution-1280.png)        |
+| New message before starting                | [Capture](docs/ori-107-message-only-360.png)     | [Capture](docs/ori-107-message-only-1280.png)     |
+| Execution and new message together         | [Capture](docs/ori-107-combined-signals-360.png) | [Capture](docs/ori-107-combined-signals-1280.png) |
+| New-message signal cleared after reading   | [Capture](docs/ori-107-read-cleared-360.png)     | [Capture](docs/ori-107-read-cleared-1280.png)     |
+| Employee completion snapshot               | [Capture](docs/ori-107-completed-360.png)        | [Capture](docs/ori-107-completed-1280.png)        |
+| Presented activity                         | [Capture](docs/ori-107-detail-read-360.png)      | [Capture](docs/ori-107-detail-read-1280.png)      |
+| Resident tracking without private messages | [Capture](docs/ori-107-resident-private-360.png) | [Capture](docs/ori-107-resident-private-1280.png) |
+
+Captures contain synthetic data and no task codes or credentials. Evidence HTML,
+ZIPs, logs, browser profiles and session state remain outside the repository.
+The temporary gallery was removed from the local review build's public assets;
+only the documentation PNGs are versioned, with no new files in `public/` and no
+evidence asset tracing in the production build. A separate synthetic account and
+four local occurrences were retained only for the requested interactive review.
