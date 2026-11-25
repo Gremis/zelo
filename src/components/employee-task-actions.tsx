@@ -12,10 +12,14 @@ import {
 
 type Command = {
   key: string;
-  type: "start" | "complete";
+  type: "start" | "complete" | "message";
   payload: Record<string, string>;
 };
-type Attempt = { key: string; secret: string };
+type Attempt = {
+  key: string;
+  secret: string;
+  purpose?: "message" | "complete";
+};
 const primary =
   "min-h-12 w-full rounded-xl bg-[#0f766e] px-4 py-3 text-base font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e] disabled:opacity-60";
 const secondary =
@@ -58,11 +62,16 @@ export function EmployeeTaskActions({
   code,
   task,
   onChanged,
+  onMessageSent,
+  onEditing,
 }: {
   code: string;
   task: EmployeeTask;
   onChanged: (task: EmployeeTask) => void;
+  onMessageSent?: () => void;
+  onEditing?: (editing: boolean) => void;
 }) {
+  const [messaging, setMessaging] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [comment, setComment] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -74,6 +83,8 @@ export function EmployeeTaskActions({
   const [progress, setProgress] = useState<number | null>(null);
   const lock = useRef(false);
   const title = useRef<HTMLHeadingElement>(null);
+  const messageButton = useRef<HTMLButtonElement>(null);
+  const confirmation = useRef<HTMLParagraphElement>(null);
   const completeButton = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -90,12 +101,15 @@ export function EmployeeTaskActions({
           const saved = JSON.parse(value) as Command;
           if (
             typeof saved.key === "string" &&
-            ["start", "complete"].includes(saved.type) &&
+            ["start", "complete", "message"].includes(saved.type) &&
             saved.payload &&
             typeof saved.payload === "object"
           ) {
             setPending(saved);
-            setCompleting(saved.type === "complete");
+            setCompleting(
+              saved.type === "complete" || saved.type === "message",
+            );
+            setMessaging(saved.type === "message");
             setComment(saved.payload.comment ?? "");
             setError(
               "Uma operação ficou sem confirmação. Recupere a tentativa original.",
@@ -110,6 +124,7 @@ export function EmployeeTaskActions({
             /^[0-9a-f]{64}$/.test(saved.secret)
           ) {
             setUpload(saved);
+            setMessaging(saved.purpose === "message");
             setCompleting(true);
           }
         }
@@ -121,6 +136,11 @@ export function EmployeeTaskActions({
     }
     void restore();
   }, [storageKey, uploadKey]);
+
+  useEffect(() => {
+    if (completing) title.current?.focus();
+    onEditing?.(completing);
+  }, [completing, onEditing]);
 
   function persist(key: string, value: unknown) {
     try {
@@ -145,11 +165,25 @@ export function EmployeeTaskActions({
     setPending(null);
     setUpload(null);
     setCompleting(false);
+    setMessaging(false);
+    setComment("");
+    setFiles([]);
     onChanged(value);
+    if (command.type === "message") {
+      onMessageSent?.();
+      if (!onMessageSent)
+        requestAnimationFrame(() => confirmation.current?.focus());
+    }
     if (command.type === "start")
       requestAnimationFrame(() => completeButton.current?.focus());
     setStatus(
-      command.type === "start" ? "Início registrado." : "Tarefa concluída.",
+      command.type === "start"
+        ? "Início registrado."
+        : command.type === "message"
+          ? onMessageSent
+            ? ""
+            : "Recado enviado ao síndico."
+          : "Tarefa concluída.",
     );
   }
   async function guarded(work: () => Promise<void>) {
@@ -188,6 +222,7 @@ export function EmployeeTaskActions({
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       attempt = {
         key: crypto.randomUUID(),
+        purpose: messaging ? "message" : "complete",
         secret: Array.from(bytes, (value) =>
           value.toString(16).padStart(2, "0"),
         ).join(""),
@@ -258,15 +293,18 @@ export function EmployeeTaskActions({
     method = "GET",
     body?: unknown,
   ): Promise<UploadState> {
-    return request(`${base}/uploads${path}`, {
-      method,
-      headers: {
-        "Upload-Token": attempt.secret,
-        "Idempotency-Key": attempt.key,
-        ...(body ? { "Content-Type": "application/json" } : {}),
+    return request(
+      `${base}/${attempt.purpose === "message" ? "message-uploads" : "uploads"}${path}`,
+      {
+        method,
+        headers: {
+          "Upload-Token": attempt.secret,
+          "Idempotency-Key": attempt.key,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    );
   }
   function selectFiles(selected: FileList | null) {
     if (!selected || upload) return;
@@ -297,16 +335,43 @@ export function EmployeeTaskActions({
       setFiles([]);
       setComment("");
       setCompleting(false);
+      setMessaging(false);
       setError(null);
       setStatus("");
-      requestAnimationFrame(() => completeButton.current?.focus());
+      requestAnimationFrame(() =>
+        (messaging ? messageButton : completeButton).current?.focus(),
+      );
     });
   }
-  function openCompletion() {
+  function openCompletion(message = false) {
+    setMessaging(message);
+    setStatus("");
     setCompleting(true);
     setError(null);
-    requestAnimationFrame(() => title.current?.focus());
   }
+  const commentField = (
+    <div className="mt-5 rounded-2xl border border-[#e5e7eb] bg-white p-4">
+      <label htmlFor="task-comment" className="font-semibold">
+        {messaging ? "Recado" : "Comentário (opcional)"}
+      </label>
+      <textarea
+        id="task-comment"
+        ref={commentInput}
+        value={comment}
+        onChange={(event) => setComment(event.target.value)}
+        maxLength={10000}
+        rows={4}
+        disabled={busy || Boolean(pending)}
+        aria-describedby="task-action-error"
+        className="mt-3 w-full rounded-xl border border-[#cfd5df] p-3 focus-visible:outline-2 focus-visible:outline-[#0f766e]"
+        placeholder={
+          messaging
+            ? "Ex.: Preciso de escada, a lâmpada fica alta."
+            : "Ex.: Lâmpada trocada, testei e está acendendo."
+        }
+      />
+    </div>
+  );
   if (!task.canAct || task.completedAt) return null;
   return (
     <section aria-label="Ações da tarefa" className="mt-5 pb-48">
@@ -317,42 +382,47 @@ export function EmployeeTaskActions({
             tabIndex={-1}
             className="mb-4 text-2xl font-bold outline-none"
           >
-            Concluir tarefa
+            {messaging ? "Mandar recado ao síndico" : "Concluir tarefa"}
           </h2>
-          <button
-            type="button"
-            disabled={busy || Boolean(upload) || Boolean(pending)}
-            onClick={() => cameraInput.current?.click()}
-            className="w-full rounded-2xl border-2 border-dashed border-[#0f766e] bg-[#effcf9] px-5 py-8 text-center text-[#115e59] disabled:opacity-60"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="mx-auto mb-3 size-9"
-            >
-              <path d="M3 7h4l2-3h6l2 3h4v14H3z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-            <span className="block text-lg font-bold">
-              Tirar foto do serviço feito
-            </span>
-            <span className="mt-2 block text-sm">
-              A foto mostra ao síndico que ficou resolvido.
-            </span>
-          </button>
-          <input
-            ref={cameraInput}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            capture="environment"
-            aria-label="Foto pela câmera"
-            className="sr-only"
-            disabled={busy || Boolean(upload) || Boolean(pending)}
-            onChange={(event) => selectFiles(event.target.files)}
-          />
+          {!messaging && (
+            <>
+              <button
+                type="button"
+                disabled={busy || Boolean(upload) || Boolean(pending)}
+                onClick={() => cameraInput.current?.click()}
+                className="w-full rounded-2xl border-2 border-dashed border-[#0f766e] bg-[#effcf9] px-5 py-8 text-center text-[#115e59] disabled:opacity-60"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="mx-auto mb-3 size-9"
+                >
+                  <path d="M3 7h4l2-3h6l2 3h4v14H3z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <span className="block text-lg font-bold">
+                  Tirar foto do serviço feito
+                </span>
+                <span className="mt-2 block text-sm">
+                  A foto mostra ao síndico que ficou resolvido.
+                </span>
+              </button>
+              <input
+                ref={cameraInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                aria-label="Foto pela câmera"
+                className="sr-only"
+                disabled={busy || Boolean(upload) || Boolean(pending)}
+                onChange={(event) => selectFiles(event.target.files)}
+              />
+            </>
+          )}
+          {messaging && commentField}
           <label
             className="mt-5 block font-semibold text-[#0f766e]"
             htmlFor="task-files"
@@ -371,8 +441,8 @@ export function EmployeeTaskActions({
             className="mt-2 block w-full min-w-0 text-sm file:mr-3 file:rounded-lg file:border file:border-[#cfd5df] file:bg-white file:px-3 file:py-2"
           />
           <p id="task-file-help" className="mt-2 text-xs text-[#4b5563]">
-            Anexos opcionais. Até 5 arquivos e 40 MB no total. Fotos até 8 MB,
-            MP4 até 25 MB e PDF até 10 MB.
+            Até 5 arquivos e 40 MB no total. Fotos até 8 MB, MP4 até 25 MB e PDF
+            até 10 MB.
           </p>
           {files.length > 0 && (
             <ul className="mt-3 space-y-2">
@@ -381,7 +451,7 @@ export function EmployeeTaskActions({
                   key={`${file.name}:${index}`}
                   className="flex items-center justify-between gap-2 text-sm"
                 >
-                  <span>{file.name}</span>
+                  <span className="min-w-0 break-all">{file.name}</span>
                   <button
                     type="button"
                     disabled={busy || Boolean(upload) || Boolean(pending)}
@@ -398,37 +468,24 @@ export function EmployeeTaskActions({
               ))}
             </ul>
           )}
-          <div className="mt-5 rounded-2xl border border-[#e5e7eb] bg-white p-4">
-            <label htmlFor="task-comment" className="font-semibold">
-              Comentário{" "}
-              <span className="font-normal text-[#4b5563]">(opcional)</span>
-            </label>
-            <textarea
-              id="task-comment"
-              ref={commentInput}
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              maxLength={10000}
-              rows={4}
-              disabled={busy || Boolean(pending)}
-              aria-describedby="task-action-error"
-              className="mt-3 w-full rounded-xl border border-[#cfd5df] p-3 focus-visible:outline-2 focus-visible:outline-[#0f766e]"
-              placeholder="Ex.: Lâmpada trocada, testei e está acendendo."
-            />
-          </div>
+          {!messaging && commentField}
           <p className="mt-4 text-sm text-[#4b5563]">
-            Ao concluir, o síndico e o morador veem que a tarefa foi resolvida.
+            {messaging
+              ? "O síndico vê o recado no Sindicondo, com o seu nome. Se precisar, ele responde pelo WhatsApp."
+              : "Ao concluir, o síndico e o morador veem que a tarefa foi resolvida."}
           </p>
         </>
       ) : (
         !task.startedAt && (
           <p className="text-sm text-[#4b5563]">
-            Quando você começar ou concluir, o síndico vê o registro com o seu
+            Quando você começar, recado e conclusão vão para o síndico com o seu
             nome.
           </p>
         )
       )}
       <p
+        ref={confirmation}
+        tabIndex={-1}
         role="status"
         aria-live="polite"
         className="mt-3 text-sm text-[#115e59]"
@@ -479,17 +536,29 @@ export function EmployeeTaskActions({
                 disabled={busy}
                 onClick={() =>
                   void guarded(async () => {
+                    if (
+                      messaging &&
+                      !comment.trim() &&
+                      !files.length &&
+                      !upload
+                    ) {
+                      setError("Escreva o recado ou anexe um arquivo.");
+                      commentInput.current?.focus();
+                      return;
+                    }
                     const credentials = await uploadFiles();
-                    setStatus("Concluindo tarefa…");
+                    setStatus(
+                      messaging ? "Enviando recado…" : "Concluindo tarefa…",
+                    );
                     await execute({
                       key: crypto.randomUUID(),
-                      type: "complete",
+                      type: messaging ? "message" : "complete",
                       payload: { comment, ...credentials },
                     });
                   })
                 }
               >
-                Concluir
+                {messaging ? "Enviar" : "Concluir"}
               </button>
             </div>
           ) : (
@@ -517,9 +586,18 @@ export function EmployeeTaskActions({
                 type="button"
                 disabled={busy}
                 className={task.startedAt ? primary : secondary}
-                onClick={openCompletion}
+                onClick={() => openCompletion()}
               >
                 Concluir tarefa
+              </button>
+              <button
+                ref={messageButton}
+                type="button"
+                disabled={busy}
+                className={secondary}
+                onClick={() => openCompletion(true)}
+              >
+                Mandar recado ao síndico
               </button>
             </>
           )}

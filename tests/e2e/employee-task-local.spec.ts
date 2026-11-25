@@ -74,6 +74,117 @@ for (const width of [360, 1280]) {
           () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
       ).toBe(true);
+      await employeePage
+        .getByRole("button", { name: "Mandar recado ao síndico" })
+        .click();
+      await employeePage
+        .getByRole("button", { name: "Enviar", exact: true })
+        .click();
+      await expect(
+        employeePage.getByRole("main").getByRole("alert"),
+      ).toHaveText("Escreva o recado ou anexe um arquivo.");
+      await expect(
+        employeePage.getByLabel("Recado", { exact: true }),
+      ).toBeFocused();
+      await employeePage
+        .getByRole("button", { name: "Cancelar", exact: true })
+        .click();
+      await expect(
+        employeePage.getByRole("button", { name: "Mandar recado ao síndico" }),
+      ).toBeFocused();
+      const messageBytes = await sharp({
+        create: { width: 5, height: 5, channels: 3, background: "#0f766e" },
+      })
+        .png()
+        .toBuffer();
+      for (const kind of ["text", "attachment", "both"]) {
+        await employeePage
+          .getByRole("button", { name: "Mandar recado ao síndico" })
+          .click();
+        await expect(
+          employeePage.getByRole("heading", {
+            name: "Mandar recado ao síndico",
+          }),
+        ).toBeFocused();
+        if (kind !== "attachment")
+          await employeePage
+            .getByLabel("Recado", { exact: true })
+            .fill(`Recado sintético ${kind}`);
+        if (kind !== "text")
+          await employeePage
+            .getByLabel("Anexar foto, vídeo ou PDF", { exact: true })
+            .setInputFiles({
+              name: `synthetic-${kind}.png`,
+              mimeType: "image/png",
+              buffer: messageBytes,
+            });
+        let lost = kind === "both";
+        await employeePage.route(
+          `**/api/public/tasks/${code}/commands`,
+          async (route) => {
+            if (lost) {
+              lost = false;
+              await route.fetch();
+              await route.abort("failed");
+            } else await route.continue();
+          },
+        );
+        await employeePage
+          .getByRole("button", { name: "Enviar", exact: true })
+          .click();
+        if (kind === "both")
+          await employeePage
+            .getByRole("button", { name: "Recuperar operação" })
+            .click();
+        await expect(
+          employeePage.getByText("Recado enviado ao síndico.", { exact: true }),
+        ).toBeFocused();
+        await employeePage.unroute(`**/api/public/tasks/${code}/commands`);
+        const current = await (
+          await page.request.get(`/api/occurrences/${id}`)
+        ).json();
+        expect(current.status).toBe("delegated");
+        const messages = current.events.filter(
+          (event: { type: string }) => event.type === "employee_message",
+        );
+        expect(messages).toHaveLength(
+          kind === "text" ? 1 : kind === "attachment" ? 2 : 3,
+        );
+        expect(messages[0].attachments).toHaveLength(kind === "text" ? 0 : 1);
+        const publicResponse = await employeePage.request.get(
+          `/o/${current.trackingCode}`,
+        );
+        expect(publicResponse.status()).toBe(200);
+        const publicResult = await publicResponse.text();
+        expect(publicResult).not.toContain("Recado sintético");
+        expect(publicResult).not.toContain("synthetic-both.png");
+        expect(
+          await employeePage.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        ).toBe(true);
+        expect(await employeePage.getByText(/Você começou às/).count()).toBe(0);
+        await page.goto("/fila");
+        await page
+          .getByRole("article")
+          .filter({ hasText: "Ocorrência sintética ORI105" })
+          .click();
+        await expect(
+          page.getByText(
+            kind === "attachment"
+              ? "Recado de Funcionário Sintético ORI105: Anexos enviados."
+              : `Recado de Funcionário Sintético ORI105: Recado sintético ${kind}`,
+            { exact: true },
+          ),
+        ).toBeVisible();
+        if (kind !== "text")
+          await expect(
+            page.getByRole("link", {
+              name: new RegExp(`synthetic-${kind}.png`),
+            }),
+          ).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
       let lostStart = true;
       await employeePage.route(
         `**/api/public/tasks/${code}/commands`,

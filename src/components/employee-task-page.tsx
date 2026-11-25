@@ -18,6 +18,12 @@ type State =
 export function EmployeeTaskPage({ code }: { code: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState(0);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (notice && !editing) noticeRef.current?.focus();
+  }, [notice, editing]);
   const completionHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (state.kind === "loaded" && state.task.completedAt)
@@ -97,6 +103,16 @@ export function EmployeeTaskPage({ code }: { code: string }) {
                 Tarefa #{task.number}
               </h1>
             </header>
+            {notice > 0 && !editing && (
+              <p
+                ref={noticeRef}
+                tabIndex={-1}
+                role="status"
+                className="mb-4 rounded-xl bg-[#111827] p-4 text-white"
+              >
+                Recado enviado ao síndico.
+              </p>
+            )}
             {task.completedAt && (
               <section role="status" className="py-6 text-center">
                 <svg
@@ -123,6 +139,7 @@ export function EmployeeTaskPage({ code }: { code: string }) {
               </section>
             )}
             <section
+              hidden={editing}
               aria-labelledby="task-report"
               className="mt-4 rounded-2xl border border-[#e5e7eb] bg-white p-5"
             >
@@ -156,7 +173,7 @@ export function EmployeeTaskPage({ code }: { code: string }) {
                 </div>
               </dl>
             </section>
-            {task.startedAt && !task.completedAt && (
+            {task.startedAt && !task.completedAt && !editing && (
               <p
                 role="status"
                 className="mt-4 rounded-xl bg-[#e6f4f1] p-5 text-[#0b5e58]"
@@ -188,6 +205,8 @@ export function EmployeeTaskPage({ code }: { code: string }) {
               <EmployeeTaskActions
                 code={code}
                 task={task}
+                onEditing={setEditing}
+                onMessageSent={() => setNotice((value) => value + 1)}
                 onChanged={(value) => setState({ kind: "loaded", task: value })}
               />
             )}
