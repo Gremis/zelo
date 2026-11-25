@@ -2173,8 +2173,78 @@ The user manually approved the delegation link, persisted employee actions and c
 
 Real-local tests are `tests/db/workflow.integration.test.ts` and `tests/e2e/employee-task-local.spec.ts`. Select backend cases with `npx vitest run --config vitest.db.config.mts tests/db/workflow.integration.test.ts -t ORI-105`. Browser tests require the existing local Supabase environment, `ORI47_LOCAL_AUTH_TESTS=enabled`, `ORI105_LOCAL_TESTS=enabled` and `PUBLIC_APP_ORIGIN=http://127.0.0.1:3100`; run `npm run test:e2e -- tests/e2e/employee-task-local.spec.ts tests/e2e/task.spec.ts`. Synthetic credentials and task codes are not committed.
 
-No employee-recado operation exists in the inspected repository. Linear was inaccessible to available read tools, so a separate subtask number could not be confirmed. Recados remain pending and no nonfunctional button is rendered. Actual phone-camera behavior and hosted attachment validation remain pending; local/browser emulation is not acceptance of those items. The inherited resident `/o/[code]` link still has a fixed published origin; that separate issue is unchanged by this delivery.
+Employee messages were outside the ORI-105 delivery and are implemented by the dependent ORI-103 change documented below. Actual phone-camera behavior and hosted attachment validation remain pending; local/browser emulation is not acceptance of those items. The inherited resident `/o/[code]` link still has a fixed published origin; that separate issue is unchanged by this delivery.
 
 #### Automatic manager queue refresh
 
 The manager queue refreshes on window focus, visibility restoration and reconnection, and every fifteen seconds while visible and online. Refreshes are coalesced and aborted on unmount. Temporary background transport failures preserve the current cards; expired/unauthorized sessions still fail closed. The real employee browser tests keep the matching manager queue open before starting/completing and verify updated execution/completion labels after a focus event without reloading the page. No cross-portfolio visibility or remote realtime configuration is introduced.
+
+### ORI-103 employee messages with attachments
+
+This delivery depends on [ORI-105, PR #53](https://github.com/Gremis/zelo/pull/53)
+at `347da2c8a94bdb8c36e02649f2f2d026c2ce3ce0`, including its inherited ORI-104
+prerequisites. The draft targets `develop`; its cumulative diff includes pending
+dependencies until those PRs are integrated. Review the exclusive message changes
+with `git diff 347da2c8a94bdb8c36e02649f2f2d026c2ce3ce0 HEAD`. This delivery does
+not modify those branches or PRs and does not authorize merging or deployment.
+
+The task composer supports text, attachments or both, removal before upload,
+cancellation and recovery of the original attempt after uncertain responses.
+Confirmed persistence returns to the summary with a focused accessible notice.
+Messages do not start or complete tasks, change responsibility or deadlines, or
+send notifications through WhatsApp or another external channel.
+
+`POST /api/public/tasks/[code]/commands` accepts `type: "message"` with the existing
+`key` and `payload` contract (`comment`, optional `uploadKey` and `uploadSecret`).
+`/api/public/tasks/[code]/message-uploads/[[...parts]]` reuses upload methods,
+limits, inspection and the private evidence bucket with a separate `task_message`
+purpose. The server supplies that scope. The final transaction revalidates the
+code, latest delegation, active employee and eligible occurrence, writes the
+employee snapshot through the central event writer, links verified files to the
+same event and stores its idempotent receipt. Changed payloads with the same key
+conflict; uncertain results require recovery using the original key.
+
+New incremental migrations are `20261126190000_employee_task_messages.sql` and
+`20261126191000_normalize_employee_message_text.sql`. The latter normalizes text
+surrounding whitespace; attachment-only messages display “Anexos enviados.”.
+Historical applied migrations remain unchanged. Both new versions were applied
+only to the inspected local stack. Its inherited ledger contains versions
+`20261120120000` and `20261120130000` absent from this branch, so the CLI refused
+migration up. Only the new migrations were applied transactionally through the
+local database container and their versions recorded. There was no reset,
+inherited history repair or shared/remote database change. No new environment
+variables are required.
+
+Manager activity, authenticated evidence reads and queue/detail refresh use the
+existing implementation. Resident SQL tracking excludes employee messages and
+returns no attachments. Employee task reads expose no message history or links.
+
+Local validation passed 847 unit/component tests, 36 real database/Storage
+workflow tests, five focused browser cases at 360/1280 px and 71 default browser
+cases with 31 existing environment-gated skips. Formatting, ESLint, route types,
+TypeScript and the production audit passed with zero production vulnerabilities.
+The standard host build hit Google Fonts/network and Turbopack process
+restrictions. The documented alternative standard build passed in a disposable
+Node 24 container with a credential-free copy; its prepared output was served
+locally on Node 24 for browser tests. The final application files match that
+validated output's source. Existing containers and the port-3000 server were
+preserved. Local checks are separate from GitHub CI; consult the PR's Quality run
+for remote results. CI has no database credentials and does not execute the
+real-local database/Storage cases.
+
+On November 25, 2026, the user manually approved message sending, its confirmation
+and display in the responsible manager's activity. Physical phone-camera behavior
+and hosted attachment inspection remain unvalidated; that manual approval and
+local browser emulation do not cover either limitation.
+
+For local review open `http://127.0.0.1:3000/fila`, delegate a synthetic occurrence,
+and use its generated `http://127.0.0.1:3000/t/<code>` link. Send text only, one file
+without text, then both. After each, check the confirmation, unchanged task state
+and manager activity. Resident `/o/<tracking-code>` must show none of these
+messages or files. Automated fixtures remove their synthetic accounts and objects.
+
+Run focused backend checks with
+`npx vitest run --config vitest.db.config.mts tests/db/workflow.integration.test.ts -t 'ORI-103|ORI-105'`.
+The opted-in `employee-task-local.spec.ts` uses ORI-105's local flags and now covers
+all message forms, response-loss recovery, focus, activity and resident privacy
+before the existing start/completion scenario.
