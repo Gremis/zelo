@@ -29,6 +29,7 @@ const operations: PanelOperations = {
 
 function Fixture() {
   const [retried, setRetried] = useState(false);
+  const [updated, setUpdated] = useState(false);
   const state: QueuePresentation =
     variant === "loading"
       ? { status: "loading" }
@@ -37,7 +38,7 @@ function Fixture() {
         : {
             status: "success",
             data:
-              variant === "empty"
+              variant === "empty" || updated
                 ? queueEmptyFixture
                 : queueFixture(variant === "stress" ? "stress" : "all"),
           };
@@ -48,6 +49,11 @@ function Fixture() {
         currentPath="/fila"
         operations={operations}
       >
+        {variant === "refresh" && (
+          <button type="button" onClick={() => setUpdated(true)}>
+            Atualizar dados de teste
+          </button>
+        )}
         {variant === "connected" ? (
           <ConnectedOccurrenceQueue />
         ) : (
