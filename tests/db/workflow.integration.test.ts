@@ -1763,3 +1763,283 @@ test("ORI-103: canceled message uploads leave no history and reuse existing mani
     ),
   ).toHaveLength(0);
 });
+
+async function employeeSignals(id: string, client = accounts[0].client) {
+  const result = await client.rpc("occurrence_employee_state", {
+    target_occurrence: id,
+  });
+  expect(result.error).toBeNull();
+  return result.data;
+}
+async function readEmployeeMessages(
+  id: string,
+  through: number,
+  client = accounts[0].client,
+) {
+  return client.rpc("read_occurrence_employee_messages", {
+    target_occurrence: id,
+    through_event: through,
+  });
+}
+
+test("ORI-107: execution belongs to the current delegation and never changes delegated status", async () => {
+  const { id, code } = await employeeTaskFixture();
+  expect((await employeeSignals(id)).taskStarted).toBe(false);
+  expect((await taskAction(code, "start")).error).toBeNull();
+  expect((await employeeSignals(id)).taskStarted).toBe(true);
+  const before = await detail(id);
+  expect(before.status).toBe("delegated");
+  const next = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic new delegation" },
+    before.version,
+  );
+  expect(next.error).toBeNull();
+  expect((await employeeSignals(id)).taskStarted).toBe(false);
+  expect((await taskAction(code, "start")).error?.code).toBe("P0003");
+  expect(
+    (await taskAction(next.data.delegation.code, "start")).error,
+  ).toBeNull();
+  expect((await employeeSignals(id)).taskStarted).toBe(true);
+  expect(
+    (await taskAction(next.data.delegation.code, "complete")).error,
+  ).toBeNull();
+  expect((await employeeSignals(id)).taskStarted).toBe(false);
+});
+
+test("ORI-107: reading only displayed messages is persistent monotonic and safe against concurrent messages", async () => {
+  const { id, code } = await employeeTaskFixture();
+  expect(
+    (await taskAction(code, "message", { comment: "Synthetic first" })).error,
+  ).toBeNull();
+  const displayed = await detail(id);
+  const firstId = displayed.events.find(
+    (event: { type: string }) => event.type === "employee_message",
+  ).id;
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(true);
+  expect((await detail(id)).events).toEqual(displayed.events);
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(true);
+  const [read, message] = await Promise.all([
+    readEmployeeMessages(id, firstId),
+    taskAction(code, "message", { comment: "Synthetic concurrent" }),
+  ]);
+  expect(read.error).toBeNull();
+  expect(message.error).toBeNull();
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(true);
+  const latest = await detail(id);
+  const latestId = Math.max(
+    ...latest.events
+      .filter((event: { type: string }) => event.type === "employee_message")
+      .map((event: { id: number }) => event.id),
+  );
+  expect((await readEmployeeMessages(id, latestId)).error).toBeNull();
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(false);
+  const repeated = await Promise.all([
+    readEmployeeMessages(id, firstId),
+    readEmployeeMessages(id, latestId),
+  ]);
+  expect(
+    repeated.every((value) => !value.error && value.data === latestId),
+  ).toBe(true);
+  expect((await detail(id)).events).toEqual(latest.events);
+  expect((await detail(id)).version).toBe(latest.version);
+  expect(
+    sql(
+      `select count(*) from private.occurrence_employee_message_reads where occurrence_id='${id}'`,
+    ),
+  ).toBe("1");
+  expect(await employeeSignals(id, accounts[1].client)).toBeNull();
+  expect(
+    (await readEmployeeMessages(id, latestId, accounts[1].client)).error?.code,
+  ).toBe("42501");
+  expect(
+    (await readEmployeeMessages(id, latestId, accounts[2].client)).error?.code,
+  ).toBe("42501");
+  const other = await employeeTaskFixture();
+  expect((await readEmployeeMessages(other.id, latestId)).error?.code).toBe(
+    "22023",
+  );
+  expect(
+    (
+      await readEmployeeMessages(
+        id,
+        latest.events.find(
+          (event: { type: string }) => event.type === "responsible_changed",
+        ).id,
+      )
+    ).error?.code,
+  ).toBe("22023");
+  expect(
+    (
+      await admin.rpc("read_occurrence_employee_messages", {
+        target_occurrence: id,
+        through_event: latestId,
+      })
+    ).error,
+  ).not.toBeNull();
+  const anonymous = createClient(config.API_URL, config.ANON_KEY, {
+    auth: { persistSession: false },
+  });
+  expect(
+    (
+      await anonymous.rpc("read_occurrence_employee_messages", {
+        target_occurrence: id,
+        through_event: latestId,
+      })
+    ).error,
+  ).not.toBeNull();
+});
+
+test("ORI-107: completion signals use immutable snapshots and the current reopening cycle", async () => {
+  const { id, code } = await employeeTaskFixture();
+  expect((await taskAction(code, "complete")).error).toBeNull();
+  const expected = "Concluída por Synthetic employee (Synthetic role)";
+  expect((await employeeSignals(id)).completedByEmployee).toBe(expected);
+  try {
+    expect(
+      (
+        await accounts[0].client
+          .from("funcionarios")
+          .update({ nome: "Synthetic changed employee", ativo: false })
+          .eq("id", employee)
+      ).error,
+    ).toBeNull();
+    expect(
+      (
+        await accounts[0].client
+          .from("funcoes")
+          .update({ nome: "Synthetic changed role" })
+          .eq("id", role)
+      ).error,
+    ).toBeNull();
+    expect((await employeeSignals(id)).completedByEmployee).toBe(expected);
+    expect(
+      (
+        await accounts[0].client.rpc("reopen_occurrence", {
+          target_occurrence: id,
+          command_key: randomUUID(),
+          expected_version: (await detail(id)).version,
+        })
+      ).error,
+    ).toBeNull();
+    expect((await employeeSignals(id)).completedByEmployee).toBeNull();
+    const responsible = await command(
+      id,
+      "responsible",
+      { kind: "manager" },
+      (await detail(id)).version,
+    );
+    expect(responsible.error).toBeNull();
+    expect(
+      (await command(id, "complete", {}, responsible.data.version)).error,
+    ).toBeNull();
+    expect((await employeeSignals(id)).completedByEmployee).toBeNull();
+    expect(
+      (
+        await accounts[0].client.rpc("reopen_occurrence", {
+          target_occurrence: id,
+          command_key: randomUUID(),
+          expected_version: (await detail(id)).version,
+        })
+      ).error,
+    ).toBeNull();
+    expect(
+      (
+        await accounts[0].client
+          .from("funcionarios")
+          .update({ ativo: true })
+          .eq("id", employee)
+      ).error,
+    ).toBeNull();
+    const delegated = await command(
+      id,
+      "delegate",
+      { employeeId: employee, message: "Synthetic next cycle" },
+      (await detail(id)).version,
+    );
+    expect(delegated.error).toBeNull();
+    expect(
+      (await taskAction(delegated.data.delegation.code, "complete")).error,
+    ).toBeNull();
+    expect((await employeeSignals(id)).completedByEmployee).toBe(
+      "Concluída por Synthetic changed employee (Synthetic changed role)",
+    );
+  } finally {
+    await accounts[0].client
+      .from("funcionarios")
+      .update({ nome: "Synthetic employee", ativo: true })
+      .eq("id", employee);
+    await accounts[0].client
+      .from("funcoes")
+      .update({ nome: "Synthetic role" })
+      .eq("id", role);
+  }
+});
+
+test("ORI-107: unread messages survive replacement delegations and reopening until displayed", async () => {
+  const { id, code } = await employeeTaskFixture();
+  expect(
+    (
+      await taskAction(code, "message", {
+        comment: "Synthetic unread prior delegation",
+      })
+    ).error,
+  ).toBeNull();
+  const redelegated = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic replacement" },
+    (await detail(id)).version,
+  );
+  expect(redelegated.error).toBeNull();
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(true);
+  expect(
+    (await taskAction(redelegated.data.delegation.code, "complete")).error,
+  ).toBeNull();
+  expect(
+    (
+      await accounts[0].client.rpc("reopen_occurrence", {
+        target_occurrence: id,
+        command_key: randomUUID(),
+        expected_version: (await detail(id)).version,
+      })
+    ).error,
+  ).toBeNull();
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(true);
+  const displayed = await detail(id);
+  expect(
+    (
+      await readEmployeeMessages(
+        id,
+        displayed.events.find(
+          (event: { type: string }) => event.type === "employee_message",
+        ).id,
+      )
+    ).error,
+  ).toBeNull();
+  expect((await employeeSignals(id)).hasNewEmployeeMessage).toBe(false);
+});
+
+test("ORI-107: revoked sessions cannot persist a message marker", async () => {
+  const { id, code } = await employeeTaskFixture();
+  expect(
+    (
+      await taskAction(code, "message", {
+        comment: "Synthetic active session check",
+      })
+    ).error,
+  ).toBeNull();
+  const eventId = (await detail(id)).events.find(
+    (event: { type: string }) => event.type === "employee_message",
+  ).id;
+  const session = (await accounts[2].client.auth.getSession()).data.session!;
+  expect((await accounts[2].client.auth.signOut()).error).toBeNull();
+  const revoked = createClient(config.API_URL, config.ANON_KEY, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+  });
+  expect((await readEmployeeMessages(id, eventId, revoked)).error?.code).toBe(
+    "28000",
+  );
+});

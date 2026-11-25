@@ -679,6 +679,10 @@ export type Database = {
         Args: { fixtures: Json; target_manager: string };
         Returns: Json;
       };
+      read_occurrence_employee_messages: {
+        Args: { target_occurrence: string; through_event: number };
+        Returns: number;
+      };
       register_account_demo: {
         Args: {
           fixture_key: string;

@@ -105,3 +105,27 @@ export async function addOccurrenceUpdate(
     throw new OccurrenceRequestError(503);
   }
 }
+
+export async function markEmployeeMessagesRead(
+  occurrenceId: string,
+  throughEventId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    const response = await send(
+      `/api/occurrences/${encodeURIComponent(occurrenceId)}/message-read`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ throughEventId }),
+      },
+      signal,
+    );
+    if (!response.ok) failure(response.status);
+    const saved = integer(record(await response.json()).throughEventId);
+    if (saved < throughEventId) throw new OccurrenceRequestError(503);
+  } catch (error) {
+    if (error instanceof OccurrenceRequestError) throw error;
+    throw new OccurrenceRequestError(503);
+  }
+}
