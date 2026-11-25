@@ -157,7 +157,7 @@ reset role;
 select ok((select rolbypassrls from pg_roles where rolname='service_role'),'service_role bypasses RLS; ACLs enforce denial');
 select ok(not has_function_privilege('service_role','public.protect_occurrence_evidence()','execute'),'Trigger function not exposed');
 select ok(not has_function_privilege('authenticated','public.email_confirmation_guard(text,text,uuid,uuid,text)','execute'),'Server guard not exposed to user');
-grant update, delete, truncate on occurrence_events, occurrence_attachments, occurrence_completions to service_role;
+grant update, delete, truncate on occurrence_events, occurrence_attachments to service_role;
 do $$ begin
   if to_regclass('local_demo.occurrences') is not null then
     execute 'grant truncate on local_demo.occurrences to service_role';
