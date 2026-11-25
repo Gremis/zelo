@@ -1449,3 +1449,317 @@ test("ORI-105: distinct completion keys racing yield exactly one winner", async 
     ),
   ).toBe("1");
 });
+
+test("ORI-103: text messages are private, atomic, idempotent and preserve task state", async () => {
+  const { id, code, delegated } = await employeeTaskFixture();
+  for (const comment of ["", " \n\t "]) {
+    expect((await taskAction(code, "message", { comment })).error?.code).toBe(
+      "22023",
+    );
+  }
+  const key = randomUUID();
+  const results = await Promise.all([
+    taskAction(code, "message", { comment: "Synthetic private message" }, key),
+    taskAction(code, "message", { comment: "Synthetic private message" }, key),
+  ]);
+  expect(results.every((result) => !result.error)).toBe(true);
+  expect(results[0].data).toEqual(results[1].data);
+  expect(results[0].data.startedAt).toBeNull();
+  expect(
+    (await taskAction(code, "message", { comment: "Different message" }, key))
+      .error?.code,
+  ).toBe("P0003");
+  const snapshot = await detail(id);
+  expect(snapshot.status).toBe("delegated");
+  expect(snapshot.responsible).toEqual(delegated.responsible);
+  expect(snapshot.dueDate).toEqual(delegated.dueDate);
+  const events = snapshot.events.filter(
+    (event: { type: string }) => event.type === "employee_message",
+  );
+  expect(events).toHaveLength(1);
+  expect(JSON.stringify(events)).toContain(
+    "Recado de Synthetic employee: Synthetic private message",
+  );
+  expect(
+    sql(
+      `select author_name||':'||author_type||':'||visible_to_resident from public.occurrence_events where id=${events[0].id}`,
+    ),
+  ).toBe("Synthetic employee:employee:false");
+  const tracking = await accounts[0].client.rpc("occurrence_tracking", {
+    p_code: snapshot.trackingCode,
+  });
+  expect(tracking.error).toBeNull();
+  expect(JSON.stringify(tracking.data)).not.toContain(
+    "Synthetic private message",
+  );
+  expect(
+    (
+      await accounts[1].client.rpc("occurrence_detail", {
+        target_occurrence: id,
+      })
+    ).data,
+  ).toBeNull();
+  expect((await taskAction(code, "complete")).error).toBeNull();
+  expect(
+    (await taskAction(code, "message", { comment: "After completion" })).error
+      ?.code,
+  ).toBe("P0003");
+  expect(
+    (
+      await taskAction(
+        code,
+        "message",
+        { comment: "Synthetic private message" },
+        key,
+      )
+    ).data,
+  ).toEqual(results[0].data);
+});
+
+test("ORI-103: completion and message races serialize without post-completion events", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const results = await Promise.all([
+    taskAction(code, "complete"),
+    taskAction(code, "message", { comment: "Synthetic racing message" }),
+  ]);
+  expect(results[0].error).toBeNull();
+  if (results[1].error) expect(results[1].error.code).toBe("P0003");
+  const types = JSON.parse(
+    sql(
+      `select json_agg(event_type order by id) from public.occurrence_events where occurrence_id='${id}'`,
+    ),
+  );
+  expect(types.at(-1)).toBe("completed");
+});
+
+test("ORI-103: message authorization rejects old delegation, disabled employee and injected identity", async () => {
+  const first = await employeeTaskFixture();
+  expect(
+    (
+      await taskAction(first.code, "message", {
+        comment: "Synthetic",
+        employeeId: employee,
+      })
+    ).error?.code,
+  ).toBe("22023");
+  expect(
+    (await taskAction("f".repeat(64), "message", { comment: "Synthetic" }))
+      .error?.code,
+  ).toBe("P0002");
+  await command(
+    first.id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic redelegation" },
+    (await detail(first.id)).version,
+  );
+  expect(
+    (await taskAction(first.code, "message", { comment: "Synthetic" })).error
+      ?.code,
+  ).toBe("P0003");
+  const second = await employeeTaskFixture();
+  expect(
+    (
+      await accounts[0].client
+        .from("funcionarios")
+        .update({ ativo: false })
+        .eq("id", employee)
+    ).error,
+  ).toBeNull();
+  try {
+    expect(
+      (await taskAction(second.code, "message", { comment: "Synthetic" })).error
+        ?.code,
+    ).toBe("P0003");
+  } finally {
+    expect(
+      (
+        await accounts[0].client
+          .from("funcionarios")
+          .update({ ativo: true })
+          .eq("id", employee)
+      ).error,
+    ).toBeNull();
+  }
+});
+
+test("ORI-103: real Storage supports attachment-only messages and isolates upload purposes", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const bytes = await sharp({
+    create: { width: 4, height: 4, channels: 3, background: "#0f766e" },
+  })
+    .png()
+    .toBuffer();
+  const key = randomUUID(),
+    secret = randomBytes(32).toString("hex");
+  const scope = { taskCode: code, purpose: "task_message" as const };
+  const manifest = [
+    {
+      name: "synthetic-task.png",
+      contentType: "image/png",
+      size: bytes.length,
+    },
+  ];
+  const prepared = await prepareUploads(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Upload-Token": secret,
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify(manifest),
+    }),
+    "",
+    scope,
+  );
+  expect(prepared.status).toBe(200);
+  const state = await prepared.json();
+  const file = state.files[0];
+  expect(
+    (
+      await taskAction(code, "message", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0003");
+  expect((await detail(id)).status).toBe("delegated");
+  const signed = await processUploadFile(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: { "Upload-Token": secret },
+    }),
+    "",
+    key,
+    file.id,
+    "authorize",
+    scope,
+  );
+  expect(signed.status).toBe(200);
+  const grant = await signed.json();
+  expect(
+    (
+      await admin.storage
+        .from(grant.bucket)
+        .uploadToSignedUrl(grant.path, grant.token, bytes, {
+          contentType: "image/png",
+        })
+    ).error,
+  ).toBeNull();
+  const verified = await processUploadFile(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: { "Upload-Token": secret },
+    }),
+    "",
+    key,
+    file.id,
+    "validate",
+    scope,
+  );
+  expect(verified.status).toBe(200);
+  expect(
+    (
+      await taskAction(code, "complete", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("42501");
+  expect((await taskUpload(code, key, secret, "status")).error?.code).toBe(
+    "P0002",
+  );
+  const other = await employeeTaskFixture();
+  expect(
+    (
+      await taskAction(other.code, "message", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("42501");
+  const commandKey = randomUUID();
+  const messagePayload = {
+    comment: " \n\t ",
+    uploadKey: key,
+    uploadSecret: secret,
+  };
+  const completed = await taskAction(
+    code,
+    "message",
+    messagePayload,
+    commandKey,
+  );
+  expect(completed.error).toBeNull();
+  const repeated = await Promise.all([
+    taskAction(code, "message", messagePayload, commandKey),
+    taskAction(code, "message", messagePayload, commandKey),
+  ]);
+  expect(
+    repeated.every(
+      (value) =>
+        !value.error &&
+        JSON.stringify(value.data) === JSON.stringify(completed.data),
+    ),
+  ).toBe(true);
+  expect(
+    sql(
+      `select count(*) from public.occurrence_attachments where occurrence_id='${id}'`,
+    ),
+  ).toBe("1");
+  expect(
+    sql(
+      `select state from private.occurrence_upload_sessions where id='${key}'`,
+    ),
+  ).toBe("linked");
+  const snapshot = await detail(id);
+  expect(JSON.stringify(snapshot.events)).toContain(
+    "Recado de Synthetic employee: Anexos enviados.",
+  );
+  expect(
+    snapshot.events.find(
+      (value: { type: string }) => value.type === "employee_message",
+    ).attachments,
+  ).toHaveLength(1);
+  expect(
+    (await admin.storage.from("occurrence-evidence").getPublicUrl(grant.path))
+      .data.publicUrl,
+  ).toBeTruthy();
+  const publicResponse = await fetch(
+    `${config.API_URL}/storage/v1/object/public/occurrence-evidence/${grant.path}`,
+  );
+  expect(publicResponse.ok).toBe(false);
+});
+
+test("ORI-103: canceled message uploads leave no history and reuse existing manifest limits", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const key = randomUUID(),
+    secret = randomBytes(32).toString("hex");
+  const input = [
+    { name: "synthetic.pdf", contentType: "application/pdf", size: 100 },
+  ];
+  const operate = (operation: string, input: unknown = {}) =>
+    taskUpload(code, key, secret, operation, {
+      taskPurpose: "task_message",
+      input,
+    });
+  expect(
+    (await operate("prepare", [{ ...input[0], size: 11 * 1024 * 1024 }])).error
+      ?.code,
+  ).toBe("22023");
+  expect((await operate("prepare", input)).error).toBeNull();
+  expect((await operate("cancel")).error).toBeNull();
+  expect(
+    (
+      await taskAction(code, "message", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0003");
+  expect(
+    (await detail(id)).events.filter(
+      (event: { type: string }) => event.type === "employee_message",
+    ),
+  ).toHaveLength(0);
+});

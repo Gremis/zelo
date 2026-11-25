@@ -15,7 +15,8 @@ import {
 } from "./upload-inspection";
 
 export type ManagerUploadScope =
-  { occurrenceId: string; actorId: string } | { taskCode: string };
+  | { occurrenceId: string; actorId: string }
+  | { taskCode: string; purpose?: "task_message" };
 
 const bucket = "occurrence-evidence";
 const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -62,7 +63,10 @@ export async function uploadOperation(
           operation,
           session_key: sessionKey!,
           upload_secret: secret!,
-          payload,
+          payload: {
+            input: payload,
+            taskPurpose: scope.purpose ?? "task_completion",
+          },
         })
       : scope
         ? await client.rpc("manager_occurrence_upload_operation", {

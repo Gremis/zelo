@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/occurrences/*/uploads/*": evidenceInspectorFiles,
     "/api/public/tasks/*/uploads/*": evidenceInspectorFiles,
+    "/api/public/tasks/*/message-uploads/*": evidenceInspectorFiles,
     "/api/public/condominiums/*/upload-attempts/*/files/*/*":
       evidenceInspectorFiles,
   },

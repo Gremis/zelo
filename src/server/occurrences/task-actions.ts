@@ -30,7 +30,7 @@ export async function taskCommand(request: Request, code: string) {
       Object.keys(body).sort().join() !== "key,payload,type" ||
       typeof body.key !== "string" ||
       !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.key) ||
-      !["start", "complete"].includes(String(body.type))
+      !["start", "complete", "message"].includes(String(body.type))
     )
       return reply({ error: "Dados inválidos." }, 400);
     const { url } = getSupabaseConfig();
