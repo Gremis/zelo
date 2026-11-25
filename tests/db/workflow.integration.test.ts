@@ -120,13 +120,13 @@ afterAll(async () => {
   if (!admin || !accounts.length) return;
   const ids = occurrences.map((id) => `'${id}'`).join(",") || "null";
   const paths = sql(
-    `select coalesce(json_agg(path),'[]') from (select source_path path from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}') union all select evidence_path from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}')) p;`,
+    `select coalesce(json_agg(path),'[]') from (select source_path path from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}' or target_occurrence_id in(${ids})) union all select evidence_path from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}' or target_occurrence_id in(${ids}))) p;`,
   );
   const objects = JSON.parse(paths) as string[];
   if (objects.length)
     await admin.storage.from("occurrence-evidence").remove(objects);
   sql(
-    `begin;delete from private.employee_tasks where occurrence_id in(${ids});delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}');delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}';delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_completions where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
+    `begin;delete from private.employee_task_commands where task_code in(select code from private.employee_tasks where occurrence_id in(${ids}));delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}' or target_occurrence_id in(${ids}));delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}' or target_occurrence_id in(${ids});delete from private.employee_tasks where occurrence_id in(${ids});delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_completions where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
   );
   for (const account of accounts) await admin.auth.admin.deleteUser(account.id);
 });
@@ -870,6 +870,7 @@ test("ORI-104: isolated public task codes, private payload, retry and permanent 
   const lookup = await anonymous.rpc("employee_task", { p_code: code });
   expect(lookup.error).toBeNull();
   expect(lookup.data).toEqual({
+    canAct: true,
     condominiumName: "Synthetic workflow",
     number: first.data.number,
     description: "Synthetic workflow",
@@ -999,4 +1000,452 @@ test("ORI-104: anonymous and authenticated callers cannot inject a task origin",
       `select count(*) from private.employee_tasks where occurrence_id='${id}'`,
     ),
   ).toBe("0");
+});
+
+async function employeeTaskFixture() {
+  sql(
+    `update public.funcionarios set nome='Synthetic employee' where id='${employee}'; update public.funcoes set nome='Synthetic role' where id='${role}';`,
+  );
+  const id = await createOccurrence("new", true);
+  const delegated = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic employee task" },
+    0,
+  );
+  expect(delegated.error).toBeNull();
+  return {
+    id,
+    code: delegated.data.delegation.code as string,
+    delegated: delegated.data,
+  };
+}
+function taskAction(
+  code: string,
+  type: string,
+  payload = {},
+  key = randomUUID(),
+) {
+  return admin.rpc("employee_task_command", {
+    p_code: code,
+    command_key: key,
+    command_type: type,
+    payload,
+  });
+}
+function taskUpload(
+  code: string,
+  key: string,
+  secret: string,
+  operation: string,
+  payload: unknown = {},
+) {
+  return admin.rpc("employee_task_upload_operation", {
+    p_code: code,
+    session_key: key,
+    upload_secret: secret,
+    operation,
+    payload,
+  });
+}
+
+test("ORI-105: start is idempotent under concurrency and retains delegated status and private employee history", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const key = randomUUID();
+  const results = await Promise.all([
+    taskAction(code, "start", {}, key),
+    taskAction(code, "start", {}, key),
+  ]);
+  expect(results.map((value) => value.error)).toEqual([null, null]);
+  expect(results[0].data).toEqual(results[1].data);
+  const repeated = await taskAction(code, "start");
+  expect(repeated.error).toBeNull();
+  expect(repeated.data.startedAt).toBe(results[0].data.startedAt);
+  const current = await detail(id);
+  expect(current.status).toBe("delegated");
+  expect(
+    current.events.filter(
+      (event: { type: string }) => event.type === "employee_started",
+    ),
+  ).toHaveLength(1);
+  expect(
+    sql(
+      `select author_type||':'||author_name||':'||author_role||':'||visible_to_resident from public.occurrence_events where occurrence_id='${id}' and event_type='employee_started'`,
+    ),
+  ).toBe("employee:Synthetic employee:Synthetic role:false");
+  expect(
+    sql(
+      `select count(*) from public.occurrence_events where occurrence_id='${id}' and data::text like '%${code}%'`,
+    ),
+  ).toBe("0");
+  const queue = await accounts[0].client.rpc("portfolio_occurrence_queue");
+  expect(queue.error).toBeNull();
+  expect(
+    queue.data.columns.delegated.items.find(
+      (item: { id: string }) => item.id === id,
+    ).taskStarted,
+  ).toBe(true);
+});
+
+test("ORI-105: direct completion, concurrency and lost response recovery produce one completion and employee snapshot", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const key = randomUUID();
+  const [first, duplicate] = await Promise.all([
+    taskAction(code, "complete", { comment: "Synthetic completion" }, key),
+    taskAction(code, "complete", { comment: "Synthetic completion" }, key),
+  ]);
+  const competing = await taskAction(code, "complete", {
+    comment: "Synthetic completion",
+  });
+  expect(first.error).toBeNull();
+  expect(duplicate.error).toBeNull();
+  expect(competing.error?.code).toBe("P0003");
+  expect(first.data).toEqual(duplicate.data);
+  expect(first.data.startedAt).toBeNull();
+  expect(first.data.status).toBe("completed");
+  expect(
+    (
+      await taskAction(
+        code,
+        "complete",
+        { comment: "Synthetic completion" },
+        key,
+      )
+    ).data,
+  ).toEqual(first.data);
+  expect(
+    sql(
+      `select count(*) from public.occurrence_events where occurrence_id='${id}' and event_type='completed'`,
+    ),
+  ).toBe("1");
+  const current = await detail(id);
+  const event = current.events.find(
+    (item: { type: string }) => item.type === "completed",
+  );
+  expect(event.text).toContain(
+    "Concluída por Synthetic employee (Synthetic role) pela página da tarefa. Synthetic completion",
+  );
+  expect(event.authorType).toBe("employee");
+  const queue = await accounts[0].client.rpc("portfolio_occurrence_queue");
+  expect(
+    queue.data.columns.completed.items.find(
+      (item: { id: string }) => item.id === id,
+    ).completedByEmployee,
+  ).toBe("Concluída por Synthetic employee (Synthetic role)");
+  const reopen = await accounts[0].client.rpc("reopen_occurrence", {
+    target_occurrence: id,
+    command_key: randomUUID(),
+    expected_version: current.version,
+  });
+  expect(reopen.error).toBeNull();
+  expect(
+    (await accounts[0].client.rpc("employee_task", { p_code: code })).data
+      .status,
+  ).toBe("completed");
+  expect((await taskAction(code, "start")).error?.code).toBe("P0003");
+});
+
+test("ORI-105: prior delegation stays readable but cannot act or upload; latest delegation can", async () => {
+  const { id, code, delegated } = await employeeTaskFixture();
+  const next = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic new delegation" },
+    delegated.version,
+  );
+  expect(next.error).toBeNull();
+  const lookup = await accounts[0].client.rpc("employee_task", {
+    p_code: code,
+  });
+  expect(lookup.data.canAct).toBe(false);
+  expect((await taskAction(code, "start")).error?.code).toBe("P0003");
+  expect((await taskAction(code, "complete")).error?.code).toBe("P0003");
+  expect(
+    (
+      await taskUpload(code, randomUUID(), "a".repeat(64), "prepare", [
+        { name: "synthetic.png", contentType: "image/png", size: 10 },
+      ])
+    ).error?.code,
+  ).toBe("P0003");
+  expect(
+    (await taskAction(next.data.delegation.code, "start")).error,
+  ).toBeNull();
+});
+
+test("ORI-105: reassignment and employee deactivation block actions without removing the query", async () => {
+  const first = await employeeTaskFixture();
+  expect(
+    (
+      await command(
+        first.id,
+        "responsible",
+        { kind: "manager" },
+        first.delegated.version,
+      )
+    ).error,
+  ).toBeNull();
+  expect((await taskAction(first.code, "complete")).error?.code).toBe("P0003");
+  const second = await employeeTaskFixture();
+  try {
+    expect(
+      (
+        await accounts[0].client
+          .from("funcionarios")
+          .update({ ativo: false })
+          .eq("id", employee)
+      ).error,
+    ).toBeNull();
+    expect(
+      (await accounts[0].client.rpc("employee_task", { p_code: second.code }))
+        .data.canAct,
+    ).toBe(false);
+    expect((await taskAction(second.code, "start")).error?.code).toBe("P0003");
+  } finally {
+    expect(
+      (
+        await accounts[0].client
+          .from("funcionarios")
+          .update({ ativo: true })
+          .eq("id", employee)
+      ).error,
+    ).toBeNull();
+  }
+  expect((await taskAction(second.code, "complete")).error?.code).toBe("P0003");
+});
+
+test("ORI-105: invalid codes, actor injection and direct anonymous mutation are rejected", async () => {
+  const { code } = await employeeTaskFixture();
+  expect((await taskAction("invalid", "start")).error?.code).toBe("P0002");
+  expect(
+    (await taskAction(code, "complete", { employeeId: randomUUID() })).error
+      ?.code,
+  ).toBe("22023");
+  expect(
+    (await taskAction(code, "start", { comment: "Forbidden payload" })).error
+      ?.code,
+  ).toBe("22023");
+  expect(
+    (
+      await accounts[0].client.rpc("employee_task_command", {
+        p_code: code,
+        command_key: randomUUID(),
+        command_type: "complete",
+        payload: {},
+      })
+    ).error,
+  ).not.toBeNull();
+});
+
+test("ORI-105: real Storage inspection and atomic completion attachment linking reuse private evidence", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const bytes = await sharp({
+    create: { width: 4, height: 4, channels: 3, background: "#0f766e" },
+  })
+    .png()
+    .toBuffer();
+  const key = randomUUID(),
+    secret = randomBytes(32).toString("hex");
+  const scope = { taskCode: code };
+  const manifest = [
+    {
+      name: "synthetic-task.png",
+      contentType: "image/png",
+      size: bytes.length,
+    },
+  ];
+  const prepared = await prepareUploads(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Upload-Token": secret,
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify(manifest),
+    }),
+    "",
+    scope,
+  );
+  expect(prepared.status).toBe(200);
+  const state = await prepared.json();
+  const file = state.files[0];
+  expect(
+    (
+      await taskAction(code, "complete", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0003");
+  expect((await detail(id)).status).toBe("delegated");
+  const signed = await processUploadFile(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: { "Upload-Token": secret },
+    }),
+    "",
+    key,
+    file.id,
+    "authorize",
+    scope,
+  );
+  expect(signed.status).toBe(200);
+  const grant = await signed.json();
+  expect(
+    (
+      await admin.storage
+        .from(grant.bucket)
+        .uploadToSignedUrl(grant.path, grant.token, bytes, {
+          contentType: "image/png",
+        })
+    ).error,
+  ).toBeNull();
+  const verified = await processUploadFile(
+    new Request("http://localhost", {
+      method: "POST",
+      headers: { "Upload-Token": secret },
+    }),
+    "",
+    key,
+    file.id,
+    "validate",
+    scope,
+  );
+  expect(verified.status).toBe(200);
+  const completed = await taskAction(code, "complete", {
+    comment: "Synthetic attachment",
+    uploadKey: key,
+    uploadSecret: secret,
+  });
+  expect(completed.error).toBeNull();
+  expect(
+    sql(
+      `select count(*) from public.occurrence_attachments where occurrence_id='${id}'`,
+    ),
+  ).toBe("1");
+  expect(
+    sql(
+      `select state from private.occurrence_upload_sessions where id='${key}'`,
+    ),
+  ).toBe("linked");
+  const snapshot = await detail(id);
+  expect(
+    snapshot.events.find(
+      (value: { type: string }) => value.type === "completed",
+    ).attachments,
+  ).toHaveLength(1);
+  expect(
+    (await admin.storage.from("occurrence-evidence").getPublicUrl(grant.path))
+      .data.publicUrl,
+  ).toBeTruthy();
+  const publicResponse = await fetch(
+    `${config.API_URL}/storage/v1/object/public/occurrence-evidence/${grant.path}`,
+  );
+  expect(publicResponse.ok).toBe(false);
+});
+
+test("ORI-105: upload credentials cannot cross tasks, manager completion or registration; authorization is rechecked", async () => {
+  const first = await employeeTaskFixture();
+  const second = await employeeTaskFixture();
+  const key = randomUUID(),
+    secret = randomBytes(32).toString("hex");
+  const prepared = await taskUpload(first.code, key, secret, "prepare", [
+    { name: "synthetic.png", contentType: "image/png", size: 10 },
+  ]);
+  expect(prepared.error).toBeNull();
+  expect(
+    (await taskUpload(second.code, key, secret, "status")).error?.code,
+  ).toBe("P0002");
+  expect(
+    (
+      await admin.rpc("manager_occurrence_upload_operation", {
+        operation: "status",
+        session_key: key,
+        target_occurrence: first.id,
+        actor_profile: accounts[0].id,
+        upload_secret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0002");
+  expect(
+    (
+      await admin.rpc("occurrence_upload_operation", {
+        operation: "status",
+        session_key: key,
+        condominium_slug: "unused",
+        upload_secret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0002");
+  const next = await command(
+    first.id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic replacement" },
+    first.delegated.version,
+  );
+  expect(next.error).toBeNull();
+  expect(
+    (await taskUpload(first.code, key, secret, "status")).error?.code,
+  ).toBe("P0003");
+  expect(
+    (
+      await taskAction(first.code, "complete", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("P0003");
+  expect(
+    (
+      await taskAction(next.data.delegation.code, "complete", {
+        uploadKey: key,
+        uploadSecret: secret,
+      })
+    ).error?.code,
+  ).toBe("42501");
+});
+
+test("ORI-105: canceled upload leaves the task open, and manager completion still uses the shared transition", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const key = randomUUID(),
+    secret = randomBytes(32).toString("hex");
+  expect(
+    (
+      await taskUpload(code, key, secret, "prepare", [
+        { name: "synthetic.png", contentType: "image/png", size: 10 },
+      ])
+    ).error,
+  ).toBeNull();
+  expect((await taskUpload(code, key, secret, "cancel")).error).toBeNull();
+  expect((await detail(id)).status).toBe("delegated");
+  const current = await detail(id);
+  const completed = await command(
+    id,
+    "complete",
+    { comment: "Synthetic manager completion" },
+    current.version,
+  );
+  expect(completed.error).toBeNull();
+  expect(completed.data.status).toBe("completed");
+  expect(
+    (await accounts[0].client.rpc("employee_task", { p_code: code })).data
+      .status,
+  ).toBe("completed");
+});
+
+test("ORI-105: distinct completion keys racing yield exactly one winner", async () => {
+  const { id, code } = await employeeTaskFixture();
+  const results = await Promise.all([
+    taskAction(code, "complete"),
+    taskAction(code, "complete"),
+  ]);
+  expect(results.filter((result) => !result.error)).toHaveLength(1);
+  expect(
+    results.filter((result) => result.error?.code === "P0003"),
+  ).toHaveLength(1);
+  expect(
+    sql(
+      `select count(*) from public.occurrence_events where occurrence_id='${id}' and event_type='completed'`,
+    ),
+  ).toBe("1");
 });

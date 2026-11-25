@@ -611,6 +611,25 @@ export type Database = {
         Returns: Json;
       };
       employee_task: { Args: { p_code: string }; Returns: Json };
+      employee_task_command: {
+        Args: {
+          command_key: string;
+          command_type: string;
+          p_code: string;
+          payload?: Json;
+        };
+        Returns: Json;
+      };
+      employee_task_upload_operation: {
+        Args: {
+          operation: string;
+          p_code: string;
+          payload?: Json;
+          session_key: string;
+          upload_secret: string;
+        };
+        Returns: Json;
+      };
       has_active_session: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
@@ -637,6 +656,10 @@ export type Database = {
         Returns: Json;
       };
       occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
+      occurrence_employee_state: {
+        Args: { target_occurrence: string };
+        Returns: Json;
+      };
       occurrence_tracking: { Args: { p_code: string }; Returns: Json };
       occurrence_upload_operation: {
         Args: {

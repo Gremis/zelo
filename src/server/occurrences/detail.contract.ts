@@ -20,6 +20,7 @@ export const OCCURRENCE_EVENT_TYPES = [
   "deadline_changed",
   "manager_update",
   "employee_message",
+  "employee_started",
   "completed",
   "reopened",
 ] as const;

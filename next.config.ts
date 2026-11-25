@@ -26,11 +26,21 @@ const evidenceInspectorFiles = [
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/occurrences/*/uploads/*": evidenceInspectorFiles,
+    "/api/public/tasks/*/uploads/*": evidenceInspectorFiles,
     "/api/public/condominiums/*/upload-attempts/*/files/*/*":
       evidenceInspectorFiles,
   },
   async headers() {
     return [
+      {
+        source: "/t/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
       {
         source: "/sw.js",
         headers: [

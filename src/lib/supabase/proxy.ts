@@ -28,6 +28,7 @@ export async function updateSession(request: NextRequest) {
     );
   }
   if (
+    request.nextUrl.pathname.startsWith("/t/") ||
     request.nextUrl.pathname.startsWith("/api/public/") ||
     request.nextUrl.pathname === "/api/internal/attachments/cleanup"
   )

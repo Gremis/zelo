@@ -3,7 +3,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 select no_plan();
 
-select is((select count(*) from supabase_migrations.schema_migrations),35::bigint,'Canonical ledger has exactly 35 unique migrations');
+select is((select count(*) from supabase_migrations.schema_migrations),37::bigint,'Canonical ledger has exactly 37 unique migrations');
 select ok(not exists(select 1 from supabase_migrations.schema_migrations where version in ('20261120120000','20261120130000')),'Alternative employee migration identities are absent');
 select is((select name from supabase_migrations.schema_migrations where version='20261124120000'),'create_funcionarios','Employee version has one meaning');
 select is((select name from supabase_migrations.schema_migrations where version='20261124121000'),'public_registration_attempts','Registration has its own version');

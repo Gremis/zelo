@@ -36,6 +36,8 @@ export type QueueCard = {
   completedAt: string | null;
   responsibleName?: string | null;
   dueDate?: string | null;
+  taskStarted?: boolean;
+  completedByEmployee?: string | null;
 };
 
 export type PortfolioQueue = {
@@ -80,6 +82,12 @@ function card(value: unknown, status: QueueStatus): QueueCard {
     completedAt: row.completedAt === null ? null : date(row.completedAt),
     responsibleName: nullableString(row.responsibleName ?? null),
     dueDate: nullableString(row.dueDate ?? null),
+    ...(row.taskStarted === undefined
+      ? {}
+      : { taskStarted: row.taskStarted === true }),
+    ...(row.completedByEmployee === undefined
+      ? {}
+      : { completedByEmployee: nullableString(row.completedByEmployee) }),
   };
   if (
     result.number < 1 ||

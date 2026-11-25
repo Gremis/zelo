@@ -2142,3 +2142,35 @@ node scripts/check-migration-chain.mjs --employee-seed
 ```
 
 Both minimal #32 and enriched #33 scenarios passed 18 seed/permissions/idempotency assertions plus 97 tracking/detail/task assertions each and converged to the same schema. The original local database ledger, schema and occurrence fingerprints remained unchanged. Earlier application validation passed 835 unit tests, the standard production build/browser run (69 passed; 29 environment-gated cases skipped), and nine additional local workflow/reopening/task browser cases. Database validation is local evidence; credential-free CI does not execute these database scenarios.
+
+### ORI-105 employee task page
+
+This delivery depends on [ORI-104, PR #52](https://github.com/Gremis/zelo/pull/52) at `beab141d87282dd78ee9438108509a68750a0d82`. It adds the public `/t/[code]` page and real start/upload/completion operations, preserving the inherited dependencies and migration selections. Integrate #52 and its reviewed prerequisites before this feature; do not blindly reintroduce the employee/registration/tracking migration aliases documented above. Green CI alone does not resolve that coordination or authorize merging.
+
+The page reuses ORI-104's restricted lookup, with separate loading, invalid-code and recoverable-error states. No login is required. Task pages and APIs disable caching and indexing and use no-referrer requests. The code is not sent to analytics or application logs. A completed task has only its confirmation and summary, including after reopening. The supplied screenshots guide the task, conclusion and completed layouts.
+
+#### Approved authorization rule for PO review
+
+The user explicitly approved this clarification of the ORI-103 action-authorization gap on November 25, 2026: old codes retain their ORI-104 query, but starting, obtaining new upload grants, validating uploads and completing require the latest delegation, an occurrence still delegated to the same employee, and an active employee. Employee/occurrence/task locks revalidate authorization for every operation and again at finalization. Reassignment, another delegation (even to the same employee) or deactivation prevents mutation through the old code without invalidating its query. Read-only links display an explicit message and no mutation controls. Confirmed receipts remain recoverable without repeating a mutation. Reopening never revives a completed task. This is an approved implementation decision for PO review, not a rule claimed to be explicit in the original ORI-103 text.
+
+ORI-103 explicitly allows completion before starting and makes both comment and attachments optional. The camera is a native file-picker enhancement with a regular selector alternative. Existing ORI-58/66 formats, file budgets, private bucket and content inspection are reused.
+
+#### Operations and migrations
+
+- Existing `GET /api/public/tasks/[code]` adds a restricted `canAct` projection. The browser never supplies an actor, employee, portfolio or occurrence selector.
+- New `POST /api/public/tasks/[code]/commands` exposes only `start` and `complete` through a service-only RPC. Starting preserves Delegado, records the first timestamp once and writes one employee-authored history event. Command receipts recover the same result after response loss.
+- New `/api/public/tasks/[code]/uploads/[[...parts]]` reuses upload preparation, signed transfer, validation and inspection. A `task_completion` session belongs to one task and cannot be used for public registration, manager completion or another task. Previously issued signed Storage grants retain the infrastructure's existing expiry; new grants, inspection and final linking recheck task authority.
+- `20261126170000_employee_task_actions.sql` adds authorization, task command receipts and task upload scope. It extends the central writer with employee snapshots and extracts shared completion/linking helpers used by both manager and employee completion. Status, timestamp, event, comment, attachment links and receipt commit atomically; failed finalization rolls back.
+- `20261126180000_employee_task_queue_state.sql` preserves the portfolio query and adds execution/completion-author projections. The queue displays Em execução and Concluída por [name] ([role]). Private evidence remains in manager history; residents receive only the public completion projection.
+
+Only these two incremental migrations were applied to the inspected local project. The sixteen applied development/production files remain byte-identical. The canonical chain now has 37 unique versions. Existing alias-ledger environments still need the read-only schema/history inspection and destination dry-run described for ORI-104; no reset, migration repair, shared database operation or deployment accompanies this delivery.
+
+#### Validation and limitations
+
+Local automated validation passed 839 unit/component tests, followed by the focused queue refresh checks (18 tests), 31 affected real-local workflow tests, five task/browser cases against the standard production build, formatting, lint, types and the production audit (zero vulnerabilities). Browser cases cover 360/1280 px, real Storage inspection/linking, cancellation/focus, recoverable upload failure, response loss and original-key recovery, manager history/queue, and permanently completed links after reopening. The two disposable minimal/enriched migration paths each passed 18 seed/permissions assertions plus 97 tracking/detail/task assertions, converged to the same schema and preserved the original local database fingerprint. Run their checker without concurrent database fixtures.
+
+The user manually approved the delegation link, persisted employee actions and correct manager-queue updates on November 25, 2026. This approval does not cover the pending items below. Task #4928 belonged to a separate synthetic review manager; its absence from another manager's demo portfolio is correct isolation.
+
+Real-local tests are `tests/db/workflow.integration.test.ts` and `tests/e2e/employee-task-local.spec.ts`. Select backend cases with `npx vitest run --config vitest.db.config.mts tests/db/workflow.integration.test.ts -t ORI-105`. Browser tests require the existing local Supabase environment, `ORI47_LOCAL_AUTH_TESTS=enabled`, `ORI105_LOCAL_TESTS=enabled` and `PUBLIC_APP_ORIGIN=http://127.0.0.1:3100`; run `npm run test:e2e -- tests/e2e/employee-task-local.spec.ts tests/e2e/task.spec.ts`. Synthetic credentials and task codes are not committed.
+
+No employee-recado operation exists in the inspected repository. Linear was inaccessible to available read tools, so a separate subtask number could not be confirmed. Recados remain pending and no nonfunctional button is rendered. Actual phone-camera behavior and hosted attachment validation remain pending; local/browser emulation is not acceptance of those items. The inherited resident `/o/[code]` link still has a fixed published origin; that separate issue is unchanged by this delivery.

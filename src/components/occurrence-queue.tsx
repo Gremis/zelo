@@ -201,6 +201,14 @@ export function OccurrenceCard({
           {formatQueueDate(item.registeredAt, now)}
         </time>
       </footer>
+      {item.taskStarted && (
+        <p className="text-xs font-semibold text-[#0f766e]">Em execução</p>
+      )}
+      {item.completedByEmployee && (
+        <p className="text-xs font-semibold text-[#0f766e]">
+          {item.completedByEmployee}
+        </p>
+      )}
       {item.responsibleName && (
         <p className="text-xs text-[#475467] [overflow-wrap:anywhere]">
           Responsável: {item.responsibleName}

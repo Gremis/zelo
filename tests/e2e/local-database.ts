@@ -40,10 +40,11 @@ export function removeLocalAccountData(id: string) {
         raise exception 'Synthetic local account required.';
       end if;
     end $$;
-    delete from private.employee_tasks where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
+    delete from private.employee_task_commands where task_code in(select code from private.employee_tasks where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid));
     delete from private.occurrence_commands where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
-    delete from private.occurrence_upload_files where session_id in (select id from private.occurrence_upload_sessions where manager_id='${id}'::uuid);
-    delete from private.occurrence_upload_sessions where manager_id='${id}'::uuid;
+    delete from private.occurrence_upload_files where session_id in (select id from private.occurrence_upload_sessions where manager_id='${id}'::uuid or target_occurrence_id in(select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid));
+    delete from private.occurrence_upload_sessions where manager_id='${id}'::uuid or target_occurrence_id in(select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
+    delete from private.employee_tasks where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
     delete from private.account_demo_occurrences where manager_id='${id}'::uuid;
     delete from private.account_demo_condominiums where manager_id='${id}'::uuid;
     delete from private.account_demo where manager_id='${id}'::uuid;

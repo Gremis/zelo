@@ -14,7 +14,8 @@ import {
   readBoundedFile,
 } from "./upload-inspection";
 
-export type ManagerUploadScope = { occurrenceId: string; actorId: string };
+export type ManagerUploadScope =
+  { occurrenceId: string; actorId: string } | { taskCode: string };
 
 const bucket = "occurrence-evidence";
 const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -54,22 +55,31 @@ export async function uploadOperation(
   scope?: ManagerUploadScope,
 ) {
   const client = storageClient(signal);
-  const { data, error } = scope
-    ? await client.rpc("manager_occurrence_upload_operation", {
-        operation,
-        session_key: sessionKey!,
-        target_occurrence: scope.occurrenceId,
-        actor_profile: scope.actorId,
-        upload_secret: secret!,
-        payload,
-      })
-    : await client.rpc("occurrence_upload_operation", {
-        operation,
-        session_key: sessionKey!,
-        condominium_slug: slug,
-        upload_secret: secret,
-        payload,
-      });
+  const { data, error } =
+    scope && "taskCode" in scope
+      ? await client.rpc("employee_task_upload_operation", {
+          p_code: scope.taskCode,
+          operation,
+          session_key: sessionKey!,
+          upload_secret: secret!,
+          payload,
+        })
+      : scope
+        ? await client.rpc("manager_occurrence_upload_operation", {
+            operation,
+            session_key: sessionKey!,
+            target_occurrence: scope.occurrenceId,
+            actor_profile: scope.actorId,
+            upload_secret: secret!,
+            payload,
+          })
+        : await client.rpc("occurrence_upload_operation", {
+            operation,
+            session_key: sessionKey!,
+            condominium_slug: slug,
+            upload_secret: secret,
+            payload,
+          });
   if (error) {
     if (error.code === "P0004") throw new UploadBudgetExceeded();
     throw new OccurrenceWriteError(
