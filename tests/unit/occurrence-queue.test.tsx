@@ -195,3 +195,61 @@ test("relative dates update across midnight without reloading the queue", async 
     vi.useRealTimers();
   }
 });
+
+test("mobile tabs support keyboard selection and retain it through data and viewport updates", () => {
+  let mobile = true;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: mobile,
+    addEventListener: (_event: string, listener: () => void) =>
+      listeners.add(listener),
+    removeEventListener: (_event: string, listener: () => void) =>
+      listeners.delete(listener),
+  }));
+  const view = render(<OccurrenceQueue state={success(queueFixture("all"))} />);
+  try {
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Novo4",
+      "Andamento1",
+      "Delegado1",
+      "Concluído1",
+    ]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    tabs[0].focus();
+    fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+    expect(tabs[3]).toHaveFocus();
+    expect(tabs[3]).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tabs[3], { key: "Home" });
+    expect(tabs[0]).toHaveFocus();
+    fireEvent.keyDown(tabs[0], { key: "End" });
+    expect(tabs[3]).toHaveFocus();
+    fireEvent.keyDown(tabs[3], { key: "ArrowRight" });
+    expect(tabs[0]).toHaveFocus();
+    fireEvent.click(tabs[2]);
+    view.rerender(<OccurrenceQueue state={{ status: "loading" }} />);
+    view.rerender(<OccurrenceQueue state={success(queueEmptyFixture)} />);
+    expect(tabs[2]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[2]).toHaveTextContent("Delegado0");
+    const panel = document.getElementById(
+      tabs[2].getAttribute("aria-controls")!,
+    )!;
+    expect(panel).toHaveAttribute("role", "tabpanel");
+    expect(panel).toHaveAttribute("aria-labelledby", tabs[2].id);
+    expect(panel).toHaveTextContent("Nenhuma ocorrência delegada.");
+    act(() => {
+      mobile = false;
+      listeners.forEach((listener) => listener());
+    });
+    expect(panel).not.toHaveAttribute("role");
+    act(() => {
+      mobile = true;
+      listeners.forEach((listener) => listener());
+    });
+    expect(tabs[2]).toHaveAttribute("aria-selected", "true");
+    expect(panel).toHaveAttribute("role", "tabpanel");
+  } finally {
+    view.unmount();
+    vi.unstubAllGlobals();
+  }
+});
