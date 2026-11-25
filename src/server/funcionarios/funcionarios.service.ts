@@ -80,7 +80,24 @@ export function createFuncionariosService(
 
   return {
     async createFuncionario(body) {
-      const validation = validateCreateFuncionario(body);
+      let input = body;
+      if (typeof body === "object" && body !== null && "funcaoId" in body) {
+        const id = (body as Record<string, unknown>).funcaoId;
+        if (typeof id !== "string" || !isUuid(id)) {
+          return failure({
+            code: "invalid_input",
+            message: "Dados inválidos.",
+            details: { funcaoId: "Selecione a função." },
+          });
+        }
+        const available = await repository.listFuncoes();
+        if (available.status === "error")
+          return failure(WRITE_ERRORS[available.reason]);
+        const role = available.data.find((item) => item.id === id);
+        if (!role) return failure(WRITE_ERRORS.forbidden);
+        input = { ...body, funcaoNome: role.nome };
+      }
+      const validation = validateCreateFuncionario(input);
       if (!validation.ok) {
         return validation;
       }

@@ -200,3 +200,44 @@ describe("FuncionariosService funcoes", () => {
     expect(result).toEqual({ ok: true, data: { funcoes: [FUNCAO] } });
   });
 });
+
+describe("existing role selection", () => {
+  it("resolves the selected ID within the authenticated portfolio and ignores a supplied name", async () => {
+    let received: unknown;
+    const service = createFuncionariosService(
+      createRepository({
+        createFuncionario: async (input) => {
+          received = input;
+          return { status: "ok", funcionario: ITEM };
+        },
+      }),
+    );
+    expect(
+      (
+        await service.createFuncionario({
+          ...VALID_BODY,
+          funcaoId: FUNCAO.id,
+          funcaoNome: "Untrusted role",
+        })
+      ).ok,
+    ).toBe(true);
+    expect(received).toMatchObject({ funcaoNome: FUNCAO.nome });
+  });
+  it("rejects another portfolio's role before writing", async () => {
+    let written = false;
+    const service = createFuncionariosService(
+      createRepository({
+        createFuncionario: async () => {
+          written = true;
+          return { status: "ok", funcionario: ITEM };
+        },
+      }),
+    );
+    const result = await service.createFuncionario({
+      ...VALID_BODY,
+      funcaoId: "99999999-9999-4999-8999-999999999999",
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(written).toBe(false);
+  });
+});
