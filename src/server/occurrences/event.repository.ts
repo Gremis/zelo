@@ -96,6 +96,56 @@ export function createOccurrenceEventRepository(
         throw new OccurrenceWriteError("unavailable");
       }
     },
+    async registerByManager(input) {
+      try {
+        const supabase = await createClient(responseHeaders);
+        const args: Database["public"]["Functions"]["register_manager_occurrence"]["Args"] =
+          {
+            condominium_id: input.condominiumId,
+            channel: input.channel,
+            description: input.description,
+            location: input.location,
+            ...(input.reporterName !== undefined
+              ? { reporter_name: input.reporterName }
+              : {}),
+            ...(input.reporterPhone !== undefined
+              ? { reporter_phone: input.reporterPhone }
+              : {}),
+            ...(input.reporterUnitOrRole !== undefined
+              ? { reporter_unit_or_role: input.reporterUnitOrRole }
+              : {}),
+            calculated_priority: input.suggestedPriority,
+            calculated_reason: input.suggestionReason,
+            calculated_source: input.suggestionSource,
+          };
+        const { data, error } = await supabase.rpc(
+          "register_manager_occurrence",
+          args,
+        );
+        if (error) databaseFailure(error.code);
+        const row = Array.isArray(data) && data.length === 1 ? data[0] : null;
+        if (
+          !row ||
+          typeof row.occurrence_id !== "string" ||
+          !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
+            row.occurrence_id,
+          ) ||
+          !Number.isSafeInteger(row.number) ||
+          row.number <= 0 ||
+          typeof row.tracking_code !== "string" ||
+          !/^[0-9a-f]{64}$/.test(row.tracking_code)
+        )
+          throw new OccurrenceWriteError("unavailable");
+        return {
+          occurrenceId: row.occurrence_id,
+          number: row.number,
+          trackingCode: row.tracking_code,
+        };
+      } catch (error) {
+        if (error instanceof OccurrenceWriteError) throw error;
+        throw new OccurrenceWriteError("unavailable");
+      }
+    },
     async appendInternalNote(input) {
       try {
         const supabase = await createClient(responseHeaders);

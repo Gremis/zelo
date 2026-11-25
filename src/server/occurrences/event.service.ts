@@ -1,6 +1,8 @@
 import "server-only";
 import { detectRisk } from "@/lib/occurrences/risk-rules";
 import {
+  MANAGER_CHANNELS,
+  type ManagerRegistration,
   OccurrenceWriteError,
   type InternalNote,
   type OccurrenceEventRepository,
@@ -74,6 +76,56 @@ export function createOccurrenceEventService(
         reporterUnitOrRole: text(input.reporterUnitOrRole, 200),
         location,
         description,
+        suggestedPriority: risk.hasRisk ? "urgent" : "normal",
+        suggestionReason: risk.hasRisk
+          ? `Menciona ${risk.term}: risco à segurança.`
+          : "Sem sinal de risco no relato.",
+        suggestionSource: "rules",
+      });
+    },
+    async registerByManager(input: ManagerRegistration) {
+      exactFields(input, [
+        "type",
+        "condominiumId",
+        "channel",
+        "location",
+        "description",
+        ...(input?.reporterName !== undefined ? ["reporterName"] : []),
+        ...(input?.reporterPhone !== undefined ? ["reporterPhone"] : []),
+        ...(input?.reporterUnitOrRole !== undefined
+          ? ["reporterUnitOrRole"]
+          : []),
+      ]);
+      if (
+        input.type !== "registered" ||
+        typeof input.condominiumId !== "string" ||
+        !uuid.test(input.condominiumId) ||
+        typeof input.channel !== "string" ||
+        !(MANAGER_CHANNELS as readonly string[]).includes(input.channel) ||
+        (input.reporterPhone !== undefined &&
+          (typeof input.reporterPhone !== "string" ||
+            !/^[1-9][0-9]{9,10}$/.test(input.reporterPhone)))
+      )
+        throw new OccurrenceWriteError("invalid_input");
+      const location = text(input.location, 200);
+      const description = text(input.description, 10000);
+      // Sugestão só por regras no scaffold; a IA (ORI-71) substitui isto ao integrar.
+      const risk = detectRisk(location, description);
+      return repository.registerByManager({
+        type: "registered",
+        condominiumId: input.condominiumId,
+        channel: input.channel,
+        location,
+        description,
+        ...(input.reporterName !== undefined
+          ? { reporterName: text(input.reporterName, 200) }
+          : {}),
+        ...(input.reporterPhone !== undefined
+          ? { reporterPhone: input.reporterPhone }
+          : {}),
+        ...(input.reporterUnitOrRole !== undefined
+          ? { reporterUnitOrRole: text(input.reporterUnitOrRole, 200) }
+          : {}),
         suggestedPriority: risk.hasRisk ? "urgent" : "normal",
         suggestionReason: risk.hasRisk
           ? `Menciona ${risk.term}: risco à segurança.`

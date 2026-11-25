@@ -562,6 +562,25 @@ export type Database = {
           tracking_code: string;
         }[];
       };
+      register_manager_occurrence: {
+        Args: {
+          calculated_priority?: string;
+          calculated_reason?: string;
+          calculated_source?: string;
+          channel: string;
+          condominium_id: string;
+          description: string;
+          location: string;
+          reporter_name?: string;
+          reporter_phone?: string;
+          reporter_unit_or_role?: string;
+        };
+        Returns: {
+          number: number;
+          occurrence_id: string;
+          tracking_code: string;
+        }[];
+      };
       register_public_occurrence: {
         Args: {
           condominium_slug: string;
