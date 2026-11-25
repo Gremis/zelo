@@ -34,10 +34,12 @@ test("loads observed progress and never completes steps through a click", async 
   expect(
     screen.getByText("Cadastre seu primeiro condomínio").closest("li"),
   ).toHaveClass("line-through");
-  for (const name of [
-    "Cadastre zelador e porteiro de cada prédio",
-    "Copie o link do formulário e envie aos moradores",
-  ]) {
+  expect(
+    screen.getByRole("link", {
+      name: "Cadastre zelador e porteiro de cada prédio",
+    }),
+  ).toHaveAttribute("href", "/funcionarios?novo=1");
+  for (const name of ["Copie o link do formulário e envie aos moradores"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   expect(
@@ -145,4 +147,82 @@ test("shows first steps only after signup and removes them for the login entry",
   expect(
     screen.queryByRole("heading", { name: "Primeiros passos" }),
   ).not.toBeInTheDocument();
+});
+
+test("dismissal uses the protected write endpoint and requires a confirmed response", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ dismissed: true }))
+    .mockResolvedValueOnce(Response.json({ dismissed: false }))
+    .mockResolvedValueOnce(Response.json({}, { status: 503 }));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    const operations = createFirstStepsOperations();
+    expect(await operations.dismiss()).toEqual({
+      ok: true,
+      data: { dismissed: true },
+    });
+    expect(fetcher).toHaveBeenCalledWith("/api/panel/first-steps/dismiss", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    expect(await operations.dismiss()).toEqual({
+      ok: false,
+      error: "unavailable",
+    });
+    expect(await operations.dismiss()).toEqual({
+      ok: false,
+      error: "unavailable",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("successful dismissal also clears the signup presentation signal", async () => {
+  const operations = service();
+  function Flow() {
+    const { showFirstSteps, setShowFirstSteps } = useSignupFlow();
+    return (
+      <>
+        <button onClick={() => setShowFirstSteps(true)}>Complete signup</button>
+        <p>Signup signal: {String(showFirstSteps)}</p>
+        <SignupFirstSteps operations={operations} />
+      </>
+    );
+  }
+  render(
+    <SignupFlowProvider>
+      <Flow />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Complete signup" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Dispensar" }));
+  await waitFor(() =>
+    expect(screen.getByText("Signup signal: false")).toBeVisible(),
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Primeiros passos" }),
+  ).not.toBeInTheDocument();
+});
+
+test("a saved account dismissal hides first steps even if a signup presentation is requested", async () => {
+  const operations = service();
+  vi.mocked(operations.load).mockResolvedValue({
+    ok: true,
+    data: { completed: [], dismissed: true },
+  });
+  render(
+    <SignupFlowProvider>
+      <FirstStepsFlow operations={operations} />
+    </SignupFlowProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Complete signup" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", { name: "Primeiros passos" }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(operations.dismiss).not.toHaveBeenCalled();
 });

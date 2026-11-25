@@ -45,6 +45,104 @@ export type Database = {
           },
         ];
       };
+      funcionarios: {
+        Row: {
+          ativo: boolean;
+          celular: string;
+          celular_normalizado: string | null;
+          condominio_id: string;
+          created_at: string;
+          funcao_id: string;
+          horario_trabalho: string | null;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          ativo?: boolean;
+          celular: string;
+          celular_normalizado?: never;
+          condominio_id: string;
+          created_at?: string;
+          funcao_id: string;
+          horario_trabalho?: string | null;
+          id?: string;
+          nome: string;
+          sindico_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          ativo?: boolean;
+          celular?: string;
+          celular_normalizado?: never;
+          condominio_id?: string;
+          created_at?: string;
+          funcao_id?: string;
+          horario_trabalho?: string | null;
+          id?: string;
+          nome?: string;
+          sindico_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "funcionarios_condominio_id_fkey";
+            columns: ["condominio_id"];
+            isOneToOne: false;
+            referencedRelation: "condominiums";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "funcionarios_funcao_id_fkey";
+            columns: ["funcao_id"];
+            isOneToOne: false;
+            referencedRelation: "funcoes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "funcionarios_sindico_id_fkey";
+            columns: ["sindico_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      funcoes: {
+        Row: {
+          created_at: string;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          id?: string;
+          nome: string;
+          sindico_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          nome?: string;
+          sindico_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "funcoes_sindico_id_fkey";
+            columns: ["sindico_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       occurrence_attachments: {
         Row: {
           content_type: string;
@@ -87,6 +185,43 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "occurrence_events";
             referencedColumns: ["occurrence_id", "id"];
+          },
+        ];
+      };
+      occurrence_completions: {
+        Row: {
+          completed_at: string;
+          event_id: number | null;
+          id: number;
+          occurrence_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          completed_at: string;
+          event_id?: number | null;
+          id?: never;
+          occurrence_id: string;
+        };
+        Update: {
+          completed_at?: string;
+          event_id?: number | null;
+          id?: never;
+          occurrence_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "occurrence_completions_occurrence_id_event_id_fkey";
+            columns: ["occurrence_id", "event_id"];
+            isOneToOne: true;
+            referencedRelation: "occurrence_events";
+            referencedColumns: ["occurrence_id", "id"];
+          },
+          {
+            foreignKeyName: "occurrence_completions_occurrence_id_fkey";
+            columns: ["occurrence_id"];
+            isOneToOne: false;
+            referencedRelation: "occurrences";
+            referencedColumns: ["id"];
           },
         ];
       };
@@ -192,9 +327,12 @@ export type Database = {
           decided_priority: string | null;
           decided_suggested_priority: string | null;
           decision: string | null;
+          delegation_started_at: string | null;
           description: string;
           due_at: string | null;
+          due_date: string | null;
           final_priority: string | null;
+          first_responsible_at: string | null;
           id: string;
           internal_note: string | null;
           location: string | null;
@@ -206,6 +344,8 @@ export type Database = {
           reporter_name: string | null;
           reporter_phone: string | null;
           reporter_unit_or_role: string | null;
+          responsible_employee_id: string | null;
+          responsible_kind: string | null;
           responsible_name: string | null;
           responsible_phone: string | null;
           responsible_profile_id: string | null;
@@ -216,6 +356,7 @@ export type Database = {
           suggestion_reason: string | null;
           suggestion_source: string | null;
           tracking_code: string;
+          version: number;
         };
         ComputedFields: never;
         Insert: {
@@ -228,9 +369,12 @@ export type Database = {
           decided_priority?: string | null;
           decided_suggested_priority?: string | null;
           decision?: string | null;
+          delegation_started_at?: string | null;
           description: string;
           due_at?: string | null;
+          due_date?: string | null;
           final_priority?: string | null;
+          first_responsible_at?: string | null;
           id?: string;
           internal_note?: string | null;
           location?: string | null;
@@ -242,6 +386,8 @@ export type Database = {
           reporter_name?: string | null;
           reporter_phone?: string | null;
           reporter_unit_or_role?: string | null;
+          responsible_employee_id?: string | null;
+          responsible_kind?: string | null;
           responsible_name?: string | null;
           responsible_phone?: string | null;
           responsible_profile_id?: string | null;
@@ -252,6 +398,7 @@ export type Database = {
           suggestion_reason?: string | null;
           suggestion_source?: string | null;
           tracking_code?: string;
+          version?: number;
         };
         Update: {
           ai_failure_reason?: string | null;
@@ -263,9 +410,12 @@ export type Database = {
           decided_priority?: string | null;
           decided_suggested_priority?: string | null;
           decision?: string | null;
+          delegation_started_at?: string | null;
           description?: string;
           due_at?: string | null;
+          due_date?: string | null;
           final_priority?: string | null;
+          first_responsible_at?: string | null;
           id?: string;
           internal_note?: string | null;
           location?: string | null;
@@ -277,6 +427,8 @@ export type Database = {
           reporter_name?: string | null;
           reporter_phone?: string | null;
           reporter_unit_or_role?: string | null;
+          responsible_employee_id?: string | null;
+          responsible_kind?: string | null;
           responsible_name?: string | null;
           responsible_phone?: string | null;
           responsible_profile_id?: string | null;
@@ -287,6 +439,7 @@ export type Database = {
           suggestion_reason?: string | null;
           suggestion_source?: string | null;
           tracking_code?: string;
+          version?: number;
         };
         Relationships: [
           {
@@ -304,6 +457,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "occurrences_responsible_employee_id_fkey";
+            columns: ["responsible_employee_id"];
+            isOneToOne: false;
+            referencedRelation: "funcionarios";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "occurrences_responsible_profile_id_fkey";
             columns: ["responsible_profile_id"];
             isOneToOne: false;
@@ -315,6 +475,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string;
+          first_steps_dismissed_at: string | null;
           full_name: string | null;
           id: string;
           is_morador: boolean;
@@ -325,6 +486,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           created_at?: string;
+          first_steps_dismissed_at?: string | null;
           full_name?: string | null;
           id: string;
           is_morador?: boolean;
@@ -334,6 +496,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          first_steps_dismissed_at?: string | null;
           full_name?: string | null;
           id?: string;
           is_morador?: boolean;
@@ -369,6 +532,62 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      create_funcao: {
+        Args: { p_nome: string };
+        Returns: {
+          created_at: string;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "funcoes";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      create_funcionario: {
+        Args: {
+          p_celular: string;
+          p_condominio_id: string;
+          p_funcao_nome: string;
+          p_horario_trabalho?: string;
+          p_nome: string;
+        };
+        Returns: {
+          ativo: boolean;
+          celular: string;
+          celular_normalizado: string | null;
+          condominio_id: string;
+          created_at: string;
+          funcao_id: string;
+          horario_trabalho: string | null;
+          id: string;
+          nome: string;
+          sindico_id: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "funcionarios";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      decide_occurrence_priority: {
+        Args: {
+          change_reason?: string;
+          decided_priority: string;
+          target_occurrence: string;
+        };
+        Returns: Json;
+      };
+      dismiss_first_steps: {
+        Args: Record<PropertyKey, never>;
+        Returns: string;
+      };
       email_confirmation_guard: {
         Args: {
           email_address: string;
@@ -382,6 +601,39 @@ export type Database = {
       has_active_session: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
+      };
+      manager_occurrence_upload_operation: {
+        Args: {
+          actor_profile: string;
+          operation: string;
+          payload?: Json;
+          session_key: string;
+          target_occurrence: string;
+          upload_secret: string;
+        };
+        Returns: Json;
+      };
+      occurrence_command: {
+        Args: {
+          command_key: string;
+          command_type: string;
+          expected_version: number;
+          payload: Json;
+          target_occurrence: string;
+        };
+        Returns: Json;
+      };
+      occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
+      occurrence_tracking: { Args: { p_code: string }; Returns: Json };
+      occurrence_upload_operation: {
+        Args: {
+          condominium_slug?: string;
+          operation: string;
+          payload?: Json;
+          session_key: string;
+          upload_secret?: string;
+        };
+        Returns: Json;
       };
       portfolio_occurrence_queue: {
         Args: Record<PropertyKey, never>;
@@ -417,6 +669,26 @@ export type Database = {
           tracking_code: string;
         }[];
       };
+      register_public_occurrence_attempt: {
+        Args: {
+          attempt_key: string;
+          calculated_priority: string;
+          calculated_reason: string;
+          calculated_source: string;
+          condominium_slug: string;
+          description: string;
+          location: string;
+          reporter_name: string;
+          reporter_phone: string;
+          reporter_unit_or_role: string;
+          upload_secret?: string;
+        };
+        Returns: {
+          number: number;
+          occurrence_id: string;
+          tracking_code: string;
+        }[];
+      };
       register_public_occurrence_with_suggestion: {
         Args: {
           calculated_priority: string;
@@ -434,6 +706,15 @@ export type Database = {
           occurrence_id: string;
           tracking_code: string;
         }[];
+      };
+      reopen_occurrence: {
+        Args: {
+          command_key: string;
+          expected_version: number;
+          reason?: string;
+          target_occurrence: string;
+        };
+        Returns: Json;
       };
       resolve_condominium_link: {
         Args: { p_slug: string };

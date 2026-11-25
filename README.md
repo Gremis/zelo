@@ -2095,3 +2095,27 @@ other PRs to hide inherited work. Temporary deployment checker/workflow changes
 were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
+
+### ORI-104 dependency composition
+
+This feature starts from develop `b591c8af0a781994ddda74dac06b6d005e57b33f`. Dependencies are incorporated as selected file content, not as merges of their remote branches. The first feature commit contains inherited functionality and compatibility adaptations; the second contains employee task access and its tests.
+
+| Dependency                     | Source commit                                                                                             | Included content                                                                                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR #33, employee backend       | `66860c64d730ddce1a3a2dd662125cf8a9fe5360` (restored original `9022f929f38f2f4924a271b0cc0a7d39dece5bfe`) | Employee/role APIs and RPC, with existing authentication and employee UI adaptations.                                                                                   |
+| PR #44, workflow and reopening | `7248baa4d0d13b4d1da1d685c124aac89d062a58`                                                                | ORI-72/91 and earlier employee, registration, detail, upload and onboarding dependencies; original reopening implementation `404ccf238eec3920d10df26732df9714c379b715`. |
+| PR #49, resident tracking      | `733ebdaeb9c12d0691816bf4ceff282af472c26b` (restored original `2d424364d47bd5966eb0d42741f897fe3d2c688f`) | Tracking page, public lookup, copy link and detail tracking contract.                                                                                                   |
+
+All migration versions below have prefix `202611`. The sixteen SQL files through `22152000`, already recorded in development and production, remain byte-identical to the develop baseline. The inherited chain uses minimum employee structure `24120000` plus compatible backfill/permissions delta `24120500`. Its `CREATE OR REPLACE TRIGGER` supports both the minimal #32 and enriched #33 structures without duplicate triggers, functions or seeds.
+
+| Original #49 identity                      | Selected identity                       | Treatment                                                                                                   |
+| ------------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `20120000_create_funcionarios`             | `24120000` plus `24120500`              | Minimum structure plus compatible enriched seed delta.                                                      |
+| `20130000_create_funcionario_rpc`          | `24130000_create_funcionario_rpc`       | Identical SQL, one identity.                                                                                |
+| `24120000_public_registration_attempts`    | `24121000_public_registration_attempts` | Identical SQL, separate from employees.                                                                     |
+| `24160000_occurrence_tracking_lookup`      | `26130000_occurrence_tracking_lookup`   | Identical SQL, separate from uploads.                                                                       |
+| `24170000_occurrence_detail_tracking_code` | Same version, followed by `26140000`    | Original SQL retained; later compatibility migration preserves tracking, workflow and attachments together. |
+
+Review and integrate the employee dependencies #35 → #36 → #37, then #39 → #40 → #41 → #42, then #43 → #44 before this feature. The inherited #38 detail work and #49 tracking inclusion require coordination with their owners. The enriched #33 definition differs from the minimal `24120000` file, so resolve its Git conflict deliberately while retaining the compatible delta. Do not import the old #49 aliases or its colliding registration/tracking versions blindly. These local adaptations do not make the source PRs independently deployable. AI integration remains outside this feature.
+
+Before any remote application, inspect the actual target schema and migration ledger read-only and perform a dry-run for each destination. Existing databases with old alias identities need a separately reviewed plan. Do not apply this chain to the preserved legacy `zelo-local` ledger; no reset or migration repair accompanies this feature. Green CI does not resolve migration coordination or authorize automatic merge.

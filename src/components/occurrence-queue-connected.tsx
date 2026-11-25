@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OccurrenceQueue } from "./occurrence-queue";
 import {
@@ -22,6 +22,31 @@ export function ConnectedOccurrenceQueue({
   const router = useRouter();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await loadOccurrenceQueue();
+      if (mounted.current) setState({ status: "success", data });
+    } catch (error) {
+      if (error instanceof QueueLoadError && error.status === 401)
+        router.replace("/login");
+      if (mounted.current)
+        setState({
+          status: "error",
+          message:
+            "Alteração salva, mas não foi possível atualizar a fila. Tente novamente.",
+        });
+    }
+  }, [router]);
 
   useEffect(() => {
     let active = true;
@@ -88,6 +113,16 @@ export function ConnectedOccurrenceQueue({
         state.status === "error"
           ? { ...state, onRetry: () => setAttempt((value) => value + 1) }
           : state
+      }
+      onOpenOccurrence={setOpenId}
+      detail={
+        openId
+          ? {
+              id: openId,
+              onClose: () => setOpenId(null),
+              onChanged: () => void refresh(),
+            }
+          : null
       }
     />
   );

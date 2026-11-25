@@ -157,7 +157,13 @@ reset role;
 select ok((select rolbypassrls from pg_roles where rolname='service_role'),'service_role bypasses RLS; ACLs enforce denial');
 select ok(not has_function_privilege('service_role','public.protect_occurrence_evidence()','execute'),'Trigger function not exposed');
 select ok(not has_function_privilege('authenticated','public.email_confirmation_guard(text,text,uuid,uuid,text)','execute'),'Server guard not exposed to user');
-grant update, delete, truncate on occurrence_events, occurrence_attachments to service_role;
+grant update, delete, truncate on occurrence_events, occurrence_attachments, occurrence_completions to service_role;
+grant truncate on private.employee_tasks to service_role;
+do $$ begin
+  if to_regclass('local_demo.occurrences') is not null then
+    execute 'grant truncate on local_demo.occurrences to service_role';
+  end if;
+end $$;
 set local role service_role;
 select throws_ok($$update occurrence_events set internal_description='Rewritten'$$,'42501','Occurrence evidence is append-only.','Trigger blocks BYPASSRLS even if update is accidentally granted');
 select throws_ok($$delete from occurrence_events$$,'42501','Occurrence evidence is append-only.','Trigger blocks deletion after accidental grant');
@@ -168,6 +174,12 @@ select throws_ok($$truncate occurrence_attachments$$,'42501','Occurrence evidenc
 reset role;
 select ok(to_regprocedure('public.append_occurrence_note(uuid,text,jsonb)') is null,'No structured payload overload exposed');
 revoke update, delete, truncate on occurrence_events, occurrence_attachments from service_role;
+revoke truncate on private.employee_tasks from service_role;
+do $$ begin
+  if to_regclass('local_demo.occurrences') is not null then
+    execute 'revoke truncate on local_demo.occurrences from service_role';
+  end if;
+end $$;
 select ok(not pg_has_role(r,'postgres','MEMBER') and not pg_has_role(r,'supabase_admin','MEMBER'),r || ' cannot inherit administrator exceptions')
 from (values ('anon'),('authenticated'),('service_role')) roles(r);
 select ok(not has_any_column_privilege(r,t,'INSERT') and not has_any_column_privilege(r,t,'UPDATE'),r || ' has no column write bypass on ' || t)

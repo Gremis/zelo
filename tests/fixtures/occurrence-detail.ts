@@ -1,0 +1,68 @@
+import type { OccurrenceDetail } from "@/server/occurrences/detail.contract";
+
+export function occurrenceDetailFixture(
+  overrides: Partial<OccurrenceDetail> = {},
+): OccurrenceDetail {
+  return {
+    id: "77000000-0000-4000-8000-000000007704",
+    number: 7704,
+    trackingCode:
+      "7700a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e",
+    status: "new",
+    condominium: {
+      id: "77000000-0000-4000-9000-000000000001",
+      name: "Edifício Sintético A",
+    },
+    description:
+      "Relato sintético: cheiro de gás no hall do quinto andar, perto da porta do 502.",
+    location: "Hall sintético do quinto andar",
+    reporterName: "Pessoa Sintética Um",
+    reporterPhone: "31998124410",
+    reporterUnitOrRole: "Apto sintético 501",
+    registeredAt: "2026-11-22T12:05:00Z",
+    completedAt: null,
+    suggestedPriority: "urgent",
+    finalPriority: null,
+    effectivePriority: "urgent",
+    suggestionReason: "Menciona gás: risco à segurança.",
+    suggestionSource: "rules",
+    priorityDecidedAt: null,
+    suggestionPending: true,
+    priorityChangeReason: null,
+    category: "Gás",
+    canDecidePriority: true,
+    version: 0,
+    responsibleKind: null,
+    responsibleName: null,
+    responsibleEmployeeId: null,
+    firstResponsibleAt: null,
+    dueDate: null,
+    events: [
+      {
+        attachments: [],
+        id: 2,
+        type: "manager_update",
+        occurredAt: "2026-11-22T21:26:00Z",
+        authorType: "manager",
+        authorName: "Pessoa Síndica Sintética",
+        authorPhone: "31999990000",
+        authorRole: "manager",
+        authorIsViewer: true,
+        text: "Zelador olhou o portão. Motor queimado, pedi orçamento.",
+      },
+      {
+        attachments: [],
+        id: 1,
+        type: "registered",
+        occurredAt: "2026-11-22T12:05:00Z",
+        authorType: "reporter",
+        authorName: "Pessoa Sintética Um",
+        authorPhone: "31998124410",
+        authorRole: "Apto sintético 501",
+        authorIsViewer: false,
+        text: "Registrou a ocorrência pelo formulário. Unidade informada: Apto sintético 501",
+      },
+    ],
+    ...overrides,
+  };
+}

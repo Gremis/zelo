@@ -28,7 +28,7 @@ test("loading, unavailable and retry states remain actionable", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
   expect(
-    await screen.findByText(/Nenhum condomínio cadastrado/),
+    await screen.findByText(/Nenhum condomínio por enquanto/),
   ).toBeInTheDocument();
 });
 
@@ -45,7 +45,7 @@ test("validates fields, blocks duplicate submission and retains values after fai
     );
   vi.stubGlobal("fetch", fetcher);
   render(<Condominiums />);
-  await screen.findByText(/Nenhum condomínio cadastrado/);
+  await screen.findByText(/Nenhum condomínio por enquanto/);
   fireEvent.click(screen.getByRole("button", { name: "Novo condomínio" }));
   fireEvent.click(screen.getByRole("button", { name: "Salvar e gerar link" }));
   const name = screen.getByLabelText("Nome");
@@ -243,4 +243,46 @@ test("a delayed initial list preserves records created while it was loading", as
   expect(
     screen.getByRole("article", { name: existing.name }),
   ).toBeInTheDocument();
+});
+
+test("successful empty consultation has the queue-style empty card and no retry error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(Response.json({ condominiums: [] })),
+  );
+  render(<Condominiums />);
+  const title = await screen.findByRole("heading", {
+    name: "Nenhum condomínio por enquanto",
+  });
+  expect(title).toBeVisible();
+  expect(
+    screen.getByText("Cadastre seu primeiro condomínio para começar."),
+  ).toBeVisible();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Tentar novamente" }),
+  ).not.toBeInTheDocument();
+});
+
+test("an HTTP backend failure remains an error and retries to a successful empty state", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ error: "Synthetic backend failure" }, { status: 503 }),
+    )
+    .mockResolvedValueOnce(Response.json({ condominiums: [] }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<Condominiums />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível carregar os condomínios.",
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Nenhum condomínio por enquanto" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+  expect(
+    await screen.findByRole("heading", {
+      name: "Nenhum condomínio por enquanto",
+    }),
+  ).toBeVisible();
 });

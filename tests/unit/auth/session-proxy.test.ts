@@ -84,3 +84,19 @@ it("retains session cookie semantics during SSR renewal", async () => {
   expect(response.cookies.get("sb-local-auth-token")?.maxAge).toBeUndefined();
   expect(response.cookies.get("sb-local-auth-token")?.expires).toBeUndefined();
 });
+
+it("keeps public registration independent from an existing browser session", async () => {
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-public-key");
+  state.write = null;
+  const request = new NextRequest(
+    "http://localhost/api/public/condominiums/example-abcd/occurrences",
+    {
+      headers: { cookie: "sb-local-auth-token=existing-session" },
+    },
+  );
+  const response = await updateSession(request);
+  expect(state.write).toBeNull();
+  expect(response.cookies.getAll()).toEqual([]);
+  expect(response.headers.get("cache-control")).toContain("no-store");
+});

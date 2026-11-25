@@ -1,6 +1,34 @@
 import type { NextConfig } from "next";
 
+const evidenceInspectorFiles = [
+  "./scripts/inspect-attachment.mjs",
+  "./node_modules/file-type/**/*",
+  "./node_modules/strtok3/**/*",
+  "./node_modules/token-types/**/*",
+  "./node_modules/@tokenizer/**/*",
+  "./node_modules/@borewit/**/*",
+  "./node_modules/debug/**/*",
+  "./node_modules/ms/**/*",
+  "./node_modules/uint8array-extras/**/*",
+  "./node_modules/peek-readable/**/*",
+  "./node_modules/ieee754/**/*",
+  "./node_modules/sharp/**/*",
+  "./node_modules/@img/**/*",
+  "./node_modules/detect-libc/**/*",
+  "./node_modules/semver/**/*",
+  "./node_modules/mp4box/**/*",
+  "./node_modules/pdf-lib/**/*",
+  "./node_modules/@pdf-lib/**/*",
+  "./node_modules/pako/**/*",
+  "./node_modules/tslib/**/*",
+];
+
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/api/occurrences/*/uploads/*": evidenceInspectorFiles,
+    "/api/public/condominiums/*/upload-attempts/*/files/*/*":
+      evidenceInspectorFiles,
+  },
   async headers() {
     return [
       {

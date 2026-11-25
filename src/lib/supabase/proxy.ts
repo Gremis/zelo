@@ -17,6 +17,7 @@ export async function updateSession(request: NextRequest) {
   if (
     request.nextUrl.pathname === "/fila" ||
     request.nextUrl.pathname === "/condominios" ||
+    request.nextUrl.pathname === "/funcionarios" ||
     request.nextUrl.pathname.startsWith("/api/")
   ) {
     authHeaders.set("Cache-Control", "private, no-store, max-age=0");
@@ -26,6 +27,12 @@ export async function updateSession(request: NextRequest) {
       supabaseResponse.headers.set(key, value),
     );
   }
+  if (
+    request.nextUrl.pathname.startsWith("/api/public/") ||
+    request.nextUrl.pathname === "/api/internal/attachments/cleanup"
+  )
+    return supabaseResponse;
+
   const persistent =
     request.cookies.get(PERSISTENCE_COOKIE)?.value !== "session";
 

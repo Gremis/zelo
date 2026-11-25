@@ -1,5 +1,6 @@
 export type PublicRegistration = {
   type: "registered";
+  attemptKey?: string;
   condominiumSlug: string;
   reporterName: string;
   reporterPhone: string;
@@ -40,7 +41,12 @@ export type OccurrenceEventRepository = {
 
 export class OccurrenceWriteError extends Error {
   constructor(
-    public readonly code: "invalid_input" | "access_denied" | "unavailable",
+    public readonly code:
+      | "invalid_input"
+      | "access_denied"
+      | "unavailable"
+      | "not_found"
+      | "conflict",
   ) {
     super("Occurrence operation could not be completed.");
     this.name = "OccurrenceWriteError";

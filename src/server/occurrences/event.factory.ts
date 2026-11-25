@@ -2,8 +2,11 @@ import "server-only";
 import { createOccurrenceEventRepository } from "./event.repository";
 import { createOccurrenceEventService } from "./event.service";
 
-export function occurrenceEvents(responseHeaders?: Headers) {
+export function occurrenceEvents(
+  responseHeaders?: Headers,
+  uploadSecret?: string,
+) {
   return createOccurrenceEventService(
-    createOccurrenceEventRepository(responseHeaders),
+    createOccurrenceEventRepository(responseHeaders, uploadSecret),
   );
 }

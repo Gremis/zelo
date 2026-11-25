@@ -71,3 +71,38 @@ test("cross-origin POST is rejected before accessing identity or database", asyn
   expect(confirmedIdentity).not.toHaveBeenCalled();
   expect(prepareAccountDemo).not.toHaveBeenCalled();
 });
+
+test("accepts the browser origin matching Host when Next uses an internal hostname", async () => {
+  identity();
+  vi.mocked(prepareAccountDemo).mockResolvedValue({ status: "ready" });
+  const response = await POST(
+    new Request("http://localhost:3100/api/demo/prepare", {
+      method: "POST",
+      headers: { host: "127.0.0.1:3100", origin: "http://127.0.0.1:3100" },
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(prepareAccountDemo).toHaveBeenCalledWith("trusted-manager");
+});
+
+test("rejects an origin matching only the internal hostname or forwarded headers", async () => {
+  for (const origin of [
+    "http://localhost:3100",
+    "http://127.0.0.1:3101",
+    "https://untrusted.invalid",
+  ]) {
+    const response = await POST(
+      new Request("http://localhost:3100/api/demo/prepare", {
+        method: "POST",
+        headers: {
+          host: "127.0.0.1:3100",
+          origin,
+          "x-forwarded-host": new URL(origin).host,
+        },
+      }),
+    );
+    expect(response.status).toBe(403);
+  }
+  expect(confirmedIdentity).not.toHaveBeenCalled();
+  expect(prepareAccountDemo).not.toHaveBeenCalled();
+});
