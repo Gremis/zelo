@@ -201,11 +201,18 @@ export function OccurrenceCard({
           {formatQueueDate(item.registeredAt, now)}
         </time>
       </footer>
-      {item.taskStarted && (
-        <p className="text-xs font-semibold text-[#0f766e]">Em execução</p>
+      {item.status === "delegated" && item.taskStarted && (
+        <p className="text-xs font-semibold text-[#0f766e] [overflow-wrap:anywhere]">
+          Em execução
+        </p>
       )}
-      {item.completedByEmployee && (
-        <p className="text-xs font-semibold text-[#0f766e]">
+      {item.hasNewEmployeeMessage && (
+        <p className="w-fit rounded-md bg-[#fff2cc] px-2 py-1 text-xs font-semibold text-[#713f12]">
+          Recado novo
+        </p>
+      )}
+      {item.status === "completed" && item.completedByEmployee && (
+        <p className="text-xs font-semibold text-[#0f766e] [overflow-wrap:anywhere]">
           {item.completedByEmployee}
         </p>
       )}
@@ -246,6 +253,7 @@ export function OccurrenceQueue({
     id: string;
     onClose: () => void;
     onChanged?: () => void;
+    refreshVersion?: number;
   } | null;
 }) {
   const [selected, setSelected] = useState<QueueStatus>("new");
@@ -340,6 +348,7 @@ export function OccurrenceQueue({
       {detail && (
         <OccurrenceDetailPanel
           occurrenceId={detail.id}
+          refreshVersion={detail.refreshVersion}
           onClose={detail.onClose}
           onChanged={detail.onChanged}
         />

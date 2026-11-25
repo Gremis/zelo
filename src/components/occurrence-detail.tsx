@@ -18,6 +18,7 @@ import { trackingLink } from "@/lib/occurrences/tracking-link";
 import {
   addOccurrenceUpdate,
   loadOccurrenceDetail,
+  markEmployeeMessagesRead,
   OccurrenceRequestError,
   saveOccurrencePriority,
 } from "@/lib/occurrences/detail-request";
@@ -134,10 +135,12 @@ export function OccurrenceDetailPanel({
   occurrenceId,
   onClose,
   onChanged,
+  refreshVersion = 0,
 }: {
   occurrenceId: string;
   onClose: () => void;
   onChanged?: () => void;
+  refreshVersion?: number;
 }) {
   const router = useRouter();
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -148,6 +151,11 @@ export function OccurrenceDetailPanel({
   const panel = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [detail, setDetail] = useState<OccurrenceDetail | null>(null);
+  const loadedOccurrence = useRef<string | null>(null);
+  const acknowledgedMessages = useRef(new Map<string, number>());
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [refreshError, setRefreshError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -170,13 +178,26 @@ export function OccurrenceDetailPanel({
     loadOccurrenceDetail(occurrenceId, controller.signal)
       .then((data) => {
         if (!active) return;
-        setDetail(data);
+        loadedOccurrence.current = occurrenceId;
+        setDetail((current) =>
+          current?.id === data.id &&
+          (current.version ?? 0) > (data.version ?? 0)
+            ? current
+            : data,
+        );
+        setLoadError(null);
+        setNotFound(false);
+        setRefreshError(false);
         setLoading(false);
       })
       .catch((error: unknown) => {
         if (!active) return;
         const status =
           error instanceof OccurrenceRequestError ? error.status : 503;
+        if (status === 503 && loadedOccurrence.current === occurrenceId) {
+          setRefreshError(true);
+          return;
+        }
         setLoading(false);
         setNotFound(status === 404);
         setLoadError(loadMessage(status));
@@ -186,7 +207,39 @@ export function OccurrenceDetailPanel({
       active = false;
       controller.abort();
     };
-  }, [attempt, occurrenceId, router]);
+  }, [attempt, occurrenceId, router, refreshVersion]);
+
+  useEffect(() => {
+    if (!detail || detail.id !== occurrenceId || loading || loadError) return;
+    const throughEventId = detail.events.reduce(
+      (latest, event) =>
+        event.type === "employee_message" && event.authorType === "employee"
+          ? Math.max(latest, event.id)
+          : latest,
+      0,
+    );
+    if (
+      !throughEventId ||
+      (acknowledgedMessages.current.get(occurrenceId) ?? 0) >= throughEventId
+    )
+      return;
+    const controller = new AbortController();
+    void markEmployeeMessagesRead(
+      occurrenceId,
+      throughEventId,
+      controller.signal,
+    )
+      .then(() => {
+        if (controller.signal.aborted) return;
+        acknowledgedMessages.current.set(occurrenceId, throughEventId);
+        setReadError(false);
+        onChanged?.();
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setReadError(true);
+      });
+    return () => controller.abort();
+  }, [detail, occurrenceId, loading, loadError, onChanged, readAttempt]);
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -411,6 +464,24 @@ export function OccurrenceDetailPanel({
       detail.finalPriority !== detail.suggestedPriority;
     content = (
       <>
+        {refreshError && (
+          <p role="alert" className="px-5 pt-4 text-sm text-[#b42318]">
+            Não foi possível atualizar a ocorrência. Os dados anteriores foram
+            mantidos.
+          </p>
+        )}
+        {readError && (
+          <p role="alert" className="px-5 pt-4 text-sm text-[#b42318]">
+            Não foi possível registrar a leitura dos recados.{" "}
+            <button
+              type="button"
+              className="min-h-10 underline"
+              onClick={() => setReadAttempt((value) => value + 1)}
+            >
+              Tentar registrar leitura novamente
+            </button>
+          </p>
+        )}
         <header className="px-5 pt-4">
           <div
             className={`flex flex-wrap items-center gap-2 text-xs ${detail.status === "completed" ? "min-h-8 pr-32" : "pr-10"}`}

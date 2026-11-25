@@ -293,3 +293,16 @@ test("visible queue polls every fifteen seconds and stops after unmount", async 
     vi.useRealTimers();
   }
 });
+
+test("rendering and hovering a queue with unread messages does not acknowledge them", async () => {
+  const data = queueFixture("all");
+  data.columns.delegated.items[0].hasNewEmployeeMessage = true;
+  data.columns.delegated.items[0].taskStarted = true;
+  request.mockResolvedValue(Response.json(data));
+  render(<ConnectedOccurrenceQueue />);
+  const notice = await screen.findByText("Recado novo");
+  fireEvent.mouseOver(notice);
+  expect(screen.getByText("Em execução")).toBeVisible();
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls[0][0]).toBe("/api/occurrences/queue");
+});

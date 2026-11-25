@@ -1,4 +1,5 @@
 import {
+  boolean,
   date,
   integer,
   nullableString,
@@ -37,6 +38,7 @@ export type QueueCard = {
   responsibleName?: string | null;
   dueDate?: string | null;
   taskStarted?: boolean;
+  hasNewEmployeeMessage?: boolean;
   completedByEmployee?: string | null;
 };
 
@@ -84,7 +86,10 @@ function card(value: unknown, status: QueueStatus): QueueCard {
     dueDate: nullableString(row.dueDate ?? null),
     ...(row.taskStarted === undefined
       ? {}
-      : { taskStarted: row.taskStarted === true }),
+      : { taskStarted: boolean(row.taskStarted) }),
+    ...(row.hasNewEmployeeMessage === undefined
+      ? {}
+      : { hasNewEmployeeMessage: boolean(row.hasNewEmployeeMessage) }),
     ...(row.completedByEmployee === undefined
       ? {}
       : { completedByEmployee: nullableString(row.completedByEmployee) }),

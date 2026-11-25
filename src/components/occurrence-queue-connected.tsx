@@ -22,6 +22,7 @@ export function ConnectedOccurrenceQueue({
   const router = useRouter();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const mounted = useRef(true);
   const initializing = useRef(true);
@@ -43,8 +44,10 @@ export function ConnectedOccurrenceQueue({
       refreshing.current = controller;
       try {
         const data = await loadOccurrenceQueue(controller.signal);
-        if (mounted.current && !controller.signal.aborted)
+        if (mounted.current && !controller.signal.aborted) {
           setState({ status: "success", data });
+          setRefreshVersion((value) => value + 1);
+        }
       } catch (error) {
         if (!mounted.current || controller.signal.aborted) return;
         const expired = error instanceof QueueLoadError && error.status === 401;
@@ -160,7 +163,8 @@ export function ConnectedOccurrenceQueue({
           ? {
               id: openId,
               onClose: () => setOpenId(null),
-              onChanged: () => void refresh(),
+              onChanged: refresh,
+              refreshVersion,
             }
           : null
       }

@@ -319,3 +319,162 @@ test("an expired session redirects to login", async () => {
   ).toBeInTheDocument();
   expect(router.replace).toHaveBeenCalledWith("/login");
 });
+
+function messageDetail(id = 101) {
+  const value = occurrenceDetailFixture();
+  value.events.unshift({
+    ...value.events[0],
+    id,
+    type: "employee_message",
+    authorType: "employee",
+    authorName: "Funcionário Sintético",
+    authorRole: "Função Sintética",
+    text: `Recado sintético ${id}`,
+  });
+  return value;
+}
+
+test("acknowledges only employee messages rendered after a successful detail load", async () => {
+  const value = messageDetail();
+  respond((url, init) => {
+    if (url.endsWith("/message-read")) {
+      expect(screen.getByText("Recado sintético 101")).toBeVisible();
+      expect(JSON.parse(String(init.body))).toEqual({ throughEventId: 101 });
+      return Response.json({ throughEventId: 101 });
+    }
+    return Response.json(value);
+  });
+  const { onChanged } = mount(value);
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  expect(
+    calls.filter((call) => call.url.endsWith("/message-read")),
+  ).toHaveLength(1);
+});
+
+test("failed detail loading never acknowledges messages", async () => {
+  respond(() =>
+    Response.json({ error: "Synthetic unavailable" }, { status: 503 }),
+  );
+  mount();
+  await screen.findByRole("alert");
+  expect(calls.every((call) => !call.url.endsWith("/message-read"))).toBe(true);
+});
+
+test("read failure is visible and a retry confirms the same displayed watermark", async () => {
+  const value = messageDetail();
+  let failed = true;
+  respond((url) => {
+    if (url.endsWith("/message-read")) {
+      if (failed) {
+        failed = false;
+        return Response.json({}, { status: 503 });
+      }
+      return Response.json({ throughEventId: 101 });
+    }
+    return Response.json(value);
+  });
+  const { onChanged } = mount(value);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível registrar a leitura dos recados.",
+  );
+  expect(onChanged).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Tentar registrar leitura novamente" }),
+  );
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("queue refresh updates an open detail and acknowledges only newly displayed messages", async () => {
+  let current = messageDetail();
+  respond((url, init) =>
+    url.endsWith("/message-read")
+      ? Response.json(JSON.parse(String(init.body)))
+      : Response.json(current),
+  );
+  const changed = vi.fn();
+  const close = vi.fn();
+  const view = render(
+    <OccurrenceDetailPanel
+      occurrenceId={current.id}
+      onClose={close}
+      onChanged={changed}
+      refreshVersion={0}
+    />,
+  );
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  current = messageDetail(102);
+  view.rerender(
+    <OccurrenceDetailPanel
+      occurrenceId={current.id}
+      onClose={close}
+      onChanged={changed}
+      refreshVersion={1}
+    />,
+  );
+  await screen.findByText("Recado sintético 102");
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+  expect(
+    calls
+      .filter((call) => call.url.endsWith("/message-read"))
+      .map((call) => JSON.parse(String(call.init.body)).throughEventId),
+  ).toEqual([101, 102]);
+  view.rerender(
+    <OccurrenceDetailPanel
+      occurrenceId={current.id}
+      onClose={close}
+      onChanged={changed}
+      refreshVersion={2}
+    />,
+  );
+  await waitFor(() =>
+    expect(calls.filter((call) => call.init.method === "GET")).toHaveLength(3),
+  );
+  expect(changed).toHaveBeenCalledTimes(2);
+});
+
+test("background detail failure preserves presented content and drafts without advancing reading", async () => {
+  const value = messageDetail();
+  let failRefresh = false;
+  respond((url, init) => {
+    if (url.endsWith("/message-read"))
+      return Response.json(JSON.parse(String(init.body)));
+    return failRefresh
+      ? Response.json({}, { status: 503 })
+      : Response.json(value);
+  });
+  const changed = vi.fn();
+  const close = vi.fn();
+  const view = render(
+    <OccurrenceDetailPanel
+      occurrenceId={value.id}
+      onClose={close}
+      onChanged={changed}
+      refreshVersion={0}
+    />,
+  );
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  const input = screen.getByPlaceholderText(
+    "Escreva uma atualização: uma visita, um orçamento, um combinado",
+  );
+  fireEvent.change(input, {
+    target: { value: "Rascunho sintético preservado" },
+  });
+  failRefresh = true;
+  view.rerender(
+    <OccurrenceDetailPanel
+      occurrenceId={value.id}
+      onClose={close}
+      onChanged={changed}
+      refreshVersion={1}
+    />,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível atualizar a ocorrência.",
+  );
+  expect(screen.getByText("Recado sintético 101")).toBeVisible();
+  expect(input).toHaveValue("Rascunho sintético preservado");
+  expect(
+    calls.filter((call) => call.url.endsWith("/message-read")),
+  ).toHaveLength(1);
+});

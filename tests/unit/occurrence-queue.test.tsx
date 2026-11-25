@@ -253,3 +253,52 @@ test("mobile tabs support keyboard selection and retain it through data and view
     vi.unstubAllGlobals();
   }
 });
+
+test("execution and new-message signals combine without hiding useful card information", () => {
+  const item = queueFixture("all").columns.delegated.items[0];
+  render(
+    <OccurrenceCard
+      item={{
+        ...item,
+        taskStarted: true,
+        hasNewEmployeeMessage: true,
+        responsibleName: "Funcionário Sintético",
+        dueDate: "2026-12-01",
+      }}
+    />,
+  );
+  expect(screen.getByText("Em execução")).toBeVisible();
+  expect(screen.getByText("Recado novo")).toBeVisible();
+  expect(screen.getByText("Responsável: Funcionário Sintético")).toBeVisible();
+  expect(screen.getByText("Previsão: 01/12/2026")).toBeVisible();
+});
+
+test("execution and completion signals are constrained to their current columns", () => {
+  const item = queueFixture("all").columns.new.items[0];
+  const view = render(
+    <OccurrenceCard
+      item={{
+        ...item,
+        taskStarted: true,
+        completedByEmployee:
+          "Concluída por Funcionário Sintético (Função Sintética)",
+      }}
+    />,
+  );
+  expect(screen.queryByText("Em execução")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Concluída por/)).not.toBeInTheDocument();
+  view.rerender(
+    <OccurrenceCard
+      item={{
+        ...item,
+        status: "completed",
+        completedAt: "2026-11-25T10:00:00Z",
+        completedByEmployee:
+          "Concluída por Funcionário Sintético (Função Sintética)",
+      }}
+    />,
+  );
+  expect(
+    screen.getByText("Concluída por Funcionário Sintético (Função Sintética)"),
+  ).toBeVisible();
+});
