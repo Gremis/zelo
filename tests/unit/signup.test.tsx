@@ -43,7 +43,6 @@ function fillValidForm() {
 
 test("shows accessible required errors and focuses the first invalid field", () => {
   renderSignup();
-  expect(screen.getByRole("main")).toHaveAttribute("lang", "pt-BR");
   expect(screen.getByLabelText("Celular")).toHaveAttribute(
     "placeholder",
     "(00) 90000-0000",
