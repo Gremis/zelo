@@ -25,6 +25,9 @@ insert into auth.users (id, email, raw_user_meta_data) values
   ('51400000-0000-4000-8000-000000000001', 's14-a@example.invalid', '{"is_sindico": true}'),
   ('51400000-0000-4000-8000-000000000002', 's14-b@example.invalid', '{"is_sindico": true}'),
   ('51400000-0000-4000-8000-000000000003', 's14-c@example.invalid', '{"is_sindico": false}');
+update auth.users set email_confirmed_at=now() where id in('51400000-0000-4000-8000-000000000001','51400000-0000-4000-8000-000000000002','51400000-0000-4000-8000-000000000003');
+insert into auth.sessions(id,user_id) values('51400000-0000-4000-9000-000000000001','51400000-0000-4000-8000-000000000001'),('51400000-0000-4000-9000-000000000002','51400000-0000-4000-8000-000000000002'),('51400000-0000-4000-9000-000000000003','51400000-0000-4000-8000-000000000003');
+
 
 select has_table('public', 'funcoes', 'Tabela funcoes existe');
 select has_table('public', 'funcionarios', 'Tabela funcionarios existe');
@@ -268,7 +271,7 @@ grant select on s14_refs to authenticated;
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
 
 select is(auth.uid(), '51400000-0000-4000-8000-000000000001'::uuid, 'Identidade do síndico A');
 
@@ -347,7 +350,7 @@ select throws_ok(
 -- Síndico B: isolamento simétrico.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000002","session_id":"51400000-0000-4000-9000-000000000002","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios where sindico_id <> auth.uid()),
   0::bigint, 'Síndico B também só enxerga a própria carteira'
@@ -360,7 +363,7 @@ select is(
 -- Não-síndico: sem acesso.
 select set_config(
   'request.jwt.claims',
-  '{"sub":"51400000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+  '{"sub":"51400000-0000-4000-8000-000000000003","session_id":"51400000-0000-4000-9000-000000000003","role":"authenticated"}', true);
 select is(
   (select count(*) from public.funcionarios), 0::bigint,
   'Não-síndico não enxerga funcionários'
