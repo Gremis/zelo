@@ -2095,17 +2095,3 @@ other PRs to hide inherited work. Temporary deployment checker/workflow changes
 were removed; Node, Vercel Git configuration and the deployment process remain
 as inherited. No manual deployment or shared database operation accompanies
 publishing this feature PR.
-
-## Canonical migration coordination
-
-This branch preserves the sixteen migrations already recorded in development and production, through `20261122152000`, exactly as in develop commit `b591c8af0a781994ddda74dac06b6d005e57b33f`. Missing baseline files are synchronized without changing the published definitions.
-
-Canonical dependency identities are `20261124120000_create_funcionarios`, `20261124120500_employee_role_seed_backfill`, `20261124121000_public_registration_attempts` and `20261124130000_create_funcionario_rpc`. The employee base is the unchanged ORI-49 definition; the additive seed migration preserves ORI-50 backfill and role-activation behavior. Each branch includes only its applicable dependencies. Do not reintroduce the old employee versions `20261120120000`/`20261120130000` or registration attempts at the employee version.
-
-Uploads retain `20261124160000`. Resident lookup uses `20261126130000`; the original detail migration remains `20261124170000`, with `20261126140000` restoring tracking and workflow fields after workflow migrations. ORI-71 uses `20261126170000` and a separate AI registration RPC, preserving the existing nine-argument rules registration contract and callers.
-
-Coordination order: #32 → #33; #35 → #36 → #37 and #39 → #40 → #41 → #42 follow #33; #43 follows those chains and #38; #44 follows #43; #49 carries the workflow schema prerequisites and final detail compatibility. The #45 → #46 → #47 → #48 AI stack carries the immutable develop baseline. ORI-104 code and migrations `26150000`/`26160000` are deliberately excluded from these publications.
-
-Existing local databases with legacy migration identities must not be reset, repaired or pushed to automatically. Disposable database validation covers fresh installation and upgrade from the sixteen-migration baseline. Actual development/production schema inspection in read-only mode and a separate dry-run for each destination remain necessary before any future remote application. These branch updates do not merge PRs or deploy.
-
-The employee and condominium SQL fixtures use confirmed accounts and live sessions required by the immutable active-session migration. No access policy is relaxed.
