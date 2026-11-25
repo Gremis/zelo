@@ -70,7 +70,7 @@ test("real condominium flow, concurrent creation and tenant isolation", async ({
     await page.getByRole("link", { name: "Condomínios", exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();
     await expect(
-      page.getByText("Nenhum condomínio cadastrado.", { exact: false }),
+      page.getByText("Nenhum condomínio por enquanto", { exact: false }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Novo condomínio", exact: true })
@@ -284,7 +284,9 @@ test("real condominium flow, concurrent creation and tenant isolation", async ({
       await expect(
         publicPage.getByText("Endereço atualizado", { exact: true }),
       ).toBeVisible();
-      await expect(publicPage.locator("form")).toHaveCount(0);
+      await expect(
+        publicPage.getByRole("form", { name: "Registrar ocorrência" }),
+      ).toBeVisible();
       await publicPage.goto("/c/does-not-exist-ab12");
       await expect(
         publicPage.getByRole("heading", { name: "Link não encontrado" }),

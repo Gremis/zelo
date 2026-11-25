@@ -51,7 +51,7 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
   });
   const accounts: string[] = [];
   const contexts = [];
-  const condo = randomUUID();
+  let condo = randomUUID();
   try {
     for (let i = 0; i < 2; i++) {
       const email = `ori59-http-${randomUUID()}@example.invalid`;
@@ -75,10 +75,78 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
         ).status(),
       ).toBe(200);
     }
-    sql(
-      `insert into condominiums(id,manager_id,name,address) values (${quote(condo)},${quote(accounts[0])},'Synthetic HTTP condominium','Synthetic address');`,
+    const createdCondominium = await contexts[0].request.post(
+      "/api/condominiums",
+      {
+        data: {
+          name: "Synthetic HTTP condominium",
+          address: "Synthetic address",
+        },
+      },
     );
-    const slug = sql(`select slug from condominiums where id=${quote(condo)};`);
+    expect(createdCondominium.status()).toBe(201);
+    const condominium = (await createdCondominium.json()).condominium;
+    condo = condominium.id;
+    const slug = condominium.slug;
+    expect(condominium.url).toBe(`http://127.0.0.1:3100/c/${slug}`);
+    const anonymous = await browser.newContext({
+      viewport: { width: 360, height: 900 },
+    });
+    contexts.push(anonymous);
+    const resident = await anonymous.newPage();
+    await resident.goto(condominium.url);
+    await expect(
+      resident.getByRole("heading", { name: condominium.name }),
+    ).toBeVisible();
+    await expect(
+      resident.getByText(condominium.address, { exact: true }),
+    ).toBeVisible();
+    await resident.getByRole("textbox", { name: "Seu nome" }).fill("Ana");
+    await resident
+      .getByRole("textbox", { name: "Sua unidade" })
+      .fill("Apto 101");
+    await resident
+      .getByRole("textbox", { name: "Celular" })
+      .fill("11900000000");
+    await resident
+      .getByRole("textbox", { name: "Onde fica o problema" })
+      .fill("Hall");
+    await resident
+      .getByRole("textbox", { name: "O que aconteceu" })
+      .fill("Lâmpada apagada");
+    await resident.getByRole("button", { name: "Enviar ocorrência" }).click();
+    await expect(
+      resident.getByRole("heading", { name: "Ocorrência registrada" }),
+    ).toBeFocused();
+    const residentNumber = Number(
+      (await resident.getByText(/^#[0-9]+$/).innerText()).slice(1),
+    );
+    expect(residentNumber).toBeGreaterThan(0);
+    const stored = JSON.parse(
+      sql(
+        `select row_to_json(o) from occurrences o where number=${residentNumber};`,
+      ),
+    );
+    expect(stored).toMatchObject({
+      condominium_id: condo,
+      status: "new",
+      origin: "public_form",
+      reporter_name: "Ana",
+      reporter_unit_or_role: "Apto 101",
+      created_by_profile_id: null,
+    });
+    expect(
+      sql(
+        `select count(*) from occurrence_events where occurrence_id=${quote(stored.id)} and event_type='registered' and author_name='Ana' and author_phone='11900000000' and internal_description='Registrou a ocorrência pelo formulário. Unidade informada: Apto 101';`,
+      ),
+    ).toBe("1");
+    await resident.getByRole("button", { name: "Registrar outra" }).click();
+    await expect(
+      resident.getByRole("textbox", { name: "Seu nome" }),
+    ).toHaveValue("");
+    await expect(
+      resident.getByRole("heading", { name: condominium.name }),
+    ).toBeVisible();
     const endpoint = `/api/public/condominiums/${slug}`;
     expect(await (await request.get(endpoint)).json()).toEqual({
       name: "Synthetic HTTP condominium",
@@ -141,56 +209,64 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
       author_type: "reporter",
       author_profile_id: null,
     });
-    const lostKey = randomUUID();
     const page = await contexts[1].newPage();
-    await page.goto(`/c/${slug}`);
+    await page.goto(condominium.url);
     let committedNumber: number | undefined;
-    await page.route(
-      `**${endpoint}/occurrences`,
-      async (route) => {
-        const response = await route.fetch();
-        expect(response.status()).toBe(200);
-        const confirmed = await response.json();
-        expect(Object.keys(confirmed)).toEqual(["number"]);
+    let lostKey = "";
+    const attempts: { key: string; body: unknown }[] = [];
+    await page.route(`**${endpoint}/occurrences`, async (route) => {
+      attempts.push({
+        key: route.request().headers()["idempotency-key"],
+        body: route.request().postDataJSON(),
+      });
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      const confirmed = await response.json();
+      expect(Object.keys(confirmed)).toEqual(["number"]);
+      if (attempts.length === 1) {
         committedNumber = confirmed.number;
+        lostKey = attempts[0].key;
         await route.abort("connectionreset");
-      },
-      { times: 1 },
-    );
-    const outcome = await page.evaluate(
-      async ({ endpoint, data, lostKey }) => {
-        try {
-          await fetch(`${endpoint}/occurrences`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": lostKey,
-            },
-            body: JSON.stringify(data),
-          });
-          return "unexpected_response";
-        } catch {
-          return "network_failure";
-        }
-      },
-      { endpoint, data, lostKey },
-    );
-    expect(outcome).toBe("network_failure");
+      } else await route.fulfill({ response });
+    });
+    await page.getByRole("textbox", { name: "Seu nome" }).fill("Ana");
+    await page.getByRole("textbox", { name: "Sua unidade" }).fill("Porteiro");
+    await page.getByRole("textbox", { name: "Celular" }).fill("11900000000");
+    await page
+      .getByRole("textbox", { name: "Onde fica o problema" })
+      .fill("Hall");
+    await page
+      .getByRole("textbox", { name: "O que aconteceu" })
+      .fill("Cheiro de gás");
+    await page.getByRole("button", { name: "Enviar ocorrência" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Precisamos confirmar seu envio" }),
+    ).toBeFocused();
     expect(committedNumber).toBeGreaterThan(0);
     expect(
       sql(
         `select o.number from private.public_registration_attempts a join occurrences o on o.id=a.occurrence_id where a.condominium_id=${quote(condo)} and a.attempt_key=${quote(lostKey)};`,
       ),
     ).toBe(String(committedNumber));
-    const recovered = await request.post(`${endpoint}/occurrences`, {
-      headers: { "Idempotency-Key": lostKey },
-      data,
-    });
-    expect(recovered.status()).toBe(200);
-    expect(await recovered.json()).toEqual({ number: committedNumber });
+    await page
+      .getByRole("button", { name: "Recuperar envio original" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Ocorrência registrada" }),
+    ).toBeFocused();
+    await expect(
+      page.getByText(`#${committedNumber}`, { exact: true }),
+    ).toBeVisible();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toEqual(attempts[0]);
     expect(
       sql(
-        `select count(*) from occurrence_events e join occurrences o on o.id=e.occurrence_id where o.number=${committedNumber};`,
+        `select count(*) from occurrences where condominium_id=${quote(condo)} and description='Cheiro de gás' and number=${committedNumber};`,
+      ),
+    ).toBe("1");
+    expect(
+      sql(
+        `select count(*) from occurrence_events e join occurrences o on o.id=e.occurrence_id where o.number=${committedNumber} and e.author_type='reporter' and e.author_profile_id is null and e.author_role='Porteiro';`,
       ),
     ).toBe("1");
     const occurrenceId = sql(
@@ -210,9 +286,20 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
       const queue = await response.json();
       expect(
         queue.columns.new.items.some(
-          (item: { number: number }) => item.number === receipt.number,
+          (item: { number: number }) => item.number === residentNumber,
         ),
       ).toBe(i === 0);
+      const queuePage = await contexts[i].newPage();
+      await queuePage.goto("/fila");
+      await queuePage.reload();
+      if (i === 0)
+        await expect(
+          queuePage.getByText(`#${residentNumber}`, { exact: true }),
+        ).toBeVisible();
+      else
+        await expect(
+          queuePage.getByText(`#${residentNumber}`, { exact: true }),
+        ).toHaveCount(0);
     }
   } finally {
     for (const context of contexts) await context.close();

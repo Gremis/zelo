@@ -10,5 +10,5 @@ export type Result<T> =
 
 export type FirstStepsOperations = {
   load: () => Promise<Result<FirstSteps>>;
-  dismiss: () => Promise<Result<FirstSteps>>;
+  dismiss: () => Promise<Result<{ dismissed: boolean }>>;
 };
