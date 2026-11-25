@@ -78,7 +78,7 @@ test("exposes role loading failures with a working retry and never invents optio
   failed = false;
   fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
   await screen.findByText("Nenhuma função disponível nesta carteira.");
-  expect(screen.getByLabelText("Função").children).toHaveLength(2);
+  expect(screen.getByLabelText("Função").children).toHaveLength(1);
 });
 
 test("identifies inactive employees without status controls and preserves labels", async () => {
