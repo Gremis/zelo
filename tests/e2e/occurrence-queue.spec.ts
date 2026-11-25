@@ -329,6 +329,9 @@ async function mockOccurrenceDetail(page: Page) {
   let current = occurrenceDetailFixture();
   const priorityBodies: PriorityBody[] = [];
   const updates: string[] = [];
+  await page.route("**/api/occurrences/*/eligible-employees", (route) =>
+    route.fulfill({ json: { employees: [] } }),
+  );
   await page.route("**/api/occurrences/*", (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     return route.fulfill({ json: current });
