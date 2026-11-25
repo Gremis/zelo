@@ -39,6 +39,12 @@ export function ConnectedOccurrenceQueue({
     } catch (error) {
       if (error instanceof QueueLoadError && error.status === 401)
         router.replace("/login");
+      if (mounted.current)
+        setState({
+          status: "error",
+          message:
+            "Alteração salva, mas não foi possível atualizar a fila. Tente novamente.",
+        });
     }
   }, [router]);
 

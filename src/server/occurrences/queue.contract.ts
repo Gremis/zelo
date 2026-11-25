@@ -34,6 +34,8 @@ export type QueueCard = {
   reporterName: string | null;
   registeredAt: string;
   completedAt: string | null;
+  responsibleName?: string | null;
+  dueDate?: string | null;
 };
 
 export type PortfolioQueue = {
@@ -76,6 +78,8 @@ function card(value: unknown, status: QueueStatus): QueueCard {
     reporterName: nullableString(row.reporterName),
     registeredAt: date(row.registeredAt),
     completedAt: row.completedAt === null ? null : date(row.completedAt),
+    responsibleName: nullableString(row.responsibleName ?? null),
+    dueDate: nullableString(row.dueDate ?? null),
   };
   if (
     result.number < 1 ||

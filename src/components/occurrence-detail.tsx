@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { OccurrenceWorkflow } from "./occurrence-workflow";
 import { useRouter } from "next/navigation";
 import { formatPhone } from "@/lib/auth/phone";
 import {
@@ -135,6 +136,8 @@ export function OccurrenceDetailPanel({
   onChanged?: () => void;
 }) {
   const router = useRouter();
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const workflowLock = useRef(false);
   const desktop = useDesktop();
   const now = useNow();
   const titleId = useId();
@@ -207,12 +210,12 @@ export function OccurrenceDetailPanel({
       if (event.key === "Escape") {
         if (event.target instanceof HTMLSelectElement) return;
         event.preventDefault();
-        onClose();
+        if (!workflowLock.current) onClose();
         return;
       }
       if (event.key !== "Tab" || !desktop) return;
       const focusable = panel.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable?.length) return;
       const first = focusable[0];
@@ -255,6 +258,13 @@ export function OccurrenceDetailPanel({
             }
           : current,
       );
+      const currentDetail = await loadOccurrenceDetail(detail.id).catch(
+        () => null,
+      );
+      if (currentDetail)
+        setDetail((current) =>
+          currentDetail.version !== current?.version ? currentDetail : current,
+        );
       onChanged?.();
     } catch (error) {
       const status =
@@ -288,6 +298,13 @@ export function OccurrenceDetailPanel({
             }
           : current,
       );
+      const currentDetail = await loadOccurrenceDetail(detail.id).catch(
+        () => null,
+      );
+      if (currentDetail)
+        setDetail((current) =>
+          currentDetail.version !== current?.version ? currentDetail : current,
+        );
       onChanged?.();
     } catch (error) {
       const status =
@@ -434,7 +451,9 @@ export function OccurrenceDetailPanel({
               <select
                 id={priorityId}
                 value={priority ?? ""}
-                disabled={!detail.canDecidePriority || savingPriority}
+                disabled={
+                  !detail.canDecidePriority || savingPriority || workflowBusy
+                }
                 onChange={(event) => {
                   const value = event.target.value as QueuePriority;
                   if (value) void changePriority(value);
@@ -485,7 +504,9 @@ export function OccurrenceDetailPanel({
                 <select
                   id={reasonId}
                   value={detail.priorityChangeReason ?? ""}
-                  disabled={!detail.canDecidePriority || savingPriority}
+                  disabled={
+                    !detail.canDecidePriority || savingPriority || workflowBusy
+                  }
                   onChange={(event) =>
                     void changeReason(
                       (event.target.value ||
@@ -503,6 +524,23 @@ export function OccurrenceDetailPanel({
                 </select>
               </div>
             )}
+            <fieldset
+              disabled={savingPriority || savingUpdate}
+              className="min-w-0"
+            >
+              <OccurrenceWorkflow
+                key={detail.id}
+                detail={detail}
+                onBusy={(value) => {
+                  workflowLock.current = value;
+                  setWorkflowBusy(value);
+                }}
+                onChanged={(value) => {
+                  setDetail(value);
+                  onChanged?.();
+                }}
+              />
+            </fieldset>
             <div>
               <h3 className="text-[11px] font-bold tracking-[0.04em] text-[#6b7280] uppercase">
                 Registrada por
@@ -542,7 +580,7 @@ export function OccurrenceDetailPanel({
                     id={updateId}
                     value={text}
                     rows={3}
-                    disabled={savingUpdate}
+                    disabled={savingUpdate || workflowBusy}
                     aria-invalid={Boolean(updateError)}
                     aria-describedby={`${helpId}${updateError ? ` ${updateErrorId}` : ""}`}
                     onChange={(event) => {
@@ -556,7 +594,7 @@ export function OccurrenceDetailPanel({
                   <div className="mt-2 flex justify-end">
                     <button
                       type="submit"
-                      disabled={savingUpdate}
+                      disabled={savingUpdate || workflowBusy}
                       className="cursor-pointer rounded-lg bg-[#0b5e58] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#0f766e] disabled:cursor-wait disabled:opacity-60"
                     >
                       Adicionar
@@ -609,6 +647,17 @@ export function OccurrenceDetailPanel({
                     <p className="mt-0.5 text-sm leading-[1.45] text-[#344054] [overflow-wrap:anywhere]">
                       {event.text}
                     </p>
+                    {event.attachments?.map((file) => (
+                      <a
+                        key={file.id}
+                        className="mt-1 block min-h-10 text-sm font-semibold text-[#0b5e58] underline [overflow-wrap:anywhere]"
+                        href={`/api/occurrences/${detail.id}/attachments/${file.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {file.name} (interno)
+                      </a>
+                    ))}
                   </li>
                 ))}
               </ol>
@@ -627,7 +676,12 @@ export function OccurrenceDetailPanel({
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/40 px-4 py-8 max-[1000px]:static max-[1000px]:overflow-visible max-[1000px]:bg-transparent max-[1000px]:p-0"
       onMouseDown={(event) => {
-        if (desktop && event.target === event.currentTarget) onClose();
+        if (
+          desktop &&
+          event.target === event.currentTarget &&
+          !workflowLock.current
+        )
+          onClose();
       }}
     >
       <div
@@ -641,6 +695,7 @@ export function OccurrenceDetailPanel({
           ref={closeButton}
           type="button"
           aria-label="Fechar"
+          disabled={workflowBusy}
           onClick={onClose}
           className="absolute top-3 right-3 grid size-8 cursor-pointer place-items-center rounded-lg border border-[#e5e7eb] bg-white text-[#475467] hover:bg-[#f2f4f7]"
         >

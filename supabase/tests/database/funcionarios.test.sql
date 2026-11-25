@@ -254,6 +254,8 @@ values (
   'Funcionário do B', '31 98000-0000'
 );
 
+select set_config('request.jwt.claims', '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
+
 select lives_ok(
   $$update public.funcionarios set ativo = false where nome = 'Carlos Souza'$$,
   'Soft delete: funcionário pode ser desativado'
@@ -312,6 +314,9 @@ grant select on s14_refs to authenticated;
 -- =====================================================================
 -- Isolamento entre síndicos (identidade autenticada)
 -- =====================================================================
+update auth.users set email_confirmed_at=now() where id::text like '51400000-%';
+
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -343,6 +348,8 @@ select lives_ok(
 );
 
 -- A desativa o próprio funcionário (caminho de UPDATE sob RLS).
+select set_config('request.jwt.claims', '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
+
 select lives_ok(
   $$update public.funcionarios set ativo = false where nome = 'Joana Martins'$$,
   'Síndico A desativa o próprio funcionário'
