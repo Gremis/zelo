@@ -322,6 +322,8 @@ select set_config(
   'request.jwt.claims',
   '{"sub":"51400000-0000-4000-8000-000000000001","session_id":"51400000-0000-4000-9000-000000000001","role":"authenticated"}', true);
 
+select ok(public.has_active_session(), 'Employee fixture uses a confirmed active session');
+
 select is(auth.uid(), '51400000-0000-4000-8000-000000000001'::uuid, 'Identidade do síndico A');
 
 select is(

@@ -79,6 +79,7 @@ function EmployeeForm({
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
+  const invalidField = useRef<keyof Fields | undefined>(undefined);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -107,13 +108,16 @@ function EmployeeForm({
     void load();
     return () => controller.abort();
   }, [attempt]);
+  useEffect(() => {
+    if (saving || !invalidField.current) return;
+    form.current
+      ?.querySelector<HTMLElement>(`[name="${invalidField.current}"]`)
+      ?.focus();
+    invalidField.current = undefined;
+  }, [errors, saving]);
   function invalid(next: Partial<Fields>) {
+    invalidField.current = keys.find((key) => next[key]);
     setErrors(next);
-    const key = keys.find((key) => next[key]);
-    if (key)
-      requestAnimationFrame(() =>
-        form.current?.querySelector<HTMLElement>(`[name="${key}"]`)?.focus(),
-      );
   }
   const creatingRole = fields.funcaoId === newRole;
   const ready = !loading && !loadError && condos.length > 0;
