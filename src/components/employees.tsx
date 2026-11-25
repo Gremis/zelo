@@ -21,10 +21,12 @@ const heading =
   "font-[family-name:var(--font-panel-heading)] font-bold leading-[1.45] tracking-[-0.01em]";
 const input =
   "min-h-11 w-full min-w-0 rounded-lg border border-[#d0d5dd] bg-white px-2.5 py-2 text-[13px] font-semibold leading-[1.45] aria-invalid:border-[#b42318] focus:outline-2 focus:outline-offset-2 focus:outline-teal-700 disabled:opacity-60 sm:min-h-0 pointer-coarse:min-h-11";
+const newRole = "__new_role__";
 const empty = {
   nome: "",
   celular: "",
   funcaoId: "",
+  funcaoNome: "",
   condominioId: "",
   horarioTrabalho: "",
 };
@@ -34,6 +36,7 @@ const labels: Fields = {
   nome: "Nome e sobrenome",
   celular: "Celular",
   funcaoId: "Função",
+  funcaoNome: "Nome da nova função",
   condominioId: "Condomínio",
   horarioTrabalho: "Horário de trabalho",
 };
@@ -112,7 +115,8 @@ function EmployeeForm({
         form.current?.querySelector<HTMLElement>(`[name="${key}"]`)?.focus(),
       );
   }
-  const ready = !loading && !loadError && roles.length > 0 && condos.length > 0;
+  const creatingRole = fields.funcaoId === newRole;
+  const ready = !loading && !loadError && condos.length > 0;
   return (
     <form
       ref={form}
@@ -125,13 +129,15 @@ function EmployeeForm({
         const role = roles.find((item) => item.id === fields.funcaoId);
         const validation = validateCreateFuncionario({
           ...fields,
-          funcaoNome: role?.nome,
+          funcaoNome: creatingRole ? fields.funcaoNome : role?.nome,
         });
         const next: Partial<Fields> = validation.ok
           ? {}
           : { ...validation.error.details };
-        delete (next as Record<string, string>).funcaoNome;
-        if (!role) next.funcaoId = "Selecione a função.";
+        if (!creatingRole) {
+          delete next.funcaoNome;
+          if (!role) next.funcaoId = "Selecione a função.";
+        }
         if (!condos.some((item) => item.id === fields.condominioId))
           next.condominioId = "Selecione o condomínio.";
         if (Object.keys(next).length) {
@@ -143,11 +149,15 @@ function EmployeeForm({
         setErrors({});
         setError("");
         try {
+          const { funcaoId, funcaoNome, ...employee } = fields;
+          const payload = creatingRole
+            ? { ...employee, funcaoNome }
+            : { ...employee, funcaoId };
           const response = await fetch("/api/funcionarios", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(fields),
+            body: JSON.stringify(payload),
           });
           const result = await response.json();
           if (!response.ok) {
@@ -218,31 +228,121 @@ function EmployeeForm({
         </>
       )}
       <div className="grid gap-x-3 gap-y-3.5 sm:grid-cols-2">
-        {keys.map((key) => (
-          <div
-            key={key}
-            className={`min-w-0 ${key === "horarioTrabalho" ? "sm:col-span-2" : ""}`}
-          >
-            <label
-              htmlFor={`employee-${key}`}
-              className="mb-[5px] block text-[13px] font-semibold"
+        {keys
+          .filter((key) => key !== "funcaoNome")
+          .map((key) => (
+            <div
+              key={key}
+              className={`min-w-0 ${key === "horarioTrabalho" ? "sm:col-span-2" : ""}`}
             >
-              {labels[key]}
-              {key === "horarioTrabalho" && (
-                <span className="ml-2 font-normal text-[#6b7280]">
-                  opcional
-                </span>
-              )}
-            </label>
-            {key === "funcaoId" || key === "condominioId" ? (
-              <div className="relative">
-                <select
+              <label
+                htmlFor={`employee-${key}`}
+                className="mb-[5px] block text-[13px] font-semibold"
+              >
+                {labels[key]}
+                {key === "horarioTrabalho" && (
+                  <span className="ml-2 font-normal text-[#6b7280]">
+                    opcional
+                  </span>
+                )}
+              </label>
+              {key === "funcaoId" || key === "condominioId" ? (
+                <div className="relative">
+                  <select
+                    id={`employee-${key}`}
+                    name={key}
+                    className={`${input} appearance-none pr-8`}
+                    value={fields[key]}
+                    disabled={saving || !ready}
+                    required
+                    aria-invalid={!!errors[key]}
+                    aria-describedby={
+                      errors[key] ? `employee-${key}-error` : undefined
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setFields({
+                        ...fields,
+                        [key]: value,
+                        ...(key === "funcaoId" ? { funcaoNome: "" } : {}),
+                      });
+                      if (key === "funcaoId")
+                        setErrors((previous) => ({
+                          ...previous,
+                          funcaoId: undefined,
+                          funcaoNome: undefined,
+                        }));
+                    }}
+                  >
+                    <option value="">
+                      Selecione{" "}
+                      {key === "funcaoId" ? "a função" : "o condomínio"}
+                    </option>
+                    {key === "funcaoId"
+                      ? roles.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))
+                      : condos.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                            {condos.filter((value) => value.name === item.name)
+                              .length > 1
+                              ? ` · ${item.address} · ${item.id}`
+                              : ""}
+                          </option>
+                        ))}
+                    {key === "funcaoId" && (
+                      <option value={newRole}>+ Criar nova função</option>
+                    )}
+                  </select>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
+                  >
+                    <path
+                      d="m3 6 5 5 5-5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              ) : key === "celular" ? (
+                <PhoneInput
                   id={`employee-${key}`}
                   name={key}
-                  className={`${input} appearance-none pr-8`}
+                  className={input}
                   value={fields[key]}
-                  disabled={saving || !ready}
+                  onValueChange={(value) =>
+                    setFields({ ...fields, celular: value })
+                  }
                   required
+                  disabled={saving}
+                  placeholder="(00) 90000-0000"
+                  aria-invalid={!!errors[key]}
+                  aria-describedby={`employee-phone-help${errors[key] ? ` employee-${key}-error` : ""}`}
+                />
+              ) : (
+                <input
+                  id={`employee-${key}`}
+                  name={key}
+                  className={input}
+                  value={fields[key]}
+                  autoFocus={key === "nome"}
+                  autoComplete={key === "nome" ? "name" : "off"}
+                  maxLength={key === "nome" ? 100 : 200}
+                  required={key === "nome"}
+                  disabled={saving}
+                  placeholder={
+                    key === "horarioTrabalho"
+                      ? "Ex.: seg a sex, 7h às 16h ou 12x36 noturno"
+                      : undefined
+                  }
                   aria-invalid={!!errors[key]}
                   aria-describedby={
                     errors[key] ? `employee-${key}-error` : undefined
@@ -250,99 +350,64 @@ function EmployeeForm({
                   onChange={(e) =>
                     setFields({ ...fields, [key]: e.target.value })
                   }
+                />
+              )}
+              {errors[key] && (
+                <p
+                  id={`employee-${key}-error`}
+                  className="mt-[5px] text-[12.5px] text-[#b42318]"
                 >
-                  <option value="">
-                    Selecione {key === "funcaoId" ? "a função" : "o condomínio"}
-                  </option>
-                  {key === "funcaoId"
-                    ? roles.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.nome}
-                        </option>
-                      ))
-                    : condos.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                          {condos.filter((value) => value.name === item.name)
-                            .length > 1
-                            ? ` · ${item.address} · ${item.id}`
-                            : ""}
-                        </option>
-                      ))}
-                </select>
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
-                >
-                  <path
-                    d="m3 6 5 5 5-5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                  {errors[key]}
+                </p>
+              )}
+              {key === "funcaoId" && creatingRole && (
+                <div className="mt-3">
+                  <label
+                    htmlFor="employee-funcaoNome"
+                    className="mb-[5px] block text-[13px] font-semibold"
+                  >
+                    Nome da nova função
+                  </label>
+                  <input
+                    id="employee-funcaoNome"
+                    name="funcaoNome"
+                    className={input}
+                    value={fields.funcaoNome}
+                    required
+                    disabled={saving}
+                    autoComplete="off"
+                    maxLength={50}
+                    placeholder="Ex.: Jardineiro"
+                    aria-invalid={!!errors.funcaoNome}
+                    aria-describedby={
+                      errors.funcaoNome
+                        ? "employee-funcaoNome-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      setFields({ ...fields, funcaoNome: event.target.value })
+                    }
                   />
-                </svg>
-              </div>
-            ) : key === "celular" ? (
-              <PhoneInput
-                id={`employee-${key}`}
-                name={key}
-                className={input}
-                value={fields[key]}
-                onValueChange={(value) =>
-                  setFields({ ...fields, celular: value })
-                }
-                required
-                disabled={saving}
-                placeholder="(00) 90000-0000"
-                aria-invalid={!!errors[key]}
-                aria-describedby={`employee-phone-help${errors[key] ? ` employee-${key}-error` : ""}`}
-              />
-            ) : (
-              <input
-                id={`employee-${key}`}
-                name={key}
-                className={input}
-                value={fields[key]}
-                autoFocus={key === "nome"}
-                autoComplete={key === "nome" ? "name" : "off"}
-                maxLength={key === "nome" ? 100 : 200}
-                required={key === "nome"}
-                disabled={saving}
-                placeholder={
-                  key === "horarioTrabalho"
-                    ? "Ex.: seg a sex, 7h às 16h ou 12x36 noturno"
-                    : undefined
-                }
-                aria-invalid={!!errors[key]}
-                aria-describedby={
-                  errors[key] ? `employee-${key}-error` : undefined
-                }
-                onChange={(e) =>
-                  setFields({ ...fields, [key]: e.target.value })
-                }
-              />
-            )}
-            {errors[key] && (
-              <p
-                id={`employee-${key}-error`}
-                className="mt-[5px] text-[12.5px] text-[#b42318]"
-              >
-                {errors[key]}
-              </p>
-            )}
-            {key === "celular" && (
-              <p
-                id="employee-phone-help"
-                className="mt-[5px] text-xs text-[#6b7280]"
-              >
-                Informe um celular com WhatsApp e DDD.
-              </p>
-            )}
-          </div>
-        ))}
+                  {errors.funcaoNome && (
+                    <p
+                      id="employee-funcaoNome-error"
+                      className="mt-[5px] text-[12.5px] text-[#b42318]"
+                    >
+                      {errors.funcaoNome}
+                    </p>
+                  )}
+                </div>
+              )}
+              {key === "celular" && (
+                <p
+                  id="employee-phone-help"
+                  className="mt-[5px] text-xs text-[#6b7280]"
+                >
+                  Informe um celular com WhatsApp e DDD.
+                </p>
+              )}
+            </div>
+          ))}
       </div>
       {error && (
         <p role="alert" className="mt-3 text-[#b42318]">

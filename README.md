@@ -2163,6 +2163,41 @@ no concurrent writers: it verifies snapshots of all preexisting portfolio data.
 local stack without reset. No remote execution or publication is implied by these
 local checks.
 
+## Inline employee role creation (ORI-52)
+
+The native employee-role selector now ends with `+ Criar nova função`. Choosing it
+reveals the required `Nome da nova função` field below that selector. Switching
+back to an existing role removes the field, its error and its discarded value.
+Existing roles are still submitted by `funcaoId`; creation submits `funcaoNome`
+instead, with no selector sentinel or stale role name in the existing-ID request.
+
+The form reuses `validateCreateFuncionario` and sends a single employee POST.
+Selection, typing, blur and cancellation never call the standalone role-creation
+endpoint. ORI-50's `create_funcionario` RPC creates or reuses the role and employee
+in the same transaction, including rollback of a new role when the employee is
+rejected. No migration, endpoint, normalization rule or backend permission is
+added. Canonical names and IDs come from the joined employee list and a fresh
+`GET /api/funcoes` when opening the next form; the frontend does not maintain its
+own matching or deduplication policy. A portfolio with no roles can use creation
+after its authorized condominium choices have loaded.
+
+The conditional field preserves native select keyboard behavior, associated
+inline errors, form-order validation focus, duplicate-submit prevention and field
+retention after a failed save. The field stays in the Função column on desktop
+and precedes Condomínio in the mobile form. The ORI-51 list, sessions, Demo and
+other panel flows remain in place.
+
+Run the local browser suite with `ORI52_LOCAL_TESTS=enabled` alongside the existing
+ORI-51/auth opt-ins and `ACCOUNT_DEMO_ENABLED=true`. It uses only the local stack,
+confirmed synthetic accounts and account-scoped cleanup. Coverage includes
+creation and availability of Jardineira in the next form without page reload,
+real persistence after reload, canonical Porteiro reuse for a lowercase name,
+cancel/switch without orphan roles, duplicate/foreign-condominium rejection with
+transaction rollback, cross-portfolio role IDs, keyboard input and 360px/desktop
+layout. Unit tests separately exercise whitespace validation, backend field
+errors and pending/failed submissions. No role editing, removal, activation or
+task-delegation UI is included.
+
 ## Canonical migration coordination
 
 This branch preserves the sixteen migrations already recorded in development and production, through `20261122152000`, exactly as in develop commit `b591c8af0a781994ddda74dac06b6d005e57b33f`. Missing baseline files are synchronized without changing the published definitions.
