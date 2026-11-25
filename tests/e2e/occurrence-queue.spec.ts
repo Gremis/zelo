@@ -519,9 +519,9 @@ test("detail card saves priority, records a reason and appends manager updates",
     .getByLabel("Escreva uma atualização")
     .fill("Visita marcada para amanhã.");
   await dialog.getByRole("button", { name: "Adicionar" }).click();
-  await expect(dialog.getByRole("status")).toHaveText(
-    "Atualização adicionada.",
-  );
+  await expect(
+    dialog.getByRole("region", { name: "Atividade" }).getByRole("status"),
+  ).toHaveText("Atualização adicionada.");
   await expect(dialog.getByLabel("Escreva uma atualização")).toHaveValue("");
   await expect(history.getByRole("listitem").first()).toContainText(
     "Visita marcada para amanhã.",
