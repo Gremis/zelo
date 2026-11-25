@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { confirmedIdentity } from "@/server/auth/identity";
 import { createFuncionariosRepository } from "./funcionarios.repository";
 import type { FuncionarioError } from "./funcionarios.result";
 import {
@@ -11,12 +11,8 @@ export type ServiceResult =
   | { ok: false; error: FuncionarioError };
 
 export async function getFuncionariosService(): Promise<ServiceResult> {
-  const supabase = await createClient();
-
-  // Distingue "sem sessão" (401) de "sem permissão" (403): sem este getUser,
-  // uma chamada anônima cairia em 42501 -> forbidden (403) com mensagem errada.
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
+  const identity = await confirmedIdentity();
+  if (!identity) {
     return {
       ok: false,
       error: {
@@ -28,6 +24,8 @@ export async function getFuncionariosService(): Promise<ServiceResult> {
 
   return {
     ok: true,
-    service: createFuncionariosService(createFuncionariosRepository(supabase)),
+    service: createFuncionariosService(
+      createFuncionariosRepository(identity.supabase),
+    ),
   };
 }

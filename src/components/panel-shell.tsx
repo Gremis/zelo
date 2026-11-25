@@ -22,7 +22,7 @@ const navigation = [
     group: "Cadastros",
     items: [
       { title: "Condomínios", href: "/condominios" },
-      { title: "Funcionários", href: null },
+      { title: "Funcionários", href: "/funcionarios" },
     ],
   },
 ];

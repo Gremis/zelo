@@ -25,6 +25,7 @@ for (const viewport of [
     await page.goto("/login");
     await page.getByRole("link", { name: "Criar conta" }).click();
     await expect(page).toHaveURL("/criar-conta");
+    await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
     await expect(
       page.getByRole("heading", { name: "Criar conta" }),
     ).toBeVisible();

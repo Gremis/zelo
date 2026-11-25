@@ -65,7 +65,7 @@ test("real condominium flow, concurrent creation and tenant isolation", async ({
       ).status(),
     ).toBe(403);
     const page = await one.newPage();
-    await page.goto("/fila");
+    await page.goto("/condominios");
     await page.getByRole("button", { name: "Abrir menu" }).click();
     await page.getByRole("link", { name: "Condomínios", exact: true }).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();

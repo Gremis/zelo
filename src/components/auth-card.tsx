@@ -73,7 +73,6 @@ export function AuthCard({
   if (variant === "signup") {
     return (
       <main
-        lang="pt-BR"
         data-slot="screen"
         className={`${signupStyles.screen} ${verticalAlign === "center" ? signupStyles["screen-centered"] : signupStyles["screen-start"]} ${signupUi.variable} ${signupHeading.variable} ${signupCode.variable}`}
       >
