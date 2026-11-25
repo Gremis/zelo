@@ -541,6 +541,16 @@ export type Database = {
         Returns: boolean;
       };
       occurrence_detail: { Args: { target_occurrence: string }; Returns: Json };
+      occurrence_upload_operation: {
+        Args: {
+          condominium_slug?: string;
+          operation: string;
+          payload?: Json;
+          session_key: string;
+          upload_secret?: string;
+        };
+        Returns: Json;
+      };
       portfolio_occurrence_queue: {
         Args: Record<PropertyKey, never>;
         Returns: Json;
@@ -587,6 +597,7 @@ export type Database = {
           reporter_name: string;
           reporter_phone: string;
           reporter_unit_or_role: string;
+          upload_secret?: string;
         };
         Returns: {
           number: number;

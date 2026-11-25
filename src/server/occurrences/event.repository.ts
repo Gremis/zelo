@@ -23,6 +23,7 @@ function databaseFailure(code: unknown): never {
 
 export function createOccurrenceEventRepository(
   responseHeaders?: Headers,
+  uploadSecret?: string,
 ): OccurrenceEventRepository {
   return {
     async registerPublic(input) {
@@ -59,6 +60,7 @@ export function createOccurrenceEventRepository(
             body: JSON.stringify({
               ...body,
               ...(input.attemptKey ? { attempt_key: input.attemptKey } : {}),
+              ...(uploadSecret ? { upload_secret: uploadSecret } : {}),
             }),
             cache: "no-store",
             signal: AbortSignal.timeout(15_000),
