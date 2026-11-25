@@ -13,7 +13,7 @@ insert into public.condominiums(id, manager_id, name, address) values
 ('7c000000-0000-4000-8000-000000000010', '7c000000-0000-4000-8000-000000000001', 'Synthetic ORI65', 'Synthetic address');
 insert into public.occurrences(id, condominium_id, origin, channel, description, status, completed_at, registered_at, reporter_name, reporter_phone, reporter_unit_or_role, location, tracking_code) values
 ('7c000000-0000-4000-8000-000000000020', '7c000000-0000-4000-8000-000000000010', 'public_form', 'web', 'Synthetic open report', 'new', null, '2026-11-20 10:00Z', 'Synthetic Reporter', '11900000000', 'Synthetic unit 101', 'Synthetic garage', repeat('a', 64)),
-('7c000000-0000-4000-8000-000000000021', '7c000000-0000-4000-8000-000000000010', 'public_form', 'web', 'Synthetic completed report', 'completed', '2026-11-21 18:00Z', '2026-11-21 10:00Z', 'Synthetic Reporter Two', '11900000001', 'Synthetic unit 202', 'Synthetic hall', repeat('b', 64));
+('7c000000-0000-4000-8000-000000000021', '7c000000-0000-4000-8000-000000000010', 'public_form', 'web', 'Synthetic completed report', 'in_progress', null, '2026-11-21 10:00Z', 'Synthetic Reporter Two', '11900000001', 'Synthetic unit 202', 'Synthetic hall', repeat('b', 64));
 
 insert into public.occurrence_events(occurrence_id, event_type, occurred_at, author_type, author_name, author_phone, internal_description, due_at)
 values
@@ -25,6 +25,8 @@ values
 ('7c000000-0000-4000-8000-000000000020', 'deadline_changed', '2026-11-20 15:00Z', 'manager', 'Synthetic Manager', null, 'Previsão removida pelo síndico', null),
 ('7c000000-0000-4000-8000-000000000021', 'registered', '2026-11-21 10:00Z', 'reporter', 'Synthetic Reporter Two', '11900000001', 'Registro particular da segunda ocorrência', null),
 ('7c000000-0000-4000-8000-000000000021', 'completed', '2026-11-21 18:00Z', 'manager', 'Synthetic Manager', null, 'Concluída com anexo privado', null);
+
+update public.occurrences set status='completed', completed_at='2026-11-21 18:00Z' where id='7c000000-0000-4000-8000-000000000021';
 
 insert into public.occurrence_attachments(occurrence_id, event_id, storage_bucket, storage_path, file_name, content_type, size_bytes)
 select '7c000000-0000-4000-8000-000000000020', id, 'occurrence-evidence', 'tracking/private-file.pdf', 'private-file.pdf', 'application/pdf', 120
