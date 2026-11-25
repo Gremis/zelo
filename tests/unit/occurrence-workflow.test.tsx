@@ -50,6 +50,15 @@ function handler(input: RequestInfo | URL, init?: RequestInit) {
         canDecidePriority: false,
         version: (current.version ?? 0) + 1,
       };
+    if (cmd.type === "delegate")
+      return Response.json({
+        ...current,
+        delegation: {
+          code: "d".repeat(64),
+          url: `http://127.0.0.1:3100/t/${"d".repeat(64)}`,
+          message: `${cmd.payload.message}\nAbra o link para mandar recado ou concluir com foto: http://127.0.0.1:3100/t/${"d".repeat(64)}`,
+        },
+      });
     return Response.json(current);
   }
   return Response.json(current);
@@ -140,7 +149,10 @@ test("blocked popup exposes explicit URL only after delegation commits", async (
   const link = await screen.findByRole("link", { name: "Abrir WhatsApp" });
   expect(link).toHaveAttribute(
     "href",
-    whatsappUrl(employee.celular, "Texto editado & seguro"),
+    whatsappUrl(
+      employee.celular,
+      `Texto editado & seguro\nAbra o link para mandar recado ou concluir com foto: http://127.0.0.1:3100/t/${"d".repeat(64)}`,
+    ),
   );
   expect(commands[0].payload.message).toBe("Texto editado & seguro");
   expect(screen.getByRole("status")).toHaveTextContent(
@@ -385,4 +397,40 @@ test("invalid local files block completion until explicitly removed", async () =
     screen.getByRole("button", { name: "Confirmar conclusão" }),
   ).toBeEnabled();
   expect(commands).toHaveLength(0);
+});
+
+test("lost delegation response recovers the same command and persisted message", async () => {
+  vi.spyOn(window, "open").mockReturnValue(null);
+  let lost = true;
+  let persisted: Response | undefined;
+  fetchMock.mockImplementation((url, init) => {
+    if (String(url).endsWith("commands")) {
+      if (lost) {
+        lost = false;
+        persisted = handler(url, init);
+        return Promise.reject(
+          new Error("Synthetic response lost after saving"),
+        );
+      }
+      const retry = JSON.parse(String(init?.body)) as WorkflowCommand;
+      expect(retry).toEqual(commands[0]);
+      return persisted!.clone();
+    }
+    return handler(url, init);
+  });
+  render(<Fixture />);
+  await screen.findByRole("option", { name: /Funcionário Sintético/ });
+  fireEvent.change(screen.getByLabelText("Responsável"), {
+    target: { value: employee.id },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar pelo WhatsApp" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Recuperar operação" }),
+  );
+  const link = await screen.findByRole("link", { name: "Abrir WhatsApp" });
+  const message = new URL(link.getAttribute("href")!).searchParams.get("text");
+  expect(message).toBe(
+    `${commands[0].payload.message}\nAbra o link para mandar recado ou concluir com foto: http://127.0.0.1:3100/t/${"d".repeat(64)}`,
+  );
+  expect(commands).toHaveLength(1);
 });

@@ -87,6 +87,7 @@ export type OccurrenceDetail = {
   responsibleEmployeeId?: string | null;
   firstResponsibleAt?: string | null;
   dueDate?: string | null;
+  delegation?: { code: string; url: string; message: string };
   events: OccurrenceEvent[];
 };
 
@@ -201,6 +202,29 @@ export function parseOccurrenceDetail(value: unknown): OccurrenceDetail {
     firstResponsibleAt:
       row.firstResponsibleAt == null ? null : date(row.firstResponsibleAt),
     dueDate: row.dueDate == null ? null : string(row.dueDate),
+    delegation:
+      row.delegation == null
+        ? undefined
+        : (() => {
+            const delegation = record(row.delegation);
+            const code = string(delegation.code);
+            const message = string(delegation.message);
+            const url = new URL(string(delegation.url));
+            if (
+              !TRACKING_CODE_PATTERN.test(code) ||
+              !["http:", "https:"].includes(url.protocol) ||
+              url.username ||
+              url.password ||
+              url.search ||
+              url.hash ||
+              url.pathname !== `/t/${code}` ||
+              !message.endsWith(
+                `\nAbra o link para mandar recado ou concluir com foto: ${url.href}`,
+              )
+            )
+              throw new Error("Invalid delegation receipt.");
+            return { code, url: url.href, message };
+          })(),
     events: row.events.map(event),
   };
   if (

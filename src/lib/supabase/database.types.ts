@@ -584,6 +584,18 @@ export type Database = {
         };
         Returns: Json;
       };
+      delegate_occurrence: {
+        Args: {
+          actor_profile: string;
+          actor_session: string;
+          command_key: string;
+          expected_version: number;
+          payload: Json;
+          public_origin?: string;
+          target_occurrence: string;
+        };
+        Returns: Json;
+      };
       dismiss_first_steps: {
         Args: Record<PropertyKey, never>;
         Returns: string;
@@ -598,6 +610,7 @@ export type Database = {
         };
         Returns: Json;
       };
+      employee_task: { Args: { p_code: string }; Returns: Json };
       has_active_session: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;

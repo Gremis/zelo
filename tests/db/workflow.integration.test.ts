@@ -8,6 +8,8 @@ import {
   processUploadFile,
   manageUploads,
 } from "@/server/occurrences/uploads";
+import { delegateOccurrence } from "@/server/occurrences/delegation";
+import type { Json } from "@/lib/supabase/database.types";
 import type { UploadState } from "@/lib/occurrences/uploads";
 vi.mock("server-only", () => ({}));
 let config: Record<string, string>;
@@ -38,11 +40,11 @@ function sql(input: string) {
     { input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
   ).trim();
 }
-async function createOccurrence(status = "new") {
+async function createOccurrence(status = "new", withReporter = false) {
   const id = randomUUID();
   occurrences.push(id);
   sql(
-    `insert into public.occurrences(id,condominium_id,origin,channel,description,status,suggested_priority,suggestion_source,suggestion_at,suggestion_reason) values('${id}','${condo}','manager_panel','web','Synthetic workflow','${status}','normal','rules',now(),'Synthetic rule');`,
+    `insert into public.occurrences(id,condominium_id,origin,channel,description,status,suggested_priority,suggestion_source,suggestion_at,suggestion_reason,reporter_name,reporter_phone,reporter_unit_or_role,location) values('${id}','${condo}','manager_panel','web','Synthetic workflow','${status}','normal','rules',now(),'Synthetic rule',${withReporter ? "'Synthetic reporter','11900000002','101','Synthetic hall'" : "null,null,null,null"});`,
   );
   return id;
 }
@@ -61,6 +63,12 @@ async function command(
   key = randomUUID(),
   client = accounts[0].client,
 ) {
+  if (type === "delegate")
+    return delegateOccurrence(client, id, {
+      key,
+      version,
+      payload: payload as Json,
+    });
   return client.rpc("occurrence_command", {
     target_occurrence: id,
     command_key: key,
@@ -81,6 +89,7 @@ beforeAll(async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = config.API_URL;
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = config.ANON_KEY;
   process.env.SUPABASE_SERVICE_ROLE_KEY = config.SERVICE_ROLE_KEY;
+  process.env.PUBLIC_APP_ORIGIN = "http://127.0.0.1:3100";
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
   admin = createClient(config.API_URL, config.SERVICE_ROLE_KEY, options);
   for (let i = 0; i < 3; i++) {
@@ -117,7 +126,7 @@ afterAll(async () => {
   if (objects.length)
     await admin.storage.from("occurrence-evidence").remove(objects);
   sql(
-    `begin;delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}');delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}';delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_completions where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
+    `begin;delete from private.employee_tasks where occurrence_id in(${ids});delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}');delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}';delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_completions where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
   );
   for (const account of accounts) await admin.auth.admin.deleteUser(account.id);
 });
@@ -816,4 +825,178 @@ test("ORI-91: distinct completion events remain distinct even when historical ti
       `select count(*) from public.occurrence_completions where occurrence_id='${id}'`,
     ),
   ).toBe("2");
+});
+
+test("ORI-104: isolated public task codes, private payload, retry and permanent completion", async () => {
+  const id = await createOccurrence("new", true);
+  const otherId = await createOccurrence();
+  const input = {
+    employeeId: employee,
+    message: "Synthetic delegation prefix",
+  };
+  const key = randomUUID();
+  const first = await command(id, "delegate", input, 0, key);
+  expect(first.error).toBeNull();
+  const code = first.data.delegation.code;
+  expect(code).toMatch(/^[0-9a-f]{64}$/);
+  expect(code).not.toBe(first.data.trackingCode);
+  expect(first.data.delegation.message).toBe(
+    `${input.message}\nAbra o link para mandar recado ou concluir com foto: http://127.0.0.1:3100/t/${code}`,
+  );
+  expect((await command(id, "delegate", input, 0, key)).data).toEqual(
+    first.data,
+  );
+  expect(
+    sql(
+      `select count(*) from private.employee_tasks where occurrence_id='${id}'`,
+    ),
+  ).toBe("1");
+  const other = await command(otherId, "delegate", input, 0);
+  expect(other.error).toBeNull();
+  expect(other.data.delegation.code).not.toBe(code);
+  const anonymous = createClient(config.API_URL, config.ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  for (const invalid of [
+    "codigoqualquer",
+    "A".repeat(64),
+    "0".repeat(64),
+    first.data.trackingCode,
+  ]) {
+    const result = await anonymous.rpc("employee_task", { p_code: invalid });
+    expect(result.error).toBeNull();
+    expect(result.data).toBeNull();
+  }
+  const lookup = await anonymous.rpc("employee_task", { p_code: code });
+  expect(lookup.error).toBeNull();
+  expect(lookup.data).toEqual({
+    condominiumName: "Synthetic workflow",
+    number: first.data.number,
+    description: "Synthetic workflow",
+    location: "Synthetic hall",
+    reporterName: "Synthetic reporter",
+    reporterUnitOrRole: "101",
+    registeredAt: first.data.registeredAt,
+    startedAt: null,
+    completedAt: null,
+    status: "pending",
+  });
+  expect(
+    (
+      await anonymous.rpc("employee_task", {
+        p_code: other.data.delegation.code,
+      })
+    ).data.number,
+  ).toBe(other.data.number);
+  const completed = await command(
+    id,
+    "complete",
+    { comment: "Synthetic internal completion" },
+    first.data.version,
+  );
+  expect(completed.error).toBeNull();
+  const closed = (await anonymous.rpc("employee_task", { p_code: code })).data;
+  expect(closed.status).toBe("completed");
+  expect(closed.completedAt).toBe(completed.data.completedAt);
+  const reopened = await accounts[0].client.rpc("reopen_occurrence", {
+    target_occurrence: id,
+    command_key: randomUUID(),
+    expected_version: completed.data.version,
+  });
+  expect(reopened.error).toBeNull();
+  expect((await anonymous.rpc("employee_task", { p_code: code })).data).toEqual(
+    closed,
+  );
+  const next = await command(id, "delegate", input, reopened.data.version);
+  expect(next.error).toBeNull();
+  expect(next.data.delegation.code).not.toBe(code);
+  expect((await anonymous.rpc("employee_task", { p_code: code })).data).toEqual(
+    closed,
+  );
+  expect(
+    (
+      await anonymous.rpc("employee_task", {
+        p_code: next.data.delegation.code,
+      })
+    ).data.status,
+  ).toBe("pending");
+});
+
+test("ORI-104: lost response recovers the original absolute URL after origin changes", async () => {
+  const id = await createOccurrence();
+  const key = randomUUID();
+  const input = { employeeId: employee, message: "Synthetic preserved prefix" };
+  const before = process.env.PUBLIC_APP_ORIGIN;
+  try {
+    process.env.PUBLIC_APP_ORIGIN = "https://tasks.example.invalid";
+    const confirmed = await command(id, "delegate", input, 0, key);
+    expect(confirmed.error).toBeNull();
+    expect(confirmed.data.delegation.url).toBe(
+      `https://tasks.example.invalid/t/${confirmed.data.delegation.code}`,
+    );
+    process.env.PUBLIC_APP_ORIGIN = "http://127.0.0.1:3100";
+    const recovered = await command(id, "delegate", input, 0, key);
+    expect(recovered.error).toBeNull();
+    expect(recovered.data).toEqual(confirmed.data);
+    process.env.PUBLIC_APP_ORIGIN = "invalid";
+    const withoutConfig = await command(id, "delegate", input, 0, key);
+    expect(withoutConfig.error).toBeNull();
+    expect(withoutConfig.data).toEqual(confirmed.data);
+    expect(
+      sql(
+        `select count(*) from private.employee_tasks where occurrence_id='${id}'`,
+      ),
+    ).toBe("1");
+    const next = await command(id, "delegate", input, recovered.data.version);
+    expect(next.error?.code).toBe("P0004");
+    expect(
+      sql(
+        `select count(*) from private.employee_tasks where occurrence_id='${id}'`,
+      ),
+    ).toBe("1");
+    process.env.PUBLIC_APP_ORIGIN = "http://127.0.0.1:3100";
+    const fresh = await command(id, "delegate", input, recovered.data.version);
+    expect(fresh.error).toBeNull();
+    expect(fresh.data.delegation.url).toBe(
+      `http://127.0.0.1:3100/t/${fresh.data.delegation.code}`,
+    );
+    expect(fresh.data.delegation.code).not.toBe(confirmed.data.delegation.code);
+  } finally {
+    if (before === undefined) delete process.env.PUBLIC_APP_ORIGIN;
+    else process.env.PUBLIC_APP_ORIGIN = before;
+  }
+});
+
+test("ORI-104: anonymous and authenticated callers cannot inject a task origin", async () => {
+  const id = await createOccurrence();
+  const input = { employeeId: employee, message: "Synthetic prefix" };
+  const direct = await accounts[0].client.rpc("occurrence_command", {
+    target_occurrence: id,
+    command_key: randomUUID(),
+    expected_version: 0,
+    command_type: "delegate",
+    payload: input,
+  });
+  expect(direct.error?.code).toBe("P0004");
+  const anonymous = createClient(config.API_URL, config.ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const claims = await accounts[0].client.auth.getClaims();
+  for (const caller of [anonymous, accounts[0].client]) {
+    const forged = await caller.rpc("delegate_occurrence", {
+      target_occurrence: id,
+      command_key: randomUUID(),
+      expected_version: 0,
+      payload: input,
+      actor_profile: accounts[0].id,
+      actor_session: claims.data!.claims.session_id,
+      public_origin: "https://untrusted.example.invalid",
+    });
+    expect(forged.error).not.toBeNull();
+  }
+  expect(
+    sql(
+      `select count(*) from private.employee_tasks where occurrence_id='${id}'`,
+    ),
+  ).toBe("0");
 });

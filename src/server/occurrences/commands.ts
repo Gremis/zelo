@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/database.types";
 import { parseOccurrenceDetail } from "./detail.contract";
+import { delegateOccurrence } from "./delegation";
 
 export class CommandError extends Error {
   constructor(public readonly status: 400 | 401 | 404 | 409 | 503) {
@@ -67,21 +68,23 @@ export async function runOccurrenceCommand(
   if (!uuid.test(id)) throw new CommandError(404);
   const body = commandBody(input);
   const { data, error } =
-    body.type === "reopen"
-      ? await client.rpc("reopen_occurrence", {
-          target_occurrence: id,
-          command_key: body.key,
-          expected_version: body.version,
-          reason:
-            (body.payload as { reason?: string | null }).reason ?? undefined,
-        })
-      : await client.rpc("occurrence_command", {
-          target_occurrence: id,
-          command_key: body.key,
-          expected_version: body.version,
-          command_type: body.type,
-          payload: body.payload,
-        });
+    body.type === "delegate"
+      ? await delegateOccurrence(client, id, body)
+      : body.type === "reopen"
+        ? await client.rpc("reopen_occurrence", {
+            target_occurrence: id,
+            command_key: body.key,
+            expected_version: body.version,
+            reason:
+              (body.payload as { reason?: string | null }).reason ?? undefined,
+          })
+        : await client.rpc("occurrence_command", {
+            target_occurrence: id,
+            command_key: body.key,
+            expected_version: body.version,
+            command_type: body.type,
+            payload: body.payload,
+          });
   if (error)
     throw new CommandError(
       error.code === "42501"

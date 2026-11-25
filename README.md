@@ -2119,3 +2119,26 @@ All migration versions below have prefix `202611`. The sixteen SQL files through
 Review and integrate the employee dependencies #35 → #36 → #37, then #39 → #40 → #41 → #42, then #43 → #44 before this feature. The inherited #38 detail work and #49 tracking inclusion require coordination with their owners. The enriched #33 definition differs from the minimal `24120000` file, so resolve its Git conflict deliberately while retaining the compatible delta. Do not import the old #49 aliases or its colliding registration/tracking versions blindly. These local adaptations do not make the source PRs independently deployable. AI integration remains outside this feature.
 
 Before any remote application, inspect the actual target schema and migration ledger read-only and perform a dry-run for each destination. Existing databases with old alias identities need a separately reviewed plan. Do not apply this chain to the preserved legacy `zelo-local` ledger; no reset or migration repair accompanies this feature. Green CI does not resolve migration coordination or authorize automatic merge.
+
+### ORI-104 employee task access
+
+Delegating to an employee creates a cryptographically random task code distinct from resident tracking. The server appends the absolute task URL to the existing editable WhatsApp message and persists code, URL and message in the command receipt. `PUBLIC_APP_ORIGIN` is trusted server configuration; browser-supplied origins are rejected. A confirmed receipt is returned unchanged after a lost response even if the configured origin later changes or becomes invalid. WhatsApp opening does not prove delivery.
+
+The own migrations are `20261126150000_employee_task_access.sql` and `20261126160000_trusted_task_origin.sql`. They follow the inherited tracking/detail compatibility migrations. The public task lookup returns only the task's condominium, occurrence number, report, location, reporter name/unit, registration date and task start/completion state. It excludes reporter phone, internal history and resident tracking code. Invalid and unknown codes receive the same generic 404. Completed task codes remain completed after reopening; this feature does not add invalidation on reassignment/deactivation or employee actions.
+
+The `/t/[code]` page will be delivered in the next task. To inspect the backend locally with a database containing this chain and synthetic data, set `PUBLIC_APP_ORIGIN=http://127.0.0.1:3000`, start `npm run dev`, delegate to an employee and use the code from the saved WhatsApp link:
+
+```bash
+curl -i http://127.0.0.1:3000/api/public/tasks/REPLACE_WITH_TASK_CODE
+curl -i http://127.0.0.1:3000/api/public/tasks/invalid
+```
+
+The first returns the restricted JSON for a valid code; the second returns a generic 404. Task routes disable caching and indexing. Do not log or publish real task codes.
+
+The existing validation covers code isolation, private-field exclusion, completion after reopening, local/published origins, invalid configuration and recovery after a lost response. The focused disposable-database runner is:
+
+```bash
+node scripts/check-migration-chain.mjs --employee-seed
+```
+
+Both minimal #32 and enriched #33 scenarios passed 18 seed/permissions/idempotency assertions plus 97 tracking/detail/task assertions each and converged to the same schema. The original local database ledger, schema and occurrence fingerprints remained unchanged. Earlier application validation passed 835 unit tests, the standard production build/browser run (69 passed; 29 environment-gated cases skipped), and nine additional local workflow/reopening/task browser cases. Database validation is local evidence; credential-free CI does not execute these database scenarios.

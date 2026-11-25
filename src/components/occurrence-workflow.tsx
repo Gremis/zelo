@@ -172,7 +172,7 @@ export function OccurrenceWorkflow({
   }
   async function execute(
     command: WorkflowCommand,
-    link?: string,
+    phone?: string,
     popup?: Window | null,
   ) {
     if (inFlight.current) return;
@@ -189,6 +189,13 @@ export function OccurrenceWorkflow({
     }
     try {
       const result = await sendWorkflowCommand(detail.id, command);
+      const link =
+        phone && command.type === "delegate"
+          ? (() => {
+              if (!result.delegation) throw new OccurrenceRequestError(503);
+              return whatsappUrl(phone, result.delegation.message);
+            })()
+          : undefined;
       clearPending();
       setConflict(false);
       onChanged(result);
@@ -290,9 +297,8 @@ export function OccurrenceWorkflow({
   }
   function delegate() {
     if (!selectedEmployee || !message.trim() || frozen) return;
-    let url: string;
     try {
-      url = whatsappUrl(selectedEmployee.celular, message);
+      whatsappUrl(selectedEmployee.celular, message);
     } catch {
       setError("O telefone do funcionário é inválido.");
       return;
@@ -304,7 +310,7 @@ export function OccurrenceWorkflow({
         employeeId: selectedEmployee.id,
         message: message.trim(),
       }),
-      url,
+      selectedEmployee.celular,
       popup,
     );
   }
@@ -886,10 +892,7 @@ export function OccurrenceWorkflow({
                 (item) => item.id === pending.payload.employeeId,
               );
               if (employee) {
-                url = whatsappUrl(
-                  employee.celular,
-                  pending.payload.message ?? "",
-                );
+                url = employee.celular;
                 popup = window.open("about:blank", "_blank");
                 if (popup) popup.opener = null;
               }

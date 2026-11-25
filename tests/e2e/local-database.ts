@@ -40,6 +40,7 @@ export function removeLocalAccountData(id: string) {
         raise exception 'Synthetic local account required.';
       end if;
     end $$;
+    delete from private.employee_tasks where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
     delete from private.occurrence_commands where occurrence_id in (select o.id from public.occurrences o join public.condominiums c on c.id=o.condominium_id where c.manager_id='${id}'::uuid);
     delete from private.occurrence_upload_files where session_id in (select id from private.occurrence_upload_sessions where manager_id='${id}'::uuid);
     delete from private.occurrence_upload_sessions where manager_id='${id}'::uuid;
