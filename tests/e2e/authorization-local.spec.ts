@@ -1,3 +1,4 @@
+import { removeLocalAccountData } from "./local-database";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -410,9 +411,7 @@ test("ORI-88 isolates user resources and rejects revoked sessions through UI and
   } finally {
     for (const context of contexts) await context.close();
     for (const account of accounts) {
-      localSql(
-        `delete from public.condominiums where manager_id = '${account.id}'`,
-      );
+      removeLocalAccountData(account.id);
       const result = await admin.auth.admin.deleteUser(account.id);
       requireSuccess(!result.error);
     }

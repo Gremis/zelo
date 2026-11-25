@@ -9,7 +9,7 @@ import { parsePortfolioQueue } from "@/server/occurrences/queue.contract";
 import data from "@/lib/demo/data.json";
 
 vi.mock("server-only", () => ({}));
-const origin = "http://localhost:3000";
+const origin = "http://127.0.0.1:3100";
 const accounts: {
   id: string;
   email: string;

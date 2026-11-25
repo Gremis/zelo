@@ -6,6 +6,11 @@ import {
 } from "./funcionarios.result";
 
 const OK = 200;
+const headers = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 const STATUS_BY_CODE: Record<FuncionarioErrorCode, number> = {
   invalid_body: 400,
@@ -22,12 +27,12 @@ export function toResponse<T>(
   successStatus = OK,
 ): NextResponse {
   if (result.ok) {
-    return NextResponse.json(result.data, { status: successStatus });
+    return NextResponse.json(result.data, { status: successStatus, headers });
   }
 
   return NextResponse.json(
     { error: result.error.message, details: result.error.details },
-    { status: STATUS_BY_CODE[result.error.code] },
+    { status: STATUS_BY_CODE[result.error.code], headers },
   );
 }
 

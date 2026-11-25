@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { removeLocalAccountData } from "./local-database";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 test.use({ trace: "off", video: "off", screenshot: "off" });
@@ -26,6 +27,8 @@ test.afterEach(async ({ page }) => {
           if (input instanceof HTMLInputElement) input.value = "";
       });
   for (const email of syntheticEmails) {
+    const id = localSql(`select id from auth.users where email = '${email}'`);
+    if (id) removeLocalAccountData(id);
     localSql(
       `delete from private.email_confirmation_challenges where email = '${email}'; delete from auth.users where email = '${email}'`,
     );
@@ -218,6 +221,27 @@ test("real local signup, email code, confirmed session, logout and password reco
     .click();
   await expect(page).toHaveURL("/fila");
   expect(confirmations).toBe(1);
+  let demoIds: string[] = [];
+  if (process.env.ACCOUNT_DEMO_ENABLED === "true") {
+    await expect(
+      page.getByText("Dados de demonstração", { exact: true }),
+    ).toHaveCount(4);
+    const data = await (
+      await page.request.get("/api/occurrences/queue")
+    ).json();
+    demoIds = data.columns.new.items
+      .map((item: { id: string }) => item.id)
+      .sort();
+    expect(demoIds).toHaveLength(4);
+    const panel = await (await page.request.get("/api/panel")).json();
+    expect(panel.user.condominiumCount).toBe(0);
+    expect(panel.firstSteps.completed).toEqual([]);
+    await expect(
+      page.getByRole("link", {
+        name: "Cadastre zelador e porteiro de cada prédio",
+      }),
+    ).toHaveAttribute("href", "/funcionarios?novo=1");
+  }
   await expect(
     page.getByRole("heading", { name: "Fila de ocorrências" }),
   ).toBeFocused();
@@ -265,6 +289,20 @@ test("real local signup, email code, confirmed session, logout and password reco
     page.getByRole("heading", { name: "Primeiros passos" }),
   ).toHaveCount(0);
   expect((await page.request.get("/api/panel")).status()).toBe(200);
+  if (process.env.ACCOUNT_DEMO_ENABLED === "true") {
+    await expect(
+      page.getByText("Dados de demonstração", { exact: true }),
+    ).toHaveCount(4);
+    const data = await (
+      await page.request.get("/api/occurrences/queue")
+    ).json();
+    expect(
+      data.columns.new.items.map((item: { id: string }) => item.id).sort(),
+    ).toEqual(demoIds);
+    const panel = await (await page.request.get("/api/panel")).json();
+    expect(panel.user.condominiumCount).toBe(0);
+    expect(panel.firstSteps.completed).toEqual([]);
+  }
   const login = await page.request.post("/api/auth/login", {
     data: { email, password },
   });

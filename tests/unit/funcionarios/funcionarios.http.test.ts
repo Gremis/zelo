@@ -22,6 +22,11 @@ describe("funcionarios http toResponse", () => {
     const res = toResponse(success({ ok: 1 }), 201);
 
     expect(res.status).toBe(201);
+    expect(res.headers.get("cache-control")).toBe(
+      "private, no-store, max-age=0",
+    );
+    expect(res.headers.get("pragma")).toBe("no-cache");
+    expect(res.headers.get("expires")).toBe("0");
     expect(await res.json()).toEqual({ ok: 1 });
   });
 
@@ -39,6 +44,9 @@ describe("funcionarios http toResponse", () => {
     const res = toResponse(failure({ code, message: "mensagem" }));
 
     expect(res.status).toBe(status);
+    expect(res.headers.get("cache-control")).toBe(
+      "private, no-store, max-age=0",
+    );
     expect((await res.json()).error).toBe("mensagem");
   });
 });
