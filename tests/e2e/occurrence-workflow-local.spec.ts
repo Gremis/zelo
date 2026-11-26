@@ -233,8 +233,31 @@ for (const width of [360, 1280]) {
       await expect(
         dialog.getByRole("button", { name: "Adicionar", exact: true }),
       ).toHaveCount(0);
+      const previewButton = dialog.getByRole("button", {
+        name: "Ampliar imagem synthetic.png",
+      });
+      const previewImage = dialog.getByRole("img", {
+        name: "Anexo interno: synthetic.png",
+      });
+      await expect(previewImage).toBeVisible();
+      await expect
+        .poll(() =>
+          previewImage.evaluate(
+            (node) => (node as HTMLImageElement).naturalWidth,
+          ),
+        )
+        .toBeGreaterThan(0);
+      let downloads = 0;
+      page.on("download", () => {
+        downloads++;
+      });
+      await previewButton.click();
+      await expect(
+        dialog.getByRole("button", { name: "Recolher imagem synthetic.png" }),
+      ).toHaveAttribute("aria-expanded", "true");
+      expect(downloads).toBe(0);
       const evidence = dialog.getByRole("link", {
-        name: "synthetic.png (interno)",
+        name: "Baixar synthetic.png",
       });
       await expect(evidence).toBeVisible();
       const fileResponse = await page.request.get(

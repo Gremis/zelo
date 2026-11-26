@@ -83,7 +83,7 @@ beforeAll(async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = config.SERVICE_ROLE_KEY;
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
   admin = createClient(config.API_URL, config.SERVICE_ROLE_KEY, options);
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const email = `ori72-${randomUUID()}@example.invalid`,
       password = `Local${randomUUID()}9`;
     const created = await admin.auth.admin.createUser({
@@ -92,7 +92,7 @@ beforeAll(async () => {
       email_confirm: true,
       user_metadata: {
         full_name: "Synthetic workflow manager",
-        is_sindico: true,
+        is_sindico: i < 2,
       },
     });
     if (created.error || !created.data.user)
@@ -117,7 +117,7 @@ afterAll(async () => {
   if (objects.length)
     await admin.storage.from("occurrence-evidence").remove(objects);
   sql(
-    `begin;delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}');delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}';delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
+    `begin;delete from private.occurrence_commands where occurrence_id in(${ids});delete from private.occurrence_upload_files where session_id in(select id from private.occurrence_upload_sessions where manager_id='${accounts[0].id}');delete from private.occurrence_upload_sessions where manager_id='${accounts[0].id}';delete from public.occurrence_attachments where occurrence_id in(${ids});delete from public.occurrence_completions where occurrence_id in(${ids});delete from public.occurrence_events where occurrence_id in(${ids});delete from public.occurrences where id in(${ids});delete from public.funcionarios where id='${employee}';delete from public.funcoes where id='${role}';delete from public.condominiums where id in('${condo}','${otherCondo}');commit;`,
   );
   for (const account of accounts) await admin.auth.admin.deleteUser(account.id);
 });
@@ -421,6 +421,22 @@ test("D: verified private upload links atomically and retries preserve linked ev
     (await admin.storage.from("occurrence-evidence").download(attachment))
       .error,
   ).toBeNull();
+  const reopened = await reopen(
+    id,
+    completed.data.version,
+    "Synthetic recurrence with evidence",
+  );
+  expect(reopened.error).toBeNull();
+  expect(
+    reopened.data.events.find(
+      (event: { type: string }) => event.type === "completed",
+    ).attachments,
+  ).toEqual(completed.data.events[0].attachments);
+  const preserved = await admin.storage
+    .from("occurrence-evidence")
+    .download(attachment);
+  expect(preserved.error).toBeNull();
+  expect(Buffer.from(await preserved.data!.arrayBuffer())).toEqual(png);
 });
 
 test("B: selection racing deactivation never leaves an inactive assignee", async () => {
@@ -504,4 +520,300 @@ test("A: concurrent retries of the same command return one receipt and event", a
   expect(results[0].data.events[0].text).toContain(
     "Prioridade sugerida mantida",
   );
+});
+
+async function reopen(
+  id: string,
+  version: number,
+  reason?: string,
+  key = randomUUID(),
+  client = accounts[0].client,
+) {
+  return client.rpc("reopen_occurrence", {
+    target_occurrence: id,
+    command_key: key,
+    expected_version: version,
+    ...(reason === undefined ? {} : { reason }),
+  });
+}
+
+test("ORI-91: reopens atomically with internal reason, clears assignment/deadline and preserves all prior data", async () => {
+  const id = await createOccurrence();
+  let state = await command(id, "responsible", { kind: "manager" }, 0);
+  state = await command(
+    id,
+    "deadline",
+    { date: "2027-05-01" },
+    state.data.version,
+  );
+  state = await command(
+    id,
+    "complete",
+    { comment: "Synthetic completed record" },
+    state.data.version,
+  );
+  expect(state.error).toBeNull();
+  const before = state.data;
+  const history = sql(
+    `select json_agg(e order by id)::text from public.occurrence_events e where occurrence_id='${id}'`,
+  );
+  const key = randomUUID();
+  const result = await reopen(
+    id,
+    before.version,
+    "  O morador avisou que voltou a vazar  ",
+    key,
+  );
+  expect(result.error).toBeNull();
+  expect(result.data).toMatchObject({
+    status: "new",
+    completedAt: null,
+    responsibleName: null,
+    responsibleKind: null,
+    responsibleEmployeeId: null,
+    dueDate: null,
+    finalPriority: before.finalPriority,
+    firstResponsibleAt: before.firstResponsibleAt,
+    description: before.description,
+    registeredAt: before.registeredAt,
+  });
+  expect(result.data.events[0].text).toBe(
+    "Reabriu a ocorrência. O morador avisou que voltou a vazar",
+  );
+  expect(result.data.events[0].authorIsViewer).toBe(true);
+  expect(
+    sql(
+      `select json_agg(e order by id)::text from public.occurrence_events e where occurrence_id='${id}' and event_type<>'reopened'`,
+    ),
+  ).toBe(history);
+  expect(
+    sql(
+      `select completed_at::text from public.occurrence_completions where occurrence_id='${id}'`,
+    ),
+  ).toBeTruthy();
+  const projected = JSON.parse(
+    sql(
+      `select json_build_object('visible',visible_to_resident,'text',public_text)::text from public.occurrence_events where occurrence_id='${id}' and event_type='reopened'`,
+    ),
+  );
+  expect(projected).toEqual({
+    visible: true,
+    text: "A ocorrência foi reaberta.",
+  });
+  expect(JSON.stringify(projected)).not.toContain("vazar");
+  expect(
+    (
+      await reopen(
+        id,
+        before.version,
+        "O morador avisou que voltou a vazar",
+        key,
+      )
+    ).data,
+  ).toEqual(result.data);
+  const denied = await accounts[1].client
+    .from("occurrence_completions")
+    .select("*")
+    .eq("occurrence_id", id);
+  expect(denied.data).toEqual([]);
+});
+
+test.each([undefined, "", " \t\n "])(
+  "ORI-91: absent or whitespace reason produces only the standard text %#",
+  async (reason) => {
+    const id = await createOccurrence();
+    let current = await command(id, "responsible", { kind: "manager" }, 0);
+    current = await command(id, "complete", {}, current.data.version);
+    const result = await reopen(id, current.data.version, reason);
+    expect(result.error).toBeNull();
+    expect(result.data.events[0].text).toBe("Reabriu a ocorrência");
+  },
+);
+
+test("ORI-91: concurrent commands and retries cannot duplicate reopening", async () => {
+  const id = await createOccurrence();
+  let current = await command(id, "responsible", { kind: "manager" }, 0);
+  current = await command(id, "complete", {}, current.data.version);
+  const key = randomUUID();
+  const results = await Promise.all([
+    reopen(id, current.data.version, "Synthetic reason", key),
+    reopen(id, current.data.version, "Synthetic reason", key),
+  ]);
+  expect(results[0].error).toBeNull();
+  expect(results[1].data).toEqual(results[0].data);
+  expect(
+    (await reopen(id, current.data.version, "Different reason", key)).error
+      ?.code,
+  ).toBe("P0003");
+  expect(
+    (await reopen(id, current.data.version, "Synthetic reason")).error?.code,
+  ).toBe("P0003");
+  expect(
+    sql(
+      `select count(*) from public.occurrence_events where occurrence_id='${id}' and event_type='reopened'`,
+    ),
+  ).toBe("1");
+});
+
+test("ORI-91: rejects foreign managers, anonymous calls, stale states and ordinary completed updates", async () => {
+  const id = await createOccurrence();
+  expect((await reopen(id, 0)).error?.code).toBe("P0003");
+  let current = await command(id, "responsible", { kind: "manager" }, 0);
+  current = await command(id, "complete", {}, current.data.version);
+  expect(
+    (
+      await reopen(
+        id,
+        current.data.version,
+        undefined,
+        randomUUID(),
+        accounts[1].client,
+      )
+    ).error?.code,
+  ).toBe("42501");
+  expect(
+    (
+      await reopen(
+        id,
+        current.data.version,
+        undefined,
+        randomUUID(),
+        accounts[2].client,
+      )
+    ).error?.code,
+  ).toBe("42501");
+  const anonymous = createClient(config.API_URL, config.ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  expect(
+    (await reopen(id, current.data.version, undefined, randomUUID(), anonymous))
+      .error?.code,
+  ).toBe("42501");
+  expect((await reopen(id, current.data.version - 1)).error?.code).toBe(
+    "P0003",
+  );
+  expect(() =>
+    sql(
+      `update public.occurrences set status='new',completed_at=null where id='${id}'`,
+    ),
+  ).toThrow();
+  expect((await detail(id)).status).toBe("completed");
+});
+
+test("ORI-91: successive completions keep distinct historical timestamps and never restore the old delegation", async () => {
+  const id = await createOccurrence();
+  let current = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "Synthetic task" },
+    0,
+  );
+  const oldDelegation = sql(
+    `select delegation_started_at::text from public.occurrences where id='${id}'`,
+  );
+  current = await command(id, "complete", {}, current.data.version);
+  const firstDate = current.data.completedAt;
+  const reopened = await reopen(id, current.data.version);
+  expect(reopened.error).toBeNull();
+  expect(
+    sql(
+      `select delegation_started_at is null from public.occurrences where id='${id}'`,
+    ),
+  ).toBe("t");
+  current = await command(
+    id,
+    "delegate",
+    { employeeId: employee, message: "New synthetic task" },
+    reopened.data.version,
+  );
+  expect(current.error).toBeNull();
+  expect(
+    sql(
+      `select delegation_started_at::text from public.occurrences where id='${id}'`,
+    ),
+  ).not.toBe(oldDelegation);
+  current = await command(id, "complete", {}, current.data.version);
+  expect(current.error).toBeNull();
+  expect(current.data.completedAt).not.toBe(firstDate);
+  const dates = JSON.parse(
+    sql(
+      `select json_agg(completed_at order by completed_at) from public.occurrence_completions where occurrence_id='${id}'`,
+    ),
+  ) as string[];
+  expect(dates).toHaveLength(2);
+  expect(Date.parse(dates[0])).toBe(Date.parse(firstDate));
+  expect(Date.parse(dates[1])).toBe(Date.parse(current.data.completedAt));
+  expect(
+    (
+      await accounts[0].client
+        .from("occurrence_completions")
+        .delete()
+        .eq("occurrence_id", id)
+    ).error,
+  ).not.toBeNull();
+});
+
+test("ORI-91: manager reopening does not depend on the author of the completion", async () => {
+  const id = await createOccurrence("in_progress");
+  sql(
+    `update public.occurrences set status='completed',completed_at=clock_timestamp() where id='${id}';insert into public.occurrence_events(occurrence_id,event_type,author_type,author_name,author_role,internal_description) values('${id}','completed','employee','Synthetic employee','Synthetic role','Synthetic employee completion');`,
+  );
+  const before = await detail(id);
+  const result = await reopen(id, before.version, "Synthetic recurrence");
+  expect(result.error).toBeNull();
+  expect(result.data.status).toBe("new");
+  expect(
+    result.data.events.some(
+      (event: { authorType: string; type: string }) =>
+        event.authorType === "employee" && event.type === "completed",
+    ),
+  ).toBe(true);
+});
+
+test("ORI-91: event failure rolls back the state, history and idempotency authorization together", async () => {
+  const id = await createOccurrence();
+  let current = await command(id, "responsible", { kind: "manager" }, 0);
+  current = await command(id, "complete", {}, current.data.version);
+  const before = current.data;
+  const key = randomUUID();
+  const fn = `ori91_failure_${id.replaceAll("-", "")}`;
+  let failure: unknown;
+  try {
+    sql(
+      `begin;create function public.${fn}() returns trigger language plpgsql as $$ begin raise exception 'Synthetic reopen failure'; end; $$;create trigger ${fn} after insert on public.occurrence_events for each row when (new.event_type='reopened' and new.occurrence_id='${id}'::uuid) execute function public.${fn}();select set_config('request.jwt.claims',json_build_object('sub','${accounts[0].id}','session_id',(select id from auth.sessions where user_id='${accounts[0].id}' order by created_at desc limit 1),'role','authenticated')::text,true);set local role authenticated;select public.reopen_occurrence('${id}','${key}',${before.version},'Synthetic rollback');commit;`,
+    );
+  } catch (error) {
+    failure = error;
+  }
+  expect(String((failure as { stderr?: unknown })?.stderr)).toContain(
+    "Synthetic reopen failure",
+  );
+  expect(await detail(id)).toEqual(before);
+  expect(
+    sql(
+      `select count(*) from private.occurrence_commands where occurrence_id='${id}' and command_key='${key}'`,
+    ),
+  ).toBe("0");
+  expect(
+    (await reopen(id, before.version, "Synthetic rollback", key)).error,
+  ).toBeNull();
+});
+
+test("ORI-91: distinct completion events remain distinct even when historical timestamps coincide", async () => {
+  const id = await createOccurrence("in_progress");
+  sql(
+    `update public.occurrences set status='completed',completed_at=registered_at where id='${id}';insert into public.occurrence_events(occurrence_id,event_type,author_type,author_name,internal_description) values('${id}','completed','manager','Synthetic author','Synthetic cycle one'),('${id}','completed','employee','Synthetic employee','Synthetic cycle two');`,
+  );
+  expect(
+    sql(
+      `select count(*) from public.occurrence_completions where occurrence_id='${id}'`,
+    ),
+  ).toBe("2");
+  const before = await detail(id);
+  expect((await reopen(id, before.version)).error).toBeNull();
+  expect(
+    sql(
+      `select count(*) from public.occurrence_completions where occurrence_id='${id}'`,
+    ),
+  ).toBe("2");
 });

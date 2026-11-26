@@ -8,6 +8,8 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { OccurrenceAttachment } from "./occurrence-attachment";
+import { OccurrenceReopen } from "./occurrence-reopen";
 import { OccurrenceWorkflow } from "./occurrence-workflow";
 import { useRouter } from "next/navigation";
 import { CopyTrackingLink } from "@/components/copy-tracking-link";
@@ -209,6 +211,12 @@ export function OccurrenceDetailPanel({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"]') !== panel.current
+      )
+        return;
       if (event.key === "Escape") {
         if (event.target instanceof HTMLSelectElement) return;
         event.preventDefault();
@@ -404,7 +412,9 @@ export function OccurrenceDetailPanel({
     content = (
       <>
         <header className="px-5 pt-4">
-          <div className="flex flex-wrap items-center gap-2 pr-10 text-xs">
+          <div
+            className={`flex flex-wrap items-center gap-2 text-xs ${detail.status === "completed" ? "min-h-8 pr-32" : "pr-10"}`}
+          >
             <span className="font-mono font-medium text-[#6b7280]">
               #{detail.number}
             </span>
@@ -531,7 +541,7 @@ export function OccurrenceDetailPanel({
               className="min-w-0"
             >
               <OccurrenceWorkflow
-                key={detail.id}
+                key={`${detail.id}:${detail.events.find((event) => event.type === "reopened")?.id ?? 0}`}
                 detail={detail}
                 onBusy={(value) => {
                   workflowLock.current = value;
@@ -656,15 +666,11 @@ export function OccurrenceDetailPanel({
                       {event.text}
                     </p>
                     {event.attachments?.map((file) => (
-                      <a
+                      <OccurrenceAttachment
                         key={file.id}
-                        className="mt-1 block min-h-10 text-sm font-semibold text-[#0b5e58] underline [overflow-wrap:anywhere]"
-                        href={`/api/occurrences/${detail.id}/attachments/${file.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {file.name} (interno)
-                      </a>
+                        occurrenceId={detail.id}
+                        file={file}
+                      />
                     ))}
                   </li>
                 ))}
@@ -699,26 +705,43 @@ export function OccurrenceDetailPanel({
         aria-labelledby={titleId}
         className="relative mx-auto w-full max-w-[720px] rounded-xl bg-white shadow-[0_20px_50px_rgba(16,24,40,0.2)] max-[1000px]:max-w-none max-[1000px]:rounded-xl max-[1000px]:border max-[1000px]:border-[#e5e7eb] max-[1000px]:shadow-none"
       >
-        <button
-          ref={closeButton}
-          type="button"
-          aria-label="Fechar"
-          disabled={workflowBusy}
-          onClick={onClose}
-          className="absolute top-3 right-3 grid size-8 cursor-pointer place-items-center rounded-lg border border-[#e5e7eb] bg-white text-[#475467] hover:bg-[#f2f4f7]"
-        >
-          <svg
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {detail?.status === "completed" && (
+            <OccurrenceReopen
+              key={detail.id}
+              detail={detail}
+              onBusy={(value) => {
+                workflowLock.current = value;
+                setWorkflowBusy(value);
+              }}
+              onChanged={(value) => {
+                setDetail(value);
+                onChanged?.();
+                queueMicrotask(() => closeButton.current?.focus());
+              }}
+            />
+          )}
+          <button
+            ref={closeButton}
+            type="button"
+            aria-label="Fechar"
+            disabled={workflowBusy}
+            onClick={onClose}
+            className="grid size-8 cursor-pointer place-items-center rounded-lg border border-[#e5e7eb] bg-white text-[#475467] hover:bg-[#f2f4f7]"
           >
-            <path d="M5 5l10 10M15 5L5 15" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 20 20"
+              aria-hidden="true"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
+          </button>
+        </div>
         {content}
       </div>
     </div>
