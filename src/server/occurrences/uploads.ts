@@ -365,10 +365,10 @@ function scopedOperation(scope?: ManagerUploadScope) {
   ) => uploadOperation(operation, key, slug, secret, payload, signal, scope);
 }
 
-export async function signedEvidence(path: string) {
+export async function signedEvidence(path: string, download = true) {
   const { data, error } = await storageClient()
     .storage.from(bucket)
-    .createSignedUrl(path, 60, { download: true });
+    .createSignedUrl(path, 60, download ? { download: true } : undefined);
   if (error || !data) throw new Error("Evidence unavailable.");
   return data.signedUrl;
 }

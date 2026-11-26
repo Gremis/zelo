@@ -20,6 +20,7 @@ export const OCCURRENCE_EVENT_TYPES = [
   "manager_update",
   "employee_message",
   "completed",
+  "reopened",
 ] as const;
 export const OCCURRENCE_AUTHOR_TYPES = [
   "reporter",

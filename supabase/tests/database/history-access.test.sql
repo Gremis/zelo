@@ -175,7 +175,7 @@ begin
   end loop;
 end;
 $$;
-grant update, delete, truncate on occurrence_events, occurrence_attachments to service_role;
+grant update, delete, truncate on occurrence_events, occurrence_attachments, occurrence_completions to service_role;
 set local role service_role;
 select throws_ok($$update occurrence_events set internal_description='Rewritten'$$,'42501','Occurrence evidence is append-only.','Trigger blocks BYPASSRLS even if update is accidentally granted');
 select throws_ok($$delete from occurrence_events$$,'42501','Occurrence evidence is append-only.','Trigger blocks deletion after accidental grant');
@@ -185,7 +185,7 @@ select throws_ok($$delete from occurrence_attachments$$,'42501','Occurrence evid
 select throws_ok($$truncate occurrence_attachments$$,'42501','Occurrence evidence is append-only.','Metadata truncate blocked');
 reset role;
 select ok(to_regprocedure('public.append_occurrence_note(uuid,text,jsonb)') is null,'No structured payload overload exposed');
-revoke update, delete, truncate on occurrence_events, occurrence_attachments from service_role;
+revoke update, delete, truncate on occurrence_events, occurrence_attachments, occurrence_completions from service_role;
 do $$
 declare target regclass;
 begin
