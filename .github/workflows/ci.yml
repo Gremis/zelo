@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [production, develop]
   push:
-    branches: [main, develop]
+    branches: [production, develop]
   workflow_dispatch:
 
 permissions:
@@ -72,7 +72,7 @@ jobs:
   deploy:
     name: Deploy
     needs: quality
-    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') }}
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/production') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:

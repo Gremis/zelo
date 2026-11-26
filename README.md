@@ -56,7 +56,7 @@ Unit tests live in `tests/unit`; browser tests live in `tests/e2e`. Playwright b
 
 ## Delivery
 
-Open pull requests to `develop`; promote releases through reviewed pull requests from `develop` to `main`. GitHub Actions validates changes and deploys successful pushes to those branches to their respective environments. Repository conventions are in `AGENTS.md`.
+Open pull requests to `develop`; promote releases through reviewed pull requests from `develop` to `production`. GitHub Actions validates changes and deploys successful pushes to those branches to their respective environments. Repository conventions are in `AGENTS.md`.
 
 ## Canonical migration coordination
 
