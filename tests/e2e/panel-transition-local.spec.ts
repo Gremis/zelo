@@ -11,8 +11,15 @@ async function recordPendingSurface(page: import("@playwright/test").Page) {
       const pending = [...document.querySelectorAll('[role="status"]')].find(
         (node) => node.textContent?.includes("Carregando painel…"),
       );
-      if (pending && document.styleSheets.length)
-        samples.push(getComputedStyle(pending).backgroundColor);
+      if (pending && document.styleSheets.length) {
+        let surface: Element | null = pending;
+        let color = "rgba(0, 0, 0, 0)";
+        while (surface && color === "rgba(0, 0, 0, 0)") {
+          color = getComputedStyle(surface).backgroundColor;
+          surface = surface.parentElement;
+        }
+        samples.push(color);
+      }
     };
     new MutationObserver(observe).observe(document, {
       subtree: true,
@@ -48,6 +55,9 @@ for (const width of [360, 1440]) {
       await expect(
         page.getByRole("button", { name: "Abrir menu", exact: true }),
       ).toBeVisible();
+      await page.locator("header").evaluate((node) => {
+        node.dataset.transitionProbe = "preserved";
+      });
       let held = false;
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -84,6 +94,10 @@ for (const width of [360, 1440]) {
       await expect(
         page.getByRole("button", { name: "Abrir menu", exact: true }),
       ).toBeVisible();
+      await expect(page.locator("header")).toHaveAttribute(
+        "data-transition-probe",
+        "preserved",
+      );
       expect(
         await page
           .locator('div[lang="pt-BR"]:visible')
