@@ -20,6 +20,7 @@ export const OCCURRENCE_EVENT_TYPES = [
   "manager_update",
   "employee_message",
   "completed",
+  "reopened",
 ] as const;
 export const OCCURRENCE_AUTHOR_TYPES = [
   "reporter",
@@ -48,6 +49,12 @@ export type OccurrenceEvent = {
   authorRole: string | null;
   authorIsViewer: boolean;
   text: string;
+  attachments?: Array<{
+    id: string;
+    name: string;
+    contentType: string;
+    size: number;
+  }>;
 };
 
 export type OccurrenceDetail = {
@@ -72,6 +79,12 @@ export type OccurrenceDetail = {
   priorityChangeReason: PriorityChangeReason | null;
   category: string | null;
   canDecidePriority: boolean;
+  version?: number;
+  responsibleKind?: "manager" | "provider" | "employee" | null;
+  responsibleName?: string | null;
+  responsibleEmployeeId?: string | null;
+  firstResponsibleAt?: string | null;
+  dueDate?: string | null;
   events: OccurrenceEvent[];
 };
 
@@ -117,6 +130,22 @@ function event(value: unknown): OccurrenceEvent {
     authorRole: nullableString(row.authorRole),
     authorIsViewer: boolean(row.authorIsViewer),
     text: string(row.text),
+    attachments:
+      row.attachments === undefined
+        ? []
+        : (() => {
+            if (!Array.isArray(row.attachments))
+              throw new Error("Invalid attachments.");
+            return row.attachments.map((value) => {
+              const file = record(value);
+              return {
+                id: string(file.id),
+                name: string(file.name),
+                contentType: string(file.contentType),
+                size: integer(file.size),
+              };
+            });
+          })(),
   };
 }
 
@@ -148,6 +177,24 @@ export function parseOccurrenceDetail(value: unknown): OccurrenceDetail {
     priorityChangeReason: changeReason(row.priorityChangeReason),
     category: nullableString(row.category),
     canDecidePriority: boolean(row.canDecidePriority),
+    version: row.version === undefined ? 0 : integer(row.version),
+    responsibleKind:
+      row.responsibleKind === undefined || row.responsibleKind === null
+        ? null
+        : (() => {
+            if (
+              !["manager", "provider", "employee"].includes(
+                string(row.responsibleKind),
+              )
+            )
+              throw new Error("Invalid responsible kind.");
+            return row.responsibleKind as "manager" | "provider" | "employee";
+          })(),
+    responsibleName: nullableString(row.responsibleName ?? null),
+    responsibleEmployeeId: nullableString(row.responsibleEmployeeId ?? null),
+    firstResponsibleAt:
+      row.firstResponsibleAt == null ? null : date(row.firstResponsibleAt),
+    dueDate: row.dueDate == null ? null : string(row.dueDate),
     events: row.events.map(event),
   };
   if (

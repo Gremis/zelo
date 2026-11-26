@@ -8,6 +8,9 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { OccurrenceAttachment } from "./occurrence-attachment";
+import { OccurrenceReopen } from "./occurrence-reopen";
+import { OccurrenceWorkflow } from "./occurrence-workflow";
 import { useRouter } from "next/navigation";
 import { formatPhone } from "@/lib/auth/phone";
 import {
@@ -135,6 +138,8 @@ export function OccurrenceDetailPanel({
   onChanged?: () => void;
 }) {
   const router = useRouter();
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const workflowLock = useRef(false);
   const desktop = useDesktop();
   const now = useNow();
   const titleId = useId();
@@ -204,15 +209,21 @@ export function OccurrenceDetailPanel({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"]') !== panel.current
+      )
+        return;
       if (event.key === "Escape") {
         if (event.target instanceof HTMLSelectElement) return;
         event.preventDefault();
-        onClose();
+        if (!workflowLock.current) onClose();
         return;
       }
       if (event.key !== "Tab" || !desktop) return;
       const focusable = panel.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable?.length) return;
       const first = focusable[0];
@@ -255,6 +266,13 @@ export function OccurrenceDetailPanel({
             }
           : current,
       );
+      const currentDetail = await loadOccurrenceDetail(detail.id).catch(
+        () => null,
+      );
+      if (currentDetail)
+        setDetail((current) =>
+          currentDetail.version !== current?.version ? currentDetail : current,
+        );
       onChanged?.();
     } catch (error) {
       const status =
@@ -288,6 +306,13 @@ export function OccurrenceDetailPanel({
             }
           : current,
       );
+      const currentDetail = await loadOccurrenceDetail(detail.id).catch(
+        () => null,
+      );
+      if (currentDetail)
+        setDetail((current) =>
+          currentDetail.version !== current?.version ? currentDetail : current,
+        );
       onChanged?.();
     } catch (error) {
       const status =
@@ -385,7 +410,9 @@ export function OccurrenceDetailPanel({
     content = (
       <>
         <header className="px-5 pt-4">
-          <div className="flex flex-wrap items-center gap-2 pr-10 text-xs">
+          <div
+            className={`flex flex-wrap items-center gap-2 text-xs ${detail.status === "completed" ? "min-h-8 pr-32" : "pr-10"}`}
+          >
             <span className="font-mono font-medium text-[#6b7280]">
               #{detail.number}
             </span>
@@ -434,7 +461,9 @@ export function OccurrenceDetailPanel({
               <select
                 id={priorityId}
                 value={priority ?? ""}
-                disabled={!detail.canDecidePriority || savingPriority}
+                disabled={
+                  !detail.canDecidePriority || savingPriority || workflowBusy
+                }
                 onChange={(event) => {
                   const value = event.target.value as QueuePriority;
                   if (value) void changePriority(value);
@@ -485,7 +514,9 @@ export function OccurrenceDetailPanel({
                 <select
                   id={reasonId}
                   value={detail.priorityChangeReason ?? ""}
-                  disabled={!detail.canDecidePriority || savingPriority}
+                  disabled={
+                    !detail.canDecidePriority || savingPriority || workflowBusy
+                  }
                   onChange={(event) =>
                     void changeReason(
                       (event.target.value ||
@@ -503,6 +534,23 @@ export function OccurrenceDetailPanel({
                 </select>
               </div>
             )}
+            <fieldset
+              disabled={savingPriority || savingUpdate}
+              className="min-w-0"
+            >
+              <OccurrenceWorkflow
+                key={`${detail.id}:${detail.events.find((event) => event.type === "reopened")?.id ?? 0}`}
+                detail={detail}
+                onBusy={(value) => {
+                  workflowLock.current = value;
+                  setWorkflowBusy(value);
+                }}
+                onChanged={(value) => {
+                  setDetail(value);
+                  onChanged?.();
+                }}
+              />
+            </fieldset>
             <div>
               <h3 className="text-[11px] font-bold tracking-[0.04em] text-[#6b7280] uppercase">
                 Registrada por
@@ -542,7 +590,7 @@ export function OccurrenceDetailPanel({
                     id={updateId}
                     value={text}
                     rows={3}
-                    disabled={savingUpdate}
+                    disabled={savingUpdate || workflowBusy}
                     aria-invalid={Boolean(updateError)}
                     aria-describedby={`${helpId}${updateError ? ` ${updateErrorId}` : ""}`}
                     onChange={(event) => {
@@ -556,7 +604,7 @@ export function OccurrenceDetailPanel({
                   <div className="mt-2 flex justify-end">
                     <button
                       type="submit"
-                      disabled={savingUpdate}
+                      disabled={savingUpdate || workflowBusy}
                       className="cursor-pointer rounded-lg bg-[#0b5e58] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#0f766e] disabled:cursor-wait disabled:opacity-60"
                     >
                       Adicionar
@@ -609,6 +657,13 @@ export function OccurrenceDetailPanel({
                     <p className="mt-0.5 text-sm leading-[1.45] text-[#344054] [overflow-wrap:anywhere]">
                       {event.text}
                     </p>
+                    {event.attachments?.map((file) => (
+                      <OccurrenceAttachment
+                        key={file.id}
+                        occurrenceId={detail.id}
+                        file={file}
+                      />
+                    ))}
                   </li>
                 ))}
               </ol>
@@ -627,7 +682,12 @@ export function OccurrenceDetailPanel({
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/40 px-4 py-8 max-[1000px]:static max-[1000px]:overflow-visible max-[1000px]:bg-transparent max-[1000px]:p-0"
       onMouseDown={(event) => {
-        if (desktop && event.target === event.currentTarget) onClose();
+        if (
+          desktop &&
+          event.target === event.currentTarget &&
+          !workflowLock.current
+        )
+          onClose();
       }}
     >
       <div
@@ -637,25 +697,43 @@ export function OccurrenceDetailPanel({
         aria-labelledby={titleId}
         className="relative mx-auto w-full max-w-[720px] rounded-xl bg-white shadow-[0_20px_50px_rgba(16,24,40,0.2)] max-[1000px]:max-w-none max-[1000px]:rounded-xl max-[1000px]:border max-[1000px]:border-[#e5e7eb] max-[1000px]:shadow-none"
       >
-        <button
-          ref={closeButton}
-          type="button"
-          aria-label="Fechar"
-          onClick={onClose}
-          className="absolute top-3 right-3 grid size-8 cursor-pointer place-items-center rounded-lg border border-[#e5e7eb] bg-white text-[#475467] hover:bg-[#f2f4f7]"
-        >
-          <svg
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {detail?.status === "completed" && (
+            <OccurrenceReopen
+              key={detail.id}
+              detail={detail}
+              onBusy={(value) => {
+                workflowLock.current = value;
+                setWorkflowBusy(value);
+              }}
+              onChanged={(value) => {
+                setDetail(value);
+                onChanged?.();
+                queueMicrotask(() => closeButton.current?.focus());
+              }}
+            />
+          )}
+          <button
+            ref={closeButton}
+            type="button"
+            aria-label="Fechar"
+            disabled={workflowBusy}
+            onClick={onClose}
+            className="grid size-8 cursor-pointer place-items-center rounded-lg border border-[#e5e7eb] bg-white text-[#475467] hover:bg-[#f2f4f7]"
           >
-            <path d="M5 5l10 10M15 5L5 15" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 20 20"
+              aria-hidden="true"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M5 5l10 10M15 5L5 15" />
+            </svg>
+          </button>
+        </div>
         {content}
       </div>
     </div>

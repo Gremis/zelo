@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import type { PanelOperations, PanelUser } from "@/lib/panel/contract";
 import { createPanelOperations } from "@/lib/panel/operations";
+import { usePanelData } from "@/components/panel-data";
 
 const button =
   "cursor-pointer rounded-lg border border-[#d0d5dd] bg-white px-2.5 py-[5px] text-[13px] font-semibold leading-[1.45] hover:border-[#6b7280] active:bg-[#e3f1ef] disabled:cursor-wait disabled:opacity-60";
@@ -60,6 +61,9 @@ export function PanelShell({
   operations?: PanelOperations;
 }) {
   const router = useRouter();
+  const context = usePanelData();
+  const shared = operations ? null : context;
+  const hasSharedData = shared !== null;
   const {
     setConfirmationComplete,
     setDraft,
@@ -67,10 +71,17 @@ export function PanelShell({
     setShowFirstSteps,
   } = useSignupFlow();
   const [service] = useState(() => operations ?? createPanelOperations());
-  const [user, setUser] = useState<PanelUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [localUser, setUser] = useState<PanelUser | null>(null);
+  const [localLoading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [localLoadError, setLoadError] = useState<string | null>(null);
+  const user = shared ? (shared.data?.user ?? null) : localUser;
+  const loading = shared ? shared.loading : localLoading;
+  const loadError = shared
+    ? shared.error
+      ? "Não foi possível carregar os dados do painel."
+      : null
+    : localLoadError;
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -80,6 +91,7 @@ export function PanelShell({
   const logoutPending = useRef(false);
 
   useEffect(() => {
+    if (hasSharedData) return;
     let active = true;
     async function load() {
       setLoading(true);
@@ -101,13 +113,14 @@ export function PanelShell({
     return () => {
       active = false;
     };
-  }, [service, attempt]);
+  }, [service, attempt, hasSharedData]);
 
   useEffect(() => {
+    if (hasSharedData) return;
     const refresh = () => setAttempt((value) => value + 1);
     window.addEventListener("condominiums-changed", refresh);
     return () => window.removeEventListener("condominiums-changed", refresh);
-  }, []);
+  }, [hasSharedData]);
 
   useEffect(() => {
     if (!open) return;
@@ -137,6 +150,7 @@ export function PanelShell({
         setDraft({ fullName: "", email: "", phone: "" });
         setRegistrationId(null);
         setUser(null);
+        shared?.clear();
         setOpen(false);
         setSignedOut(true);
         router.replace("/login");
@@ -262,7 +276,9 @@ export function PanelShell({
             <p>{loadError}</p>
             <button
               type="button"
-              onClick={() => setAttempt((value) => value + 1)}
+              onClick={() =>
+                shared ? shared.refresh() : setAttempt((value) => value + 1)
+              }
               className={`${button} mt-2`}
             >
               Tentar novamente
