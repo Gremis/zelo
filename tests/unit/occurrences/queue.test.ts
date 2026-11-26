@@ -40,6 +40,8 @@ const card: QueueCard = {
   reporterName: "Synthetic reporter",
   registeredAt: "2026-01-01T00:00:00Z",
   completedAt: null,
+  responsibleName: null,
+  dueDate: null,
 };
 const filled = () => {
   const value = empty();
