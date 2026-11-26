@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, expect, test, vi } from "vitest";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import {
   inspectAttachment,
@@ -12,6 +12,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
   spawn: vi.fn(),
+  execFile: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => ({ readFile: vi.fn() }));
 
@@ -109,3 +110,53 @@ test("resident memory over budget stops the parser instead of accepting its outp
   await assertion;
   expect(child.kill).toHaveBeenCalledWith("SIGKILL");
 });
+
+for (const exited of [true, false]) {
+  test(`macOS monitor distinguishes an exited parser from an inaccessible live process: ${exited}`, async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process, "getBuiltinModule").mockReturnValue({
+      platform: () => "darwin",
+    });
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      if (exited) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+      return true;
+    });
+    vi.mocked(execFile).mockImplementation((...args: unknown[]) => {
+      const callback = args.at(-1) as (
+        error: Error,
+        stdout: string,
+        stderr: string,
+      ) => void;
+      callback(Object.assign(new Error("ps unavailable"), { code: 1 }), "", "");
+      return {} as ReturnType<typeof execFile>;
+    });
+    const child = Object.assign(new EventEmitter(), {
+      pid: 12345,
+      stdin: Object.assign(new EventEmitter(), { end: vi.fn() }),
+      stdout: new EventEmitter(),
+      exitCode: null,
+      signalCode: null,
+      kill: vi.fn(),
+    });
+    child.kill.mockImplementation(() => {
+      child.emit("close", null, "SIGKILL");
+      return true;
+    });
+    vi.mocked(spawn).mockReturnValue(
+      child as unknown as ReturnType<typeof spawn>,
+    );
+    const result = inspectAttachment(Buffer.from("test"), {
+      contentType: "image/png",
+      size: 4,
+    });
+    const assertion = exited
+      ? expect(result).rejects.toBeInstanceOf(InvalidAttachment)
+      : expect(result).rejects.toThrow("inspection_monitor_unavailable");
+    await vi.advanceTimersByTimeAsync(50);
+    if (exited) {
+      expect(child.kill).not.toHaveBeenCalled();
+      child.emit("close", 1, null);
+    }
+    await assertion;
+  });
+}

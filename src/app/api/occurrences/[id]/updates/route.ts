@@ -51,7 +51,13 @@ export async function POST(
     const code =
       error instanceof OccurrenceWriteError ? error.code : "unavailable";
     const status =
-      code === "invalid_input" ? 400 : code === "access_denied" ? 404 : 503;
+      code === "conflict"
+        ? 409
+        : code === "invalid_input"
+          ? 400
+          : code === "access_denied"
+            ? 404
+            : 503;
     return reply(
       {
         error:

@@ -35,11 +35,24 @@ async function childRss(pid: number) {
     }
   }
   if (runtimePlatform === "darwin") {
-    const { stdout } = await run("/bin/ps", ["-o", "rss=", "-p", String(pid)], {
-      timeout: 1000,
-      maxBuffer: 1024,
-    });
-    return parseResidentMemory(`VmRSS: ${stdout.trim()} kB`);
+    try {
+      const { stdout } = await run(
+        "/bin/ps",
+        ["-o", "rss=", "-p", String(pid)],
+        {
+          timeout: 1000,
+          maxBuffer: 1024,
+        },
+      );
+      return parseResidentMemory(`VmRSS: ${stdout.trim()} kB`);
+    } catch (error) {
+      try {
+        process.kill(pid, 0);
+      } catch (probe) {
+        if ((probe as NodeJS.ErrnoException).code === "ESRCH") return 0;
+      }
+      throw error;
+    }
   }
   throw new Error("inspection_monitor_unavailable");
 }

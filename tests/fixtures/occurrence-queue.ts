@@ -24,6 +24,8 @@ function fixture(number: number, fields: Partial<QueueCard>): QueueCard {
     reporterName: "Pessoa Sintética Um",
     registeredAt: "2026-11-22T12:05:00Z",
     completedAt: null,
+    responsibleName: null,
+    dueDate: null,
     ...fields,
   };
 }
