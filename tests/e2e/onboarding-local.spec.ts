@@ -67,6 +67,10 @@ test("real signup dismissal persists across navigation, reload, login and device
   browser,
 }) => {
   test.setTimeout(60000);
+  let panelReads = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/panel") panelReads++;
+  });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (url !== "http://127.0.0.1:54321" || !key)
@@ -106,6 +110,10 @@ test("real signup dismissal persists across navigation, reload, login and device
     await expect(page).toHaveURL("/fila");
     const steps = page.getByRole("region", { name: "Primeiros passos" });
     await expect(steps).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Dispensar", exact: true }),
+    ).toBeEnabled();
+    expect(panelReads).toBe(1);
     const notice = page.getByText("E-mail confirmado. Conta criada.", {
       exact: true,
     });
