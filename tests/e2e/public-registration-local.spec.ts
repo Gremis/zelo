@@ -135,6 +135,37 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
       reporter_unit_or_role: "Apto 101",
       created_by_profile_id: null,
     });
+    await expect(
+      resident.getByRole("link", { name: "Abrir acompanhamento" }),
+    ).toHaveAttribute(
+      "href",
+      `https://sindicondo.app/o/${stored.tracking_code}`,
+    );
+    const privateNote = "Anotação interna sintética do síndico";
+    expect(
+      (
+        await contexts[0].request.post(
+          `/api/occurrences/${stored.id}/updates`,
+          { data: { text: privateNote } },
+        )
+      ).status(),
+    ).toBe(201);
+    const tracking = await anonymous.newPage();
+    const trackingResponse = await tracking.goto(
+      `http://127.0.0.1:3100/o/${stored.tracking_code}`,
+    );
+    await expect(
+      tracking.getByRole("heading", {
+        name: new RegExp(`Ocorrência #${residentNumber} · registrada`),
+      }),
+    ).toBeVisible();
+    await expect(
+      tracking.getByRole("heading", { name: "Lâmpada apagada", exact: true }),
+    ).toBeVisible();
+    const trackingHtml = await trackingResponse!.text();
+    expect(trackingHtml).not.toContain(privateNote);
+    expect(trackingHtml).not.toContain("11900000000");
+    await tracking.close();
     expect(
       sql(
         `select count(*) from occurrence_events where occurrence_id=${quote(stored.id)} and event_type='registered' and author_name='Ana' and author_phone='11900000000' and internal_description='Registrou a ocorrência pelo formulário. Unidade informada: Apto 101';`,
@@ -169,7 +200,8 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
     });
     expect(first.status()).toBe(200);
     const receipt = await first.json();
-    expect(Object.keys(receipt)).toEqual(["number"]);
+    expect(Object.keys(receipt).sort()).toEqual(["number", "trackingCode"]);
+    expect(receipt.trackingCode).toMatch(/^[0-9a-f]{64}$/);
     const replay = await contexts[1].request.post(`${endpoint}/occurrences`, {
       headers,
       data,
@@ -212,6 +244,7 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
     const page = await contexts[1].newPage();
     await page.goto(condominium.url);
     let committedNumber: number | undefined;
+    let committedTrackingCode = "";
     let lostKey = "";
     const attempts: { key: string; body: unknown }[] = [];
     await page.route(`**${endpoint}/occurrences`, async (route) => {
@@ -222,12 +255,17 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
       const response = await route.fetch();
       expect(response.status()).toBe(200);
       const confirmed = await response.json();
-      expect(Object.keys(confirmed)).toEqual(["number"]);
+      expect(Object.keys(confirmed).sort()).toEqual(["number", "trackingCode"]);
+      expect(confirmed.trackingCode).toMatch(/^[0-9a-f]{64}$/);
       if (attempts.length === 1) {
         committedNumber = confirmed.number;
+        committedTrackingCode = confirmed.trackingCode;
         lostKey = attempts[0].key;
         await route.abort("connectionreset");
-      } else await route.fulfill({ response });
+      } else {
+        expect(confirmed.trackingCode).toBe(committedTrackingCode);
+        await route.fulfill({ response });
+      }
     });
     await page.getByRole("textbox", { name: "Seu nome" }).fill("Ana");
     await page.getByRole("textbox", { name: "Sua unidade" }).fill("Porteiro");
@@ -257,6 +295,12 @@ test("anonymous HTTP registration and recovery stay independent from a signed-in
     await expect(
       page.getByText(`#${committedNumber}`, { exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Abrir acompanhamento" }),
+    ).toHaveAttribute(
+      "href",
+      `https://sindicondo.app/o/${committedTrackingCode}`,
+    );
     expect(attempts).toHaveLength(2);
     expect(attempts[1]).toEqual(attempts[0]);
     expect(

@@ -42,6 +42,7 @@ select set_config('request.jwt.claims','{"sub":"7b000000-0000-4000-8000-00000000
 
 select is((public.occurrence_detail('7b000000-0000-4000-8000-000000000020')->>'number')::bigint,(select number from public.occurrences where id='7b000000-0000-4000-8000-000000000020'),'Detail exposes the occurrence number');
 select is(public.occurrence_detail('7b000000-0000-4000-8000-000000000020')->>'trackingCode',(select tracking_code from public.occurrences where id='7b000000-0000-4000-8000-000000000020'),'Detail exposes the tracking code');
+select ok(public.occurrence_detail('7b000000-0000-4000-8000-000000000020') ?& array['trackingCode','version','responsibleKind','responsibleName','responsibleEmployeeId','firstResponsibleAt','dueDate'], 'Detail preserves tracking and workflow fields together');
 select is(public.occurrence_detail('7b000000-0000-4000-8000-000000000020')->'condominium'->>'name','Synthetic ORI80 A','Detail exposes the condominium');
 select is(public.occurrence_detail('7b000000-0000-4000-8000-000000000020')->>'suggestedPriority','urgent','Detail exposes the original suggestion');
 select is(public.occurrence_detail('7b000000-0000-4000-8000-000000000020')->>'suggestionPending','true','Pending suggestion is explicit');

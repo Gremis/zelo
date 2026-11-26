@@ -66,7 +66,7 @@ Canonical dependency identities are `20261124120000_create_funcionarios`, `20261
 
 Uploads retain `20261124160000`. Resident lookup uses `20261126130000`; the original detail migration remains `20261124170000`, with `20261126140000` restoring tracking and workflow fields after workflow migrations. ORI-71 uses `20261126170000` and a separate AI registration RPC, preserving the existing nine-argument rules registration contract and callers.
 
-Coordination order: #32 → #33; #35 → #36 → #37 and #39 → #40 → #41 → #42 follow #33; #43 follows those chains and #38; #44 follows #43; #49 carries the workflow schema prerequisites and final detail compatibility. The #45 → #46 → #47 → #48 AI stack carries the immutable develop baseline. ORI-104 code and migrations `26150000`/`26160000` are deliberately excluded from these publications.
+Coordination order: #32 → #33; #35 → #36 → #37 and #39 → #40 → #41 → #42 follow #33; #43 follows those chains and #38; #44 follows #43; #49 carries the workflow schema prerequisites and final detail compatibility. The #45 → #46 → #47 → #48 AI stack carries the immutable develop baseline. ORI-104 migrations `26150000`/`26160000` belong to this feature and follow the tracking/detail compatibility migrations.
 
 Existing local databases with legacy migration identities must not be reset, repaired or pushed to automatically. Disposable database validation covers fresh installation and upgrade from the sixteen-migration baseline. Actual development/production schema inspection in read-only mode and a separate dry-run for each destination remain necessary before any future remote application. These branch updates do not merge PRs or deploy.
 
@@ -86,3 +86,13 @@ curl -i http://127.0.0.1:3000/api/public/tasks/invalid
 The first returns the restricted JSON for a valid code; the second returns a generic 404. Task routes disable caching and indexing. Do not log or publish real task codes.
 
 Validation covers task-code isolation, private-field exclusion, immutable delegation receipts, completion after reopening and recovery after a lost response. Run database validation only against a disposable stack containing the branch migration chain; preserve the existing local database.
+
+## Resident tracking link (ORI-67)
+
+Resident tracking uses `/o/[code]` and `public.occurrence_tracking(p_code text)`. The random 64-character tracking code identifies exactly one occurrence and is separate from employee task codes. Invalid or unknown codes show the same generic message; the lookup exposes no listing or prefix search. Tracking responses disable caching and indexing.
+
+The public page shows the condominium, occurrence number and registration time, report, unit, location, public situation and filtered updates. It excludes reporter phone, employee names, internal manager updates, priority decisions, private comments, attachment paths and reopening reasons. The public situation maps new to received, in-progress/delegated to in progress, and completed to completed. Public history includes only the authorized registration, first responsibility/delegation, deadline, completion and reopening events.
+
+The registration confirmation returns `{ number, trackingCode }` and offers the tracking link, copy action and navigation to the public page. The authenticated occurrence detail preserves `trackingCode` alongside workflow fields and exposes the copy-link action under the reporter information. These actions remain independent from employee delegation links and reopening controls.
+
+The tracking migrations retain their canonical identities: `20261124170000_occurrence_detail_tracking_code.sql`, `20261126130000_occurrence_tracking_lookup.sql` and `20261126140000_occurrence_detail_tracking_code.sql`. Do not reintroduce legacy aliases or change applied migrations. Validate public tracking, private-field exclusion, copy feedback and the combined tracking/workflow detail contract alongside ORI-104 task access and ORI-91 reopening on a disposable database.

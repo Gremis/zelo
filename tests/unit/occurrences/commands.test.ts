@@ -9,7 +9,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
 vi.mock("server-only", () => ({}));
 const identity = vi.hoisted(() => vi.fn());
+const delegate = vi.hoisted(() => vi.fn());
 vi.mock("@/server/auth/identity", () => ({ confirmedIdentity: identity }));
+vi.mock("@/server/occurrences/delegation", () => ({
+  delegateOccurrence: delegate,
+}));
 const body = {
   key: "72000000-0000-4000-8000-000000000001",
   version: 0,
@@ -22,6 +26,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   identity.mockResolvedValue({ supabase: client, user: { id: "server-only" } });
   rpc.mockResolvedValue({ data: occurrenceDetailFixture(), error: null });
+  delegate.mockResolvedValue({ data: occurrenceDetailFixture(), error: null });
 });
 test.each([
   null,
@@ -55,6 +60,17 @@ test("session actor is implicit and only validated command fields reach RPC", as
     command_type: "responsible",
     payload: { kind: "manager" },
   });
+});
+test("delegation keeps the trusted server path instead of the generic command RPC", async () => {
+  const id = occurrenceDetailFixture().id;
+  const input = {
+    ...body,
+    type: "delegate",
+    payload: { employeeId: id, message: "Mensagem sintética" },
+  };
+  await runOccurrenceCommand(client, id, input);
+  expect(delegate).toHaveBeenCalledExactlyOnceWith(client, id, input);
+  expect(rpc).not.toHaveBeenCalled();
 });
 test("unauthenticated route cannot invoke the command", async () => {
   identity.mockResolvedValue(null);
@@ -99,6 +115,7 @@ test("reopening dispatches to its explicit authorized RPC without allowing actor
     expected_version: 0,
     reason: "Internal recurrence",
   });
+  expect(delegate).not.toHaveBeenCalled();
   expect(() =>
     commandBody({
       ...body,
