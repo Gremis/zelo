@@ -17,6 +17,8 @@ const input: CalculatedRegistration = {
   suggestedPriority: "normal",
   suggestionReason: "Sem sinal de risco no relato.",
   suggestionSource: "rules",
+  category: null,
+  aiFailureReason: null,
 };
 const occurrenceId = "64000000-0000-4000-8000-000000000001";
 const receipt = {
@@ -60,6 +62,8 @@ test("registration uses one restricted RPC and returns a minimal receipt", async
     calculated_priority: input.suggestedPriority,
     calculated_reason: input.suggestionReason,
     calculated_source: input.suggestionSource,
+    calculated_category: input.category,
+    calculated_ai_failure_reason: input.aiFailureReason,
   });
   expect(state.createClient).not.toHaveBeenCalled();
 });

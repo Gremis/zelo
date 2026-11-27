@@ -86,3 +86,24 @@ test("route rejects cross-origin writes", async () => {
   ).toBe(400);
   expect(rpc).not.toHaveBeenCalled();
 });
+
+test("reopening dispatches to its explicit authorized RPC without allowing actor fields", async () => {
+  await runOccurrenceCommand(client, occurrenceDetailFixture().id, {
+    ...body,
+    type: "reopen",
+    payload: { reason: "Internal recurrence" },
+  });
+  expect(rpc).toHaveBeenCalledWith("reopen_occurrence", {
+    target_occurrence: occurrenceDetailFixture().id,
+    command_key: body.key,
+    expected_version: 0,
+    reason: "Internal recurrence",
+  });
+  expect(() =>
+    commandBody({
+      ...body,
+      type: "reopen",
+      payload: { reason: "Private", actorId: "forged" },
+    }),
+  ).toThrow();
+});

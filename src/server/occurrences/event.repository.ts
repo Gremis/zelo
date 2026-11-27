@@ -42,6 +42,8 @@ export function createOccurrenceEventRepository(
             calculated_priority: input.suggestedPriority,
             calculated_reason: input.suggestionReason,
             calculated_source: input.suggestionSource,
+            calculated_category: input.category,
+            calculated_ai_failure_reason: input.aiFailureReason,
           };
         const response = await fetch(
           new URL(

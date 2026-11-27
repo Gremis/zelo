@@ -12,6 +12,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval:classificacao": "vitest run --config vitest.eval.config.mts",
     "test:db:priority": "vitest run --config vitest.db.config.mts tests/db/rule-priority.integration.test.ts",
     "test:db:account-demo": "vitest run --config vitest.db.config.mts tests/db/account-demo.integration.test.ts",
     "test:db:demo": "vitest run --config vitest.db.config.mts tests/db/demo-occurrences.integration.test.ts",

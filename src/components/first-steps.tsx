@@ -9,6 +9,7 @@ import type {
   StepId,
 } from "@/lib/first-steps/contract";
 import { createFirstStepsOperations } from "@/lib/first-steps/operations";
+import { usePanelData } from "@/components/panel-data";
 
 const steps: { id: StepId; title: string }[] = [
   { id: "condominium", title: "Cadastre seu primeiro condomínio" },
@@ -26,14 +27,23 @@ export function FirstSteps({
   operations?: FirstStepsOperations;
   onDismissed?: () => void;
 }) {
+  const context = usePanelData();
+  const shared = operations ? null : context;
+  const hasSharedData = shared !== null;
   const [service] = useState(() => operations ?? createFirstStepsOperations());
-  const [data, setData] = useState<FirstStepsState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [localData, setData] = useState<FirstStepsState | null>(null);
+  const [localLoading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setError] = useState<string | null>(null);
+  const data = shared ? (shared.data?.firstSteps ?? null) : localData;
+  const loading = shared ? shared.loading : localLoading;
+  const error =
+    localError ??
+    (shared?.error ? "Não foi possível carregar seus primeiros passos." : null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (hasSharedData) return;
     let active = true;
     async function load() {
       setLoading(true);
@@ -54,19 +64,20 @@ export function FirstSteps({
     return () => {
       active = false;
     };
-  }, [service, attempt]);
+  }, [service, attempt, hasSharedData]);
 
   useEffect(() => {
+    if (hasSharedData) return;
     const refresh = () => setAttempt((value) => value + 1);
     window.addEventListener("condominiums-changed", refresh);
     return () => window.removeEventListener("condominiums-changed", refresh);
-  }, []);
+  }, [hasSharedData]);
 
   async function dismiss() {
     setSaving(true);
     setError(null);
     try {
-      const result = await service.dismiss();
+      const result = await (shared ? shared.dismiss() : service.dismiss());
       if (result.ok && result.data.dismissed) {
         setData((previous) => ({
           completed: previous?.completed ?? [],
@@ -136,7 +147,11 @@ export function FirstSteps({
               {!data && (
                 <button
                   type="button"
-                  onClick={() => setAttempt((value) => value + 1)}
+                  onClick={() => {
+                    setError(null);
+                    if (shared) shared.refresh();
+                    else setAttempt((value) => value + 1);
+                  }}
                   className="mt-2 cursor-pointer hover:bg-red-50 active:bg-red-100 min-h-11 rounded-lg border border-red-200 px-4 font-semibold"
                 >
                   Tentar novamente
