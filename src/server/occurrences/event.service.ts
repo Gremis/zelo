@@ -1,5 +1,6 @@
 import "server-only";
 import { classificar } from "@/server/classificacao/classificar";
+import { detectRisk } from "@/lib/occurrences/risk-rules";
 import {
   MANAGER_CHANNELS,
   type ManagerRegistration,
@@ -136,6 +137,8 @@ export function createOccurrenceEventService(
           ? `Menciona ${risk.term}: risco à segurança.`
           : "Sem sinal de risco no relato.",
         suggestionSource: "rules",
+        category: null,
+        aiFailureReason: null,
       });
     },
     async appendInternalNote(input: InternalNote) {

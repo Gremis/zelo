@@ -56,8 +56,7 @@ export type ManagerRegistration = {
   reporterUnitOrRole?: string;
 };
 
-export type CalculatedManagerRegistration = ManagerRegistration &
-  RuleSuggestion;
+export type CalculatedManagerRegistration = ManagerRegistration & Suggestion;
 
 export type OccurrenceEventService = {
   registerPublic(input: PublicRegistration): Promise<RegistrationReceipt>;
