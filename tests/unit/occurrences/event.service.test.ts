@@ -12,7 +12,11 @@ import type {
   PublicRegistration,
 } from "@/server/occurrences/contracts";
 
-const repository = { registerPublic: vi.fn(), appendInternalNote: vi.fn() };
+const repository = {
+  registerPublic: vi.fn(),
+  registerByManager: vi.fn(),
+  appendInternalNote: vi.fn(),
+};
 const service = createOccurrenceEventService(repository);
 const registration: PublicRegistration = {
   type: "registered",

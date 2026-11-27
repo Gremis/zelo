@@ -6,7 +6,7 @@ import { panelAccess } from "@/server/auth/panel-access";
 import { Condominiums } from "@/components/condominiums";
 import { PanelSessionBoundary } from "@/components/panel-data";
 
-export const metadata: Metadata = { title: "Condomínios | Zelo" };
+export const metadata: Metadata = { title: "Condomínios | Sindicondo" };
 
 async function ProtectedCondominiums() {
   await connection();

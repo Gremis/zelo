@@ -6,7 +6,7 @@ import { panelAccess } from "@/server/auth/panel-access";
 import { Employees } from "@/components/employees";
 import { PanelSessionBoundary } from "@/components/panel-data";
 
-export const metadata: Metadata = { title: "Funcionários | Zelo" };
+export const metadata: Metadata = { title: "Funcionários | Sindicondo" };
 
 async function ProtectedEmployees() {
   await connection();
