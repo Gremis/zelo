@@ -69,6 +69,9 @@ export async function prepareAccountDemo(managerId: string) {
           trackingCode: rows[0].tracking_code,
         };
       },
+      async registerByManager() {
+        throw new Error("Unsupported demo operation.");
+      },
       async appendInternalNote() {
         throw new Error("Unsupported demo operation.");
       },

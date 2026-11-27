@@ -136,7 +136,7 @@ export function localContext() {
     );
   if (
     sql(
-      "select to_regprocedure('public.register_public_occurrence_with_suggestion(text,text,text,text,text,text,text,text,text)') is not null and to_regprocedure('public.portfolio_occurrence_queue()') is not null;",
+      "select to_regprocedure('public.register_public_occurrence_with_suggestion(text,text,text,text,text,text,text,text,text,text,text)') is not null and to_regprocedure('public.portfolio_occurrence_queue()') is not null;",
     ) !== "t"
   )
     throw new DemoError(

@@ -9,7 +9,7 @@ import { PanelSessionBoundary } from "@/components/panel-data";
 import { ConfirmationNotice } from "@/components/confirmation-notice";
 import { SignupFirstSteps } from "@/components/first-steps";
 
-export const metadata: Metadata = { title: "Fila de ocorrências | Zelo" };
+export const metadata: Metadata = { title: "Fila de ocorrências | Sindicondo" };
 
 async function ProtectedQueue() {
   await connection();

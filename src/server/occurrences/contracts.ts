@@ -21,21 +21,54 @@ export type RegistrationReceipt = {
   trackingCode: string;
 };
 
-export type RuleSuggestion = {
-  suggestedPriority: "urgent" | "normal";
+// Sugestão calculada antes da gravação. Com a IA (ORI-71), a prioridade pode
+// ser "low" e a origem "ai"; categoria e falha da IA entram junto (métrica).
+export type Suggestion = {
+  suggestedPriority: "low" | "normal" | "urgent";
   suggestionReason: string;
-  suggestionSource: "rules";
+  suggestionSource: "ai" | "rules";
+  category: string | null;
+  aiFailureReason: string | null;
 };
 
-export type CalculatedRegistration = PublicRegistration & RuleSuggestion;
+export type CalculatedRegistration = PublicRegistration & Suggestion;
+
+// ORI-89: "como chegou" quando o síndico registra pelo painel.
+export const MANAGER_CHANNELS = [
+  "whatsapp",
+  "phone",
+  "in_person",
+  "email",
+  "inspection",
+] as const;
+export type ManagerChannel = (typeof MANAGER_CHANNELS)[number];
+
+// ORI-89: registro pelo síndico. O autor é o próprio síndico (via sessão), por
+// isso não vem no contrato; quem relatou é opcional.
+export type ManagerRegistration = {
+  type: "registered";
+  condominiumId: string;
+  channel: ManagerChannel;
+  location: string;
+  description: string;
+  reporterName?: string;
+  reporterPhone?: string;
+  reporterUnitOrRole?: string;
+};
+
+export type CalculatedManagerRegistration = ManagerRegistration & Suggestion;
 
 export type OccurrenceEventService = {
   registerPublic(input: PublicRegistration): Promise<RegistrationReceipt>;
+  registerByManager(input: ManagerRegistration): Promise<RegistrationReceipt>;
   appendInternalNote(input: InternalNote): Promise<{ eventId: number }>;
 };
 
 export type OccurrenceEventRepository = {
   registerPublic(input: CalculatedRegistration): Promise<RegistrationReceipt>;
+  registerByManager(
+    input: CalculatedManagerRegistration,
+  ): Promise<RegistrationReceipt>;
   appendInternalNote(input: InternalNote): Promise<{ eventId: number }>;
 };
 
