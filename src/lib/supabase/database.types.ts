@@ -690,6 +690,8 @@ export type Database = {
       };
       register_public_occurrence_with_suggestion: {
         Args: {
+          calculated_ai_failure_reason: string | null;
+          calculated_category: string | null;
           calculated_priority: string;
           calculated_reason: string;
           calculated_source: string;

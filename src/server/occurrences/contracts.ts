@@ -21,13 +21,17 @@ export type RegistrationReceipt = {
   trackingCode: string;
 };
 
-export type RuleSuggestion = {
-  suggestedPriority: "urgent" | "normal";
+// Sugestão calculada antes da gravação. Com a IA (ORI-71), a prioridade pode
+// ser "low" e a origem "ai"; categoria e falha da IA entram junto (métrica).
+export type Suggestion = {
+  suggestedPriority: "low" | "normal" | "urgent";
   suggestionReason: string;
-  suggestionSource: "rules";
+  suggestionSource: "ai" | "rules";
+  category: string | null;
+  aiFailureReason: string | null;
 };
 
-export type CalculatedRegistration = PublicRegistration & RuleSuggestion;
+export type CalculatedRegistration = PublicRegistration & Suggestion;
 
 export type OccurrenceEventService = {
   registerPublic(input: PublicRegistration): Promise<RegistrationReceipt>;
